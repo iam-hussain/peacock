@@ -1,0 +1,560 @@
+# Peacock — Product Guide
+
+> **This is the single source of truth for *what Peacock does* and *how it behaves*.**
+> It describes the product in plain language — the people, the money, the rules, and the
+> step-by-step flows — for designers, stakeholders, and anyone joining the project.
+>
+> It deliberately contains **no code, schema, or database detail** — those live in
+> `IMPLEMENTATION_PLAN.md` (the technical companion). When the two ever disagree about
+> *behavior*, **this document wins** and the technical plan is corrected to match.
+>
+> **Maintained by Claude.** Product behavior is only changed here after the owner confirms
+> "yes, we're changing this flow." See `CLAUDE.md`.
+
+---
+
+## Table of contents
+
+1. [What Peacock is](#1-what-peacock-is)
+2. [The people](#2-the-people)
+3. [Core concepts (glossary)](#3-core-concepts-glossary)
+4. [How money is held — no central club account](#4-how-money-is-held--no-central-club-account)
+5. [Admin settings (the knobs)](#5-admin-settings-the-knobs)
+6. [Monthly deposits](#6-monthly-deposits)
+7. [Joining & catch-up](#7-joining--catch-up)
+8. [Loans](#8-loans)
+9. [Interest — how it's calculated](#9-interest--how-its-calculated)
+10. [Vendors (including the bank) & chit funds](#10-vendors-including-the-bank--chit-funds)
+11. [Profit — how the club earns and shares it](#11-profit--how-the-club-earns-and-shares-it)
+12. [Leaving, freezing & rejoining](#12-leaving-freezing--rejoining)
+13. [Penalties](#13-penalties)
+14. [The dashboard](#14-the-dashboard)
+15. [Transparency & permissions](#15-transparency--permissions)
+16. [Corrections & history](#16-corrections--history)
+17. [Glossary of every money event](#17-glossary-of-every-money-event)
+18. [End-to-end example](#18-end-to-end-example)
+
+---
+
+## 1. What Peacock is
+
+**Peacock is a money manager for a private investment club** ("Many feathers, one fortune").
+A group of friends/members pool money every month, lend it to each other for interest, and
+place it with outside vendors (like a bank or a chit fund) to grow it. Peacock keeps the
+whole thing **accurate, transparent, and easy to run**.
+
+There are two everyday jobs the app supports:
+
+- **Running the club** (an admin enters what happened — deposits, loans, repayments, vendor
+  moves).
+- **Watching the club** (every member can see the full, honest picture at any time).
+
+The guiding values: **everyone is equal**, **every rupee is traceable**, and **nothing is
+hidden**.
+
+```mermaid
+flowchart LR
+  M["Members<br/>(pay monthly)"] -->|deposits| POOL["The club's pooled money<br/>(held by treasurers)"]
+  POOL -->|loans| M
+  M -->|repay + interest| POOL
+  POOL -->|invest| V["Vendors<br/>(bank / chit / general)"]
+  V -->|returns + profit| POOL
+  POOL -. settle on exit .-> M
+```
+
+---
+
+## 2. The people
+
+Everyone in Peacock is a **member**. Some members also wear extra hats:
+
+| Who | What it means | Notes |
+|-----|---------------|-------|
+| **Member** | A person in the club. Pays monthly, can borrow, can leave & rejoin. | Everyone is a member first. |
+| **Admin** | A member who is allowed to **enter and edit data**. | Admin is a permission, not a different person. |
+| **Treasurer** | A member who is currently **holding some of the club's cash**. | Any member can be a treasurer — short-term or long-term. There can be several at once. |
+
+- **Members and treasurers are the same kind of person** — a treasurer is just a member who
+  happens to be holding club money right now.
+- **Vendors are not people in the club** — they're outside places money goes (see §10). They
+  never log in.
+
+```mermaid
+flowchart TD
+  P["Person in the club = MEMBER"] --> R1["can also be an ADMIN<br/>(enters/edits data)"]
+  P --> R2["can also be a TREASURER<br/>(holds club cash)"]
+  P --> R3["can borrow, deposit,<br/>leave & rejoin"]
+```
+
+---
+
+## 3. Core concepts (glossary)
+
+| Term | Plain meaning |
+|------|---------------|
+| **Deposit** | The monthly money each member must pay into the club. |
+| **Treasurer / treasury** | A member holding club cash / the pot of cash they hold. |
+| **Loan** | Money the club lends to a member, with interest. |
+| **Interest** | The charge a borrower pays for keeping a loan, calculated daily. |
+| **Catch-up** | Extra money a new or returning member pays so they're equal to everyone else (was called "offset"). |
+| **Vendor** | An outside place the club invests money — a **general** vendor (e.g. a bank) or a **chit** fund. |
+| **Chit fund** | A scheme where the club pays a monthly amount for a fixed number of months and receives a lump payout. |
+| **Profit** | What the club earns — loan interest + vendor returns above what was invested. |
+| **Profit per member** | The club's shareable profit divided by the number of members. |
+| **Settlement** | The money a member receives when they leave the club. |
+| **Overdue** | A loan kept past its allowed time, or a deposit paid late. |
+| **Pending** | Money that *should* have come in but hasn't yet (e.g. unpaid deposits, uncollected interest). |
+
+---
+
+## 4. How money is held — no central club account
+
+**The club does not have a bank account or a vault. The club is not a physical thing.** All of
+the club's cash is physically held by **members acting as treasurers**.
+
+- When a member pays a deposit, the cash goes to **a specific treasurer**.
+- When the club gives a loan, the cash comes out of **a specific treasurer's** hands.
+- Treasurers can **pass club cash to each other** (an internal transfer) — this doesn't change
+  how much the club has in total, just who's holding it.
+
+So at any moment, the club's **available cash = the sum of what every treasurer is holding**,
+and Peacock always shows **who is holding how much**.
+
+```mermaid
+flowchart LR
+  subgraph CLUB["Club's available cash = sum of all treasuries"]
+    T1["Treasurer A<br/>₹40,000"]
+    T2["Treasurer B<br/>₹25,000"]
+    T3["Treasurer C<br/>₹10,000"]
+  end
+  T1 <-->|internal transfer| T2
+  Member -->|pays deposit to| T1
+  T2 -->|hands out loan| Borrower
+```
+
+> **Why this matters for design:** almost every money action needs to say *which treasurer*
+> the cash came from or went to. The UI should always make picking a treasurer quick and clear.
+
+---
+
+## 5. Admin settings (the knobs)
+
+Everything that can change over time lives in **admin settings** — no fixed values are baked in.
+An admin can adjust:
+
+| Setting | What it controls | Today's value |
+|---------|------------------|---------------|
+| **Club name & start date** | Identity; when the club began. | Started **01 Sep 2020**. |
+| **Deposit stages** | The monthly deposit amount over time (it has been raised). | ₹1,000 (Sep 2020 → Aug 2023), then **₹2,000** (Sep 2023 → now). |
+| **Loan interest rate** | The monthly interest rate for **new** loans. Dated changes are allowed. | **1% per month** since the start. |
+| **Daily-interest start date** | The date from which interest is pro-rated by the day. | **01 Jun 2024**. |
+| **Loan limit** | The most a member may borrow. | **₹5,00,000** (revisable). |
+| **Loan term** | How long a loan may run before it's "overdue." | **5 months**. |
+| **Loan cooldown** | Wait time after closing a loan before taking a new one. | **1 month**. |
+| **Overdue penalty** | Extra interest on loans kept past the term. | **0** (off) — can be switched on anytime. |
+| **Late-deposit penalty** | Charge for paying a monthly deposit late. | **0** (off) — overdue is only flagged. |
+| **Dividend** | Periodic profit payout to members. | **Off** — profit accumulates instead. |
+
+Two important rules about settings:
+
+1. **A loan's interest rate is fixed when the loan starts.** If the admin later raises the rate,
+   it applies only to **new** loans — existing loans keep their original rate for life.
+2. **The overdue penalty (when turned on) applies immediately to *all* loans**, current and
+   future — it is not locked per loan.
+
+---
+
+## 6. Monthly deposits
+
+Every member is expected to pay the **current monthly deposit** (today ₹2,000) each month. The
+expected amount has changed over the club's life (the "stages" above), and Peacock knows, for any
+member and any date, **how much they should have paid in total so far**.
+
+- **Paid vs expected:** Peacock always shows what a member *has* paid against what they *should*
+  have paid. The difference is their **pending** deposit.
+- **Late deposits** are flagged as **pending / overdue** in the UI. There's an optional penalty
+  for lateness (off today — see §13).
+- Deposits are **capital, not profit** — they're the member's own money working in the club.
+
+```mermaid
+flowchart LR
+  A["Member's expected total<br/>(from join date to today)"] --> C{Compare}
+  B["Member's paid total"] --> C
+  C -->|paid ≥ expected| OK["Up to date ✓"]
+  C -->|paid < expected| PEND["Pending / overdue ⚠<br/>shown in red"]
+```
+
+---
+
+## 7. Joining & catch-up
+
+The club has been running for years and has built up value. So when **a new member joins late**,
+or an existing member **fell behind**, they must pay a **catch-up** so that **everyone holds equal
+value**. (This used to be called "offset.")
+
+There are two kinds of catch-up:
+
+- **Late-join catch-up** — for joining after the club started: pay the **profit per member** that
+  existing members have already built up, so the newcomer starts on equal footing.
+- **Delayed-payment catch-up** — for missed monthly deposits: pay the **deposits** that should
+  have been paid by now.
+
+**How the amount is decided:** Peacock **calculates a suggested catch-up** =
+(all the monthly deposits from the club's start up to today) **+** (the profit-per-member built up
+so far). The **admin can edit** that figure up or down before saving — the math is done for them,
+but the final number is the admin's call.
+
+```mermaid
+flowchart TD
+  J["New / returning member"] --> CALC["Peacock suggests catch-up:<br/>missed deposits + profit-per-member"]
+  CALC --> EDIT["Admin reviews & can adjust the amount"]
+  EDIT --> PAY["Member pays catch-up"]
+  PAY --> EQ["Member now holds equal value ✓"]
+```
+
+---
+
+## 8. Loans
+
+The club lends its pooled cash to members. Loans are a core source of the club's profit.
+
+### The rules
+
+- **One loan at a time.** A member must fully clear any existing loan (and have no outstanding
+  balance) before taking a new one.
+- **No top-ups.** You can't add to a running loan; you take a fresh loan later.
+- **Cooldown.** After fully repaying, wait **1 month** before borrowing again.
+- **Limit.** Up to **₹5,00,000** (an admin setting).
+- **Term.** A loan should be repaid within **5 months**. After that it's **overdue** — but it
+  **stays active** (it isn't cancelled or auto-penalised unless the penalty is turned on).
+- **Repay anytime, any amount.** There's no minimum repayment; round figures are encouraged but
+  not enforced.
+- **Borrower priority (a hint).** Peacock shows whether a member is **high priority** (hasn't
+  borrowed before / borrows little) or **low priority** (borrows often). This is **advice only** —
+  the admin decides who actually gets the loan.
+
+### How a loan moves through its life
+
+```mermaid
+flowchart LR
+  REQ["Member requests an amount<br/>(≤ limit, no existing loan)"] --> D["Disbursed — possibly in tranches<br/>from one or more treasurers"]
+  D --> ACT["Active — interest builds every day"]
+  ACT --> REP["Repayments (partial or full)<br/>+ interest paid"]
+  REP --> ACT
+  ACT -->|past 5 months| OVD["Overdue (still active, flagged)"]
+  REP -->|fully repaid| CL["Closed"]
+  CL -->|wait 1 month| NEXT["Eligible for next loan"]
+```
+
+### Disbursement in tranches (an important real-world detail)
+
+Because no single treasurer may hold enough cash, **one loan can be paid out in pieces** from
+**different treasurers over a few days**. It's still **one loan** with **one start date**. Interest
+is charged on whatever is actually outstanding at each point in time.
+
+> Example: a member is approved for ₹2,50,000. Treasurer A gives ₹1,00,000 today; a week later
+> Treasurer B gives the remaining ₹1,50,000. For that first week, interest is on ₹1,00,000; after
+> the second hand-out, interest is on the full ₹2,50,000.
+
+---
+
+## 9. Interest — how it's calculated
+
+Interest is the heart of loan accounting, so this section is precise. **Interest is shown live,
+up to today** — the borrower doesn't pay daily, so there's always some interest accruing that
+hasn't been paid yet.
+
+### The rule in words
+
+- The rate is **monthly** (today **1%**).
+- **A full "month" of a loan is counted from the day it started** (e.g. the 20th to the 20th).
+  Each completed month charges the full monthly rate.
+- **Leftover days** beyond the last complete month are charged **per day**, where the daily rate
+  is the monthly rate **divided by the number of days in that incomplete month**.
+- The principal can change over the loan's life (more disbursed, or some repaid). **Each time the
+  outstanding amount changes, the month-count restarts from that day** for the new amount.
+- A loan's rate is **fixed at its start** — later rate changes don't affect it.
+
+```mermaid
+flowchart LR
+  S["Loan starts (e.g. 20th)"] --> M1["Each full month → 1% on the outstanding"]
+  M1 --> DAYS["Leftover days → (1% ÷ days in that month) per day"]
+  CHG["Outstanding changes<br/>(repay / new tranche)"] -->|month-count restarts| M1
+```
+
+### Worked example
+
+> A member borrows **₹50,000** and keeps it **2 months and 25 days**.
+> - 2 full months → **2 × 1% of ₹50,000**.
+> - 25 extra days → **25 × (1% of ₹50,000 ÷ days in that month)**.
+>
+> If they then repay ₹20,000, the remaining **₹30,000** starts a **fresh count from that day**,
+> charged the same way until it's cleared.
+
+### A note on dates
+
+Before **01 Jun 2024**, interest was charged by **whole months only** (a part-month rounded up).
+From that date on, the **daily** method above applies. (This mostly matters for historical loans.)
+
+---
+
+## 10. Vendors (including the bank) & chit funds
+
+A **vendor** is an outside place the club puts money to grow it. There are **two kinds**:
+
+### General vendor (covers banks and anything else)
+
+Money goes out (invested), money comes back later (returns); anything above what was invested is
+**profit**. A **bank is just a general vendor** — for example, a treasurer keeps club cash in a
+bank for a few months, the bank pays ₹500 interest, and that ₹500 comes back to the club as profit.
+A vendor can be **labelled** (e.g. "Bank", "Stocks") for grouping in reports, but it behaves the
+same.
+
+```mermaid
+flowchart LR
+  C["Club cash"] -->|invest| GV["General vendor (e.g. bank)"]
+  GV -->|return = principal + profit| C
+```
+
+### Chit fund
+
+A chit fund is a fixed-term scheme. For example: a **₹5,00,000 chit over 20 months**.
+
+- The club **pays a monthly installment**. The installments **start small and rise over time**, up
+  to a **margin** (here ₹5,00,000 ÷ 20 = **₹25,000**) — never beyond.
+- At some point (often between months 10–20, or at the very end) the club **receives a payout**.
+- **Even if the payout is taken early, the club must keep paying the remaining monthly installments
+  until the term ends.** That future commitment is tracked as an **obligation** the club still owes.
+- **Profit** = the payout minus everything the club paid in (can be positive or negative).
+
+```mermaid
+flowchart LR
+  ST["Start chit (value, months, margin)"] --> PAY["Pay monthly installments<br/>(rising up to the margin)"]
+  PAY --> PAY
+  PAY --> OUT["Receive payout (any month)"]
+  OUT --> OBL["Remaining installments<br/>still owed → obligation"]
+  OBL --> PAY2["Keep paying to the end"]
+  PAY2 --> DONE["Chit completed"]
+```
+
+> **Why obligation matters:** the money the club still has to pay into chits is subtracted from the
+> club's shareable profit — the club doesn't count gains it hasn't fully earned yet.
+
+---
+
+## 11. Profit — how the club earns and shares it
+
+### Where profit comes from
+
+1. **Loan interest** the club collects from borrowers.
+2. **Vendor returns** above what was invested (bank interest, chit payouts, etc.).
+
+### Realized vs pending
+
+- **Realized profit** — already collected and in the club's hands.
+- **Pending interest** — interest that has built up on active loans **but hasn't been paid yet**.
+  Because the club *will* collect it, **pending interest counts as profit**.
+- **Pending deposits are NOT profit** — they're members' own capital that's simply late.
+
+### Obligations reduce profit
+
+The **money still owed to chit funds** is subtracted, so the club never overstates what it can
+share.
+
+### Profit per member
+
+```
+shareable profit = realized profit + pending loan interest − chit obligations (− anything already paid out)
+profit per member = shareable profit ÷ number of members
+```
+
+This **profit-per-member figure is shown on the dashboard** so everyone can see how the club is
+doing per head.
+
+### No automatic payout (for now)
+
+The club **does not** pay profit out periodically. **Profit accumulates** and belongs to members
+as their growing share; a member only receives their profit **when they leave** (see §12). A yearly
+dividend may be added in the future — the capability exists but is **switched off**.
+
+### Profit is shared by how much you paid in
+
+Crucially, a member's profit share is **proportional to how fully they've paid their deposits**, not
+a flat equal slice. If a member is behind on deposits, they earn proportionally less profit.
+
+> Example: if everyone's expected deposit so far is **₹30,000** but a member has only paid
+> **₹20,000**, they've paid **two-thirds** — so they receive **two-thirds** of a full profit share.
+> The missing one-third of profit is the natural consequence of underpaying. **The UI shows both**
+> the full share (if they were fully paid) and their actual reduced share, so the gap is clear.
+
+---
+
+## 12. Leaving, freezing & rejoining
+
+### Leaving (settlement)
+
+A member leaves by **settling** — taking their money out of the club. **There is no partial exit
+and no "take just the profit" option** — it's all or nothing.
+
+When a member leaves, Peacock **computes a suggested settlement** that brings together everything:
+
+- **plus** their paid-in capital (deposits + catch-up),
+- **plus** their **profit share** (reduced if they underpaid — §11),
+- **minus** any loan they still owe,
+- **minus** any unpaid interest on that loan.
+
+The **admin enters the final settlement amount** (it may be slightly less than the computed guide).
+After settling:
+
+- the member's **profit becomes zero**,
+- their **account is frozen** and marked **inactive**,
+- **all their history is kept** — nothing is deleted.
+
+```mermaid
+flowchart LR
+  ACT["Active member"] -->|decides to leave| CALC["Peacock computes settlement guide:<br/>capital + profit share − loan − unpaid interest"]
+  CALC --> ENTER["Admin enters final amount paid out"]
+  ENTER --> FROZEN["Profit → 0 · account frozen · INACTIVE<br/>(history kept)"]
+```
+
+### Rejoining (reactivation)
+
+A frozen member can come back. To rejoin, they **repay** to re-enter (often in **one or two
+installments**) **plus** a **catch-up** (the profit-per-member they missed and any deposits owed),
+which restores them to **equal value** with everyone else. The admin reactivates the account.
+
+```mermaid
+flowchart LR
+  FROZEN["Inactive member"] -->|wants back| REPAY["Repay re-entry amount<br/>(1–2 installments)"]
+  REPAY --> CU["Pay catch-up<br/>(profit-per-member + owed deposits)"]
+  CU --> ACTIVE["Active again, equal value ✓"]
+```
+
+---
+
+## 13. Penalties
+
+Both penalties exist in the product but are **turned off (set to zero) today**. They can be
+switched on anytime in admin settings.
+
+| Penalty | What it would do | Today |
+|---------|------------------|-------|
+| **Overdue loan penalty** | Adds extra interest on loans kept past the **5-month** term. When switched on, it applies **immediately to all loans**. | **0** — overdue loans are only **flagged**. |
+| **Late-deposit penalty** | Charges a member for paying a monthly deposit late. | **0** — late deposits are only shown as **pending / overdue**. |
+
+So today, "overdue" and "late" are **warnings and indicators**, not charges. The UI should clearly
+show overdue loans and pending deposits (e.g. red badges) even though no money penalty applies yet.
+
+---
+
+## 14. The dashboard
+
+The dashboard is the club's at-a-glance health. It shows (all figures live):
+
+- **Available cash**, with a **breakdown by treasurer** (who holds what).
+- **Total portfolio value** — cash + money out on loan + money out with vendors, plus what's
+  pending to come in.
+- **Profit per member** (§11) — the headline "how are we doing" number.
+- **Loans** — how much is currently out, total ever lent, interest collected, interest still
+  pending, and **how many loans are overdue**.
+- **Vendors** — money currently placed, profit earned, and chit obligations still owed.
+- **Members** — active count, total deposits paid vs expected, and **total pending**.
+
+```mermaid
+flowchart TD
+  DASH["Dashboard"] --> CASH["Available cash + per-treasurer"]
+  DASH --> VALUE["Total portfolio value"]
+  DASH --> PPM["Profit per member"]
+  DASH --> LOANS["Loans out / collected / pending / overdue"]
+  DASH --> VEND["Vendors: placed / profit / chit obligations"]
+  DASH --> MEM["Members: active / paid vs expected / pending"]
+```
+
+---
+
+## 15. Transparency & permissions
+
+Transparency is a core value. **Every member can see everything** about the club's finances — all
+members, all loans, all vendors, all transactions, and their own statement — **read-only**.
+
+| Action | Admin | Member |
+|--------|:-----:|:------:|
+| See the dashboard, members, loans, vendors, transactions, own statement | ✓ | ✓ (view) |
+| Enter / edit / correct any money event | ✓ | — |
+| Manage members, vendors, loans, chits | ✓ | — |
+| Change admin settings (rates, limits, stages, penalties) | ✓ | — |
+| Hold club cash (be a treasurer) | ✓ (any member) | ✓ (any member) |
+
+Vendors are not users and never log in. Members can optionally have a login to view; admins always
+do.
+
+---
+
+## 16. Corrections & history
+
+Peacock is built to be **auditable**: nothing is ever silently deleted.
+
+- A mistake is fixed with a **reversing correction** that cancels the original, and (for an edit) a
+  new correct entry is added. The original stays visible for the record.
+- Every change is **logged** (who did what, when).
+- Because corrections are real entries, **all the numbers and history update instantly and stay
+  consistent** — including past months and charts.
+
+---
+
+## 17. Glossary of every money event
+
+Every financial action in Peacock is one of these. (Designers: these are the "intents" the entry
+screen offers.)
+
+| Event | Plain meaning |
+|-------|---------------|
+| **Monthly deposit** | A member pays their monthly amount to a treasurer. |
+| **Catch-up** | A new/returning member pays to reach equal value (late-join or delayed-payment). |
+| **Adjustment** | A manual correction to a member's balance. |
+| **Withdraw (settlement)** | A member leaves and takes their money out. |
+| **Rejoin** | A returning member pays back in to reactivate. |
+| **Internal transfer** | One treasurer hands club cash to another. |
+| **Loan given** | The club hands a loan (or a tranche of one) to a member. |
+| **Loan repayment** | A member pays back loan principal (and possibly interest). |
+| **Loan interest paid** | A member pays interest on their loan. |
+| **Vendor investment** | The club places money with a general vendor. |
+| **Vendor return** | A general vendor returns money (principal + profit). |
+| **Vendor write-off** | Closing a vendor that returned less than invested (records the loss). |
+| **Chit installment** | The club pays a monthly chit amount. |
+| **Chit payout** | The club receives a chit's lump payout. |
+| **Correction (reversal)** | Cancels a previous event for an edit or delete. |
+
+---
+
+## 18. End-to-end example
+
+A small story that touches most of the product:
+
+1. **Setup.** The club started in Sep 2020 at ₹1,000/month, raised to ₹2,000 in Sep 2023. Loan
+   interest is 1%/month.
+2. **A member deposits.** Asha pays her ₹2,000 for the month; Treasurer Ravi receives it, so the
+   club's cash (held by Ravi) goes up ₹2,000.
+3. **A loan.** Bhaskar is approved for ₹2,50,000. Ravi gives ₹1,00,000 today; a week later
+   Treasurer Meera gives ₹1,50,000. Interest builds daily — on ₹1,00,000 for the first week, then
+   on ₹2,50,000.
+4. **A repayment.** After two months Bhaskar repays ₹2,00,000 plus the interest so far; the
+   remaining ₹50,000 keeps accruing from that day until he clears it. Treasuries that receive the
+   cash go up accordingly.
+5. **A vendor.** The club places ₹3,00,000 in a chit fund (₹5,00,000 over 20 months); it pays a
+   rising monthly installment and will receive a payout later, while still owing the remaining
+   installments.
+6. **The bank.** A treasurer parks spare club cash in a bank; the ₹500 interest the bank pays comes
+   back as club profit (a general-vendor return labelled "Bank").
+7. **The dashboard** shows available cash (split across Ravi, Meera, others), money out on loan,
+   money in the chit, profit collected and pending, and **profit per member**.
+8. **A member leaves.** Priya decides to leave. She had paid ₹20,000 of an expected ₹30,000 (so a
+   two-thirds profit share) and owes nothing. Peacock suggests her settlement (capital + two-thirds
+   profit share); the admin enters the final amount; Priya's profit goes to zero and her account is
+   frozen — her history stays.
+9. **She rejoins later** by repaying in two installments plus a catch-up for the profit-per-member
+   and deposits she missed, returning to equal value.
+
+---
+
+*End of product guide. For technical/implementation detail, see `IMPLEMENTATION_PLAN.md`.*
