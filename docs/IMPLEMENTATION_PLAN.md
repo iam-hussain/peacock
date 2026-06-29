@@ -4,13 +4,15 @@
 > building the new Peacock repository from scratch. Consolidates and supersedes (for build
 > purposes) the three source planning docs.
 >
-> **Revision 3** — folds in the owner's domain clarifications: the club holds **no cash**
-> (member-treasurers do), **multi-tranche loans** with a **fixed-at-origination interest rate**
-> (rate changes apply to new loans only), **chit-fund** vendors (with **ramping installments**) plus
-> a third **`GENERAL`** vendor type, **catch-up** (renamed from "offset"), a **settle / freeze /
-> reactivate** withdraw-rejoin flow, and a **comprehensive profit-per-member** (pending interest =
-> profit, pending deposits = capital) shown on the dashboard and used as the settlement guide. Items
-> still genuinely undecided are marked **`‹TBD›`**.
+> **Revision 4** — folds in the owner's domain clarifications: the club holds **no cash**
+> (member-treasurers do); **multi-tranche loans** with a **fixed-at-origination interest rate** (rate
+> changes apply to new loans only) + a **configurable overdue penalty** (default 0, applies instantly
+> to all loans); **`GENERAL`** + `CHIT` vendor types (no separate BANK — bank interest is a GENERAL
+> return); **chit funds** with **ramping installments**; **catch-up** (renamed from "offset",
+> auto-computed + admin-editable); **withdrawal = full exit only** (settle → freeze → reactivate); a
+> **comprehensive profit-per-member** on the dashboard (pending interest = profit, pending deposits =
+> capital); configurable **late-deposit penalty** (default 0) and **dividend** seam (off). The one
+> material open item is the **profit-share-at-exit formula** (§16.3). Undecided items marked **`‹TBD›`**.
 >
 > **Audience:** the engineer(s) building this. Everything needed to start typing lives here.
 > **Out of scope:** visual styling (see `DESIGN_PROMPTS.md`). Functionally the UI mirrors v1.
@@ -63,7 +65,7 @@ vendors.
 | **Member** | A person in the club. Pays a recurring **monthly deposit**, can **borrow** (loans with daily interest), can **withdraw / leave** and later **rejoin**. All members hold **equal status and value**. |
 | **Treasurer** | A **member who currently physically holds club cash**. The club itself is not a physical entity and **holds no money** — cash always sits with one or more member-treasurers. Anyone can be a treasurer (admin or plain member; long- or short-term). |
 | **Admin** | A member with **write access** (daily data entry, managing members/vendors/loans/config). Admin is just a member with a role flag. |
-| **Vendor** | An external place the club puts money. Three types: **`BANK`** (lump deposit, earns interest), **`CHIT`** fund (monthly installments toward a chit, payout later, with an obligation to keep paying), and **`GENERAL`** (any other placement — invest, get returns, profit = returns − invested). |
+| **Vendor** | An external place the club puts money. Two types: **`CHIT`** fund (monthly installments toward a chit, payout later, with an obligation to keep paying) and **`GENERAL`** (any other placement — invest, get returns, profit = returns − invested; **also covers bank deposits/interest**: a treasurer parks club cash in a bank and returns the interest as a GENERAL return). |
 
 So there are really only two kinds of people — **members**, some of whom are **admins** — plus the
 **treasurer** capability (holding cash) which any member can have.
@@ -79,7 +81,8 @@ So there are really only two kinds of people — **members**, some of whom are *
    (different treasurers chip in over a few days), accrues **daily interest** on the
    outstanding-principal timeline, must be repaid within **5 months** (after which it is
    **overdue** but still active), and is repaid (possibly in parts) back to treasurers.
-4. **Vendors.** The club places cash with a **bank** (earns interest) or pays into a **chit fund**
+4. **Vendors.** The club places cash with a **general vendor** (e.g. a bank that earns interest, or
+   any other placement) or pays into a **chit fund**
    monthly (gets a payout later, with profit/loss). Money out with vendors is club value too.
 5. **Catch-up (equalization).** A new or returning member must pay, on top of the prevailing
    deposit, a **catch-up** equal to existing members' accumulated profit-per-member, so everyone
@@ -206,10 +209,10 @@ PG gives that natively. The analytics are **grouped aggregates** (`GROUP BY mont
    days at a daily rate; before that date, whole-month only.
 8. **No repayment-amount validation** (no enforced minimum; round figures are advisory).
 9. **Loan limit = ₹5,00,000**, configurable in admin settings (revisable).
-10. **Vendors are typed:** `BANK` (lump, earns interest), `CHIT` (monthly installments + payout,
-    with a remaining-obligation if payout taken early), and `GENERAL` (generic placement:
-    invest → return, profit = returns − invested). `BANK` and `GENERAL` share the
-    invest/return postings; `CHIT` has its own schedule (§15).
+10. **Vendors are typed:** `GENERAL` (generic placement: invest → return, profit = returns −
+    invested; covers bank deposits/interest) and `CHIT` (monthly installments + payout, with a
+    remaining-obligation if payout taken early, its own schedule §15). There is **no separate BANK
+    type** — a bank is just a GENERAL vendor (note the bank name in the vendor's description).
 11. **Catch-up** replaces "offset": late-join + delayed-payment subtypes; equalizes member value.
 12. **Withdraw = settle (admin-entered amount) → freeze → INACTIVE**, keep history. **Reactivate**
     = repay (1–2 terms) + catch-up (profit-per-member + owed deposits).
@@ -310,7 +313,7 @@ No passbook. Nothing that can drift.
 | `TREASURY_CASH` | 1 per treasurer-member (on demand) | + | Club cash physically held by that member |
 | `MEMBER_EQUITY` | 1 per member | − | The member's stake/contributions |
 | `LOAN_RECEIVABLE` | 1 per member | + | Principal the member currently owes |
-| `VENDOR_RECEIVABLE` | 1 per vendor (bank / general / chit) | + | Principal/installments currently placed with the vendor |
+| `VENDOR_RECEIVABLE` | 1 per vendor (general / chit) | + | Principal/installments currently placed with the vendor |
 | `INTEREST_INCOME` | exactly 1 | − | Club income from loan interest |
 | `VENDOR_PROFIT` | 1 per vendor | − | Realized profit (or loss) from that vendor |
 
@@ -339,8 +342,8 @@ portion. Every row **sums to zero**.
 | `LOAN_TAKEN` (tranche) | `TREASURY_CASH(t) −A`, `LOAN_RECEIVABLE(m) +A` | `loan.principalOutstanding += A` |
 | `LOAN_REPAY` | `TREASURY_CASH(t) +P`, `LOAN_RECEIVABLE(m) −P` [+ interest leg] | `principalOutstanding −= P`; if 0 → CLOSED |
 | `LOAN_INTEREST` | `TREASURY_CASH(t) +A`, `INTEREST_INCOME −A` | — |
-| `VENDOR_INVEST` (bank) | `TREASURY_CASH(t) −A`, `VENDOR_RECEIVABLE(v) +A` | — |
-| `VENDOR_RETURN` (bank) | `TREASURY_CASH(t) +A`, `VENDOR_RECEIVABLE(v) −P`, `VENDOR_PROFIT(v) −(A−P)` | — |
+| `VENDOR_INVEST` (general) | `TREASURY_CASH(t) −A`, `VENDOR_RECEIVABLE(v) +A` | — |
+| `VENDOR_RETURN` (general) | `TREASURY_CASH(t) +A`, `VENDOR_RECEIVABLE(v) −P`, `VENDOR_PROFIT(v) −(A−P)` | — (bank interest: P=0, so all of A is profit) |
 | `VENDOR_WRITEOFF` | `VENDOR_RECEIVABLE(v) −R`, `VENDOR_PROFIT(v) +R` (R = residual) | clears shortfall as loss on close |
 | `CHIT_PAYMENT` (installment) | `TREASURY_CASH(t) −A`, `VENDOR_RECEIVABLE(v) +A` | `chit.installmentsPaid += 1` |
 | `CHIT_PAYOUT` | `TREASURY_CASH(t) +A`, `VENDOR_RECEIVABLE(v) −P`, `VENDOR_PROFIT(v) −(A−P)` | mark payout; track remaining obligation |
@@ -370,7 +373,7 @@ TREASURY_CASH(A) -5000000 ; TREASURY_CASH(B) +5000000      // sum 0 ✓ ; total 
 TREASURY_CASH(A) -10000000 ; LOAN_RECEIVABLE(m) +10000000  // loan.principalOutstanding += 10000000
 ```
 
-**Vendor (bank) returns ₹22,000, ₹20,000 principal** (A = 2200000, P = 2000000):
+**Vendor (general) returns ₹22,000, ₹20,000 principal** (A = 2200000, P = 2000000):
 ```
 TREASURY_CASH(t) +2200000 ; VENDOR_RECEIVABLE(v) -2000000 ; VENDOR_PROFIT(v) -200000   // sum 0 ✓
 ```
@@ -410,7 +413,7 @@ model Member {
 model Vendor {
   id          String   @id @default(cuid())
   name        String
-  type        VendorType                        // BANK, GENERAL, or CHIT
+  type        VendorType                        // GENERAL or CHIT
   status      VendorStatus @default(ACTIVE)     // ACTIVE / INACTIVE / CLOSED
   accounts    LedgerAccount[]                   // receivable + profit
   chit        ChitFund?                          // present iff type = CHIT
@@ -509,6 +512,9 @@ model ClubConfig {
   maxLoanPaise     BigInt   // current loan limit (₹5,00,000), revisable
   loanTermMonths   Int      @default(5)
   loanCooldownMonths Int    @default(1)
+  overduePenaltyBps  Int    @default(0)  // extra monthly rate on the overdue portion (G1); CURRENT config — applies instantly to ALL loans
+  lateDepositPenaltyPaise BigInt @default(0) // per-late-deposit penalty (G7); 0 = off, only show overdue indicator
+  dividendEnabled  Boolean  @default(false) // periodic member dividend seam (G2); off for now
   timezone         String   @default("Asia/Kolkata")
   updatedAt        DateTime @updatedAt
 }
@@ -532,7 +538,7 @@ enum TxnType { PERIODIC_DEPOSIT CATCHUP ADJUSTMENT WITHDRAW REJOIN FUNDS_TRANSFE
 enum TxnSubtype { LATE_JOIN DELAYED_PAYMENT }
 enum MemberRole { ADMIN MEMBER }
 enum MemberStatus { ACTIVE INACTIVE LEFT }
-enum VendorType { BANK GENERAL CHIT }
+enum VendorType { GENERAL CHIT }
 enum VendorStatus { ACTIVE INACTIVE CLOSED }
 enum ChitStatus { RUNNING PAID_OUT COMPLETED }
 enum LoanStatus { ACTIVE CLOSED }
@@ -764,7 +770,17 @@ interestToDate(loan, asOf = now):
               total += B*rate*months + dailyRate*extraDays
           else:                                           # before dayInterestFrom: whole-month, round partial up
               total += B*rate * (months + (extraDays > 0 ? 1 : 0))
+  total += overduePenalty(loan, asOf)                     # G1; 0 when overduePenaltyBps == 0
   return roundToWholeRupee(total)
+
+# Overdue penalty — uses the CURRENT global config (applies instantly to all loans), NOT a snapshot.
+overduePenalty(loan, asOf):
+  penaltyBps = ClubConfig.overduePenaltyBps              # default 0 → returns 0
+  if penaltyBps == 0: return 0
+  termEnd = loan.startedAt + ClubConfig.loanTermMonths (IST)
+  if asOf <= termEnd: return 0
+  # accrue extra rate on the outstanding-balance timeline ONLY for the overdue window [termEnd, asOf]
+  return Σ over segments in [termEnd, asOf] of  B * (penaltyBps/10000) * (anchored months + daily extra)
 
 interestPending(loan) = interestToDate(loan) − Σ loan's LOAN_INTEREST payments
 ```
@@ -789,6 +805,17 @@ loan.interestPending    = interestToDate − interestPaid
 loan.isOverdue          = derived (§14.1)
 member.currentLoanOutstanding = LOAN_RECEIVABLE(m).balance
 expectedTotalLoanInterest     = Σ active loans interestToDate(loan)   # club-level, derive-on-read
+```
+
+### 14.5 Borrower priority (advisory, G5)
+
+The backend derives a **priority hint** for the new-loan screen; it is **advisory only** — the admin
+may follow it or not. Higher priority = members who have borrowed less.
+
+```
+borrowerPriority(m) = HIGH  if member never took a loan or has minimal borrowing history
+                    = LOW   if member borrows frequently / large
+# surfaced in the loan UI as a HIGH/LOW badge; NOT a hard block on lending.
 ```
 
 ---
@@ -859,10 +886,20 @@ fixtures during migration.
 ### 16.2 Catch-up (equalization)
 
 A new/returning member pays, beyond the prevailing deposit, a **catch-up** so they hold equal
-value:
-- **late-join** (`subtype = LATE_JOIN`): = existing members' **accumulated profit-per-member** up
-  to admission date.
-- **delayed-payment** (`subtype = DELAYED_PAYMENT`): = deposits owed for months they were behind.
+value. The system **auto-computes a guide amount and the admin can edit it** (increase/decrease) —
+same pattern as settlements (G6):
+
+```
+catchUpGuide(member, asOf = today) =
+      getMemberTotalDeposit(member, clubStart..asOf)   # all monthly deposits from club start to today (DELAYED_PAYMENT part)
+    + profitPerMember(asOf)                            # accumulated profit-per-member from start to today (LATE_JOIN part)
+# shown to admin as the guide; admin edits the final figure; the math is done by the system.
+```
+
+- **late-join** (`subtype = LATE_JOIN`): the **profit-per-member** portion — brings the joiner up to
+  existing members' accumulated profit.
+- **delayed-payment** (`subtype = DELAYED_PAYMENT`): the **deposits** portion — months they hadn't
+  contributed.
 
 Posted as `CATCHUP` (deposit-shaped: `TREASURY_CASH +A`, `MEMBER_EQUITY −A`), reported separately
 from periodic deposits. Maps from v1 `joiningOffset` → LATE_JOIN, `delayOffset` → DELAYED_PAYMENT.
@@ -878,34 +915,43 @@ flowchart LR
   PAY --> AC2["ACTIVE again, equal value"]
 ```
 
-- **Withdraw / leave:** the system **computes a comprehensive guide value** as of the date and
-  shows it; the **admin enters the actual settlement amount** (may be slightly less). The guide is
-  the member's full equal-value position — it nets in **all upcoming money and obligations**, not
-  just what's realized:
+**Withdrawal is a FULL EXIT only (G3).** There is **no** partial withdrawal, no profit-only
+withdrawal, and no withdrawal-without-leaving. A member either stays fully in or leaves and settles.
+
+- **Withdraw / leave:** the system **computes a guide value** and shows it; the **admin enters the
+  actual settlement** (may be slightly less). The guide nets the member's capital, their loan, and
+  their profit share:
 
   ```
   memberSettlementGuide(m) =
-        contributedCapital(m)            # −MEMBER_EQUITY(m).balance : deposits + catch-up − prior withdrawals
-      + profitPerMember                  # comprehensive share (§17.3): realized + pending loan interest
-                                         #   + pending vendor/chit profit − chit obligations still owed
-      − memberLoanOutstanding(m)         # they must clear any loan principal
-      − memberInterestPending(m)         # and any interest accrued but unpaid
-      − memberDepositPending(m)          # and any deposits still owed
+        contributedCapital(m)            # paid periodic + catch-up deposits (their actual capital in)
+      + memberProfitShare(m)             # see the OPEN QUESTION below
+      − memberLoanOutstanding(m)         # loan principal netted out of the settlement
+      − memberInterestPending(m)         # unpaid accrued loan interest netted out
   ```
 
-  So a leaver's number reflects pending deposit dues, accrued-but-uncollected loan interest, the
-  club's chit payout *and* the chit installments it still has to pay back — "everything in and
-  everything out" → their share of net profit. Posting: `TREASURY_CASH(t) −A`, `MEMBER_EQUITY(m)
-  +A`. If `A` exceeds contributed principal, the excess is **profit withdrawn** (rule §17). Member
-  → `INACTIVE`, frozen; **all history retained**.
+  Note **pending/unpaid deposits are NOT subtracted as a debt** — a leaver who underpaid simply
+  contributed less capital (and, per the owner's example, earns proportionally less profit). Their
+  unpaid deposits are not collected on exit. Posting: `TREASURY_CASH(t) −A`, `MEMBER_EQUITY(m) +A`;
+  member → `INACTIVE`, frozen; **all history retained**.
 
-  > `‹TBD›` cash-flow caveat: `pendingProfitIn` (uncollected interest, unrealized chit gains) is
-  > value the club hasn't actually received yet. Paying a leaver their full share of it pays out
-  > cash before it's collected. The owner has chosen to **include** upcoming money in the guide;
-  > confirm whether the *settled cash* should also include unrealized profit, or only display it.
-- **Reactivate:** admin reactivates; member repays over **one or two terms** (`REJOIN` postings) and
-  pays **catch-up** = current profit-per-member (+ any owed deposits), restoring equal value. Member
-  → `ACTIVE`.
+  > **⚠ OPEN QUESTION — `memberProfitShare(m)` (needs owner confirm; do not assume).** The owner's
+  > example (expected cumulative deposit ₹20k, member paid ₹10k, loan ₹5k → "remaining ₹5,000 given
+  > + one-member-profit ÷ 2") reads as **profit proportional to how fully the member paid**:
+  > ```
+  > memberProfitShare(m) = profitPerMember × min(1, contributedCapital(m) / expectedDeposit(m))
+  >                      # ₹10k paid / ₹20k expected = ½ → half of one member's profit
+  > ```
+  > The alternative reading is a flat **equal** share (`profitPerMember`), where "÷ 2" only meant
+  > "÷ number of members (2)". These give different numbers whenever a member is behind on deposits.
+  > **Confirm which.** (Leaning: proportional-to-contribution, per the example.)
+
+  > **⚠ Cash-flow caveat (still open):** part of `profitPerMember` is *unrealized* (uncollected loan
+  > interest). Paying a leaver that share in cash pays out money the club hasn't collected yet.
+  > Confirm whether settled **cash** includes unrealized profit or only displays it.
+- **Reactivate (rejoin):** admin reactivates; member repays over **one or two terms** (`REJOIN`
+  postings) and pays **catch-up** (§16.2 guide: profit-per-member + owed deposits), restoring equal
+  value. Member → `ACTIVE`.
 
 Pending uses **contributions, not balance** (rule §17.1), so a settled/negative equity never
 creates phantom debt.
@@ -949,7 +995,8 @@ creates phantom debt.
 | Interest paid / pending | flow / derived | `flow(LOAN_INTEREST, m)` / `interestToDate − paid` |
 | Expected deposit (to date) | expected | `getMemberTotalDeposit(m, now)` |
 | Pending contribution | derived | `expected − (periodic + delayed-catchup)` (contributions, not balance) |
-| Profit share | derived | `profitPerMember` (comprehensive, §17.3) |
+| Deposit status (G7) | derived | `OVERDUE` when pending contribution > 0 past the month due; UI shows a "pending/overdue" indicator. Late penalty = `ClubConfig.lateDepositPenaltyPaise` (default **0** → indicator only). |
+| Profit share | derived | `memberProfitShare(m)` (see §16.3 open question) |
 
 ### 17.3 Club / dashboard tiles
 
@@ -975,7 +1022,7 @@ expectedTotalLoanInterest = Σ active loans interestToDate(loan)            # de
 interestBalance         = max(0, expectedTotalLoanInterest − totalInterestCollected)
 overdueLoans            = COUNT(active loans WHERE isOverdue)
 
-# Vendors (bank + general + chit)
+# Vendors (general + chit)
 vendorHolding           = Σ VENDOR_RECEIVABLE.balance
 vendorProfit            = Σ vendor P&L (active: max(net,0); closed/completed: net)   # net = −VENDOR_PROFIT(v).balance
 chitRemainingObligation = Σ running chits' remainingObligation
@@ -1023,7 +1070,7 @@ availableProfit         = realizedProfit − profitWithdrawals                  
 | `listMembers()` | members + balances + pending + role/treasurer flags | members → accounts |
 | `listTreasurers()` | members holding cash + amounts | `TREASURY_CASH` accounts |
 | `listLoans(filter?)` | loans + outstanding + interestToDate + overdue | loans + interest engine |
-| `listVendors()` | banks + general + chits, holding + profit + obligation | vendor accounts + chit |
+| `listVendors()` | general + chits, holding + profit + obligation | vendor accounts + chit |
 | `getChit(id)` | chit schedule, paid, payout, obligation | `ChitFund` + entries |
 | `listTransactions(filter, page)` | paginated ledger | transactions + entries (indexed) |
 | `getGraphSeries(range)` | §19 series | grouped aggregates over entries |
@@ -1075,7 +1122,7 @@ One layer: Next.js cache, tag-invalidated, only after commit.
 | `member:{id}` / `members` | statement / list | member-touching mutations |
 | `treasuries` | treasurer cash | any cash movement / transfer |
 | `loans` | loan views | loan mutations |
-| `vendors` | bank + chit views | vendor/chit mutations |
+| `vendors` | general + chit views | vendor/chit mutations |
 | `transactions` | ledger | any txn create/reverse |
 | `analytics` | graphs | any financial mutation |
 | `config` | ClubConfig | config edits |
@@ -1098,12 +1145,12 @@ configTags() = ["config","dashboard","members","loans","vendors","analytics"]   
 
 **Mutations** (`actions/*` → `services/*` → `ledger`): `postTransaction`, `reverseTransaction`,
 `editTransaction`; member CRUD + `withdrawMember` / `reactivateMember`; treasurer
-designate/transfer; vendor CRUD (`BANK`/`CHIT`); chit `payInstallment` / `recordPayout`;
+designate/transfer; vendor CRUD (`GENERAL`/`CHIT`); chit `payInstallment` / `recordPayout`;
 loan `openLoan` / `addTranche` / `repayLoan` / `payInterest` / `closeLoan`; `updateClubConfig`
 (incl. `appendRateChange`, `setLoanLimit`, `editStages`); `lockPeriod`.
 
 **Intent helpers** that build §8 lines: `depositForMember`, `catchUpForMember`, `transferCash`,
-`giveLoanTranche`, `repayLoan`, `payLoanInterest`, `bankInvest`, `bankReturn`, `chitPayment`,
+`giveLoanTranche`, `repayLoan`, `payLoanInterest`, `vendorInvest`, `vendorReturn`, `chitPayment`,
 `chitPayout`, `settleMember`, `rejoinMember`.
 
 **Queries:** as §18. All inputs/outputs Zod-validated; money fields = string paise.
@@ -1204,8 +1251,9 @@ v1 fixtures are the source of truth for "correct."
 - [ ] `seed.ts` (ClubConfig with stages/rateSchedule/limit; INTEREST_INCOME account).
 
 ### P1 — Core data + entry
-- [ ] ClubConfig settings (stages, rate-change append, loan limit).
-- [ ] Member CRUD (role, treasurer flag); Vendor CRUD (BANK/GENERAL/CHIT + ChitFund).
+- [ ] ClubConfig settings (stages, rate-change append, loan limit, overdue penalty, late-deposit
+      penalty, dividend toggle).
+- [ ] Member CRUD (role, treasurer flag); Vendor CRUD (GENERAL/CHIT + ChitFund).
 - [ ] Loan open/tranche/repay/interest/close; chit payment/payout.
 - [ ] Withdraw/settle + reactivate + catch-up flows.
 - [ ] Intent helpers + entry drawer (treasury-aware, optimistic UI); transactions view.
@@ -1246,39 +1294,37 @@ rate changes apply to **new loans only** (each loan keeps its opening rate); chi
 **v1's recorded treasurer per transaction**; pending **interest is profit**, pending **deposits are
 not** (capital owed).
 
+**Resolved (Rev 4 — owner answers to G1–G7):**
+- **G1 Overdue penalty:** configurable `overduePenaltyBps`, **default 0**; when set it applies
+  **instantly to all current + future loans** (current config, not a per-loan snapshot). Functionality
+  implemented (§14.3 `overduePenalty`), no penalty by default.
+- **G2 Dividend:** **no** periodic member dividend; profit accumulates to the club until a member
+  leaves. `dividendEnabled` seam kept **off**.
+- **G3 Withdrawal = full exit only:** no partial withdrawal, no profit-only withdrawal, no
+  withdrawal without leaving (§16.3). *(Profit-share formula at exit is the one open item below.)*
+- **G4 Vendor types:** **dropped `BANK`** — types are now **`GENERAL`** + `CHIT`; bank deposits/
+  interest are a GENERAL vendor (realized on receipt).
+- **G5 Borrower priority:** derived HIGH/LOW hint shown in the loan UI, **advisory**, admin's choice
+  (§14.5).
+- **G6 Catch-up:** auto-computed guide = cumulative expected deposit (start→today) + profit-per-
+  member; **admin-editable** (§16.2).
+- **G7 Late deposit:** `lateDepositPenaltyPaise` config, **default 0** (indicator only); UI shows a
+  pending/overdue badge (§17.2).
+
 Still open, non-blocking for P0 unless noted:
 
-1. **Pre-`dayInterestFrom` rounding** — partial month rounds up to a full month? (assumed; lock to
+1. **★ Profit share at exit (`memberProfitShare`)** — equal flat `profitPerMember`, or **proportional
+   to how fully the member paid** (`profitPerMember × paid/expected`)? The G3 example implies
+   proportional; **needs explicit confirm** (§16.3). This is the one open item that changes a core
+   number.
+2. **Settlement cash vs paper value** — pay a leaver their share of *unrealized* loan interest in
+   cash, or display-only with cash settled from realized funds? (§16.3; affects cash sufficiency).
+3. **Pre-`dayInterestFrom` rounding** — partial month rounds up to a full month? (assumed; lock to
    v1 fixtures).
-2. **`getMemberTotalDeposit` month semantics** — join-month inclusive? first-month proration?
-   (lock to v1 fixtures).
-3. **Chit early-payout profit timing** — realize profit at payout while carrying remaining
-   obligation as a liability (recommended) — confirm.
-4. **Settlement cash vs paper value** — should a leaver be paid their share of *unrealized* pending
-   interest in cash, or is it display-only while cash settlement uses realized funds? (§16.3
-   caveat; affects whether a settlement can leave the club short on cash).
-5. **`REVERSAL.occurredAt`** — date reversals to the target's date (recommended) vs now.
-6. **`SUPER_ADMIN` tier** — needed or not.
-7. **v1 access** — repo/export + fixtures required for P4 reconciliation (currently no access).
-
-### Functionality gaps I want your call on (found while revisiting the plan)
-
-G1. **Overdue consequences.** Policy says "further terms apply for repayment failures (TBD)."
-   Past 5 months a loan is overdue but still active — is there a **penalty / higher interest**
-   after that, or purely a flag/reminder? (Affects the interest engine.)
-G2. **Profit distribution cadence.** Today profit is realized to a member only when they
-   **leave/withdraw**. Is there ever a **periodic payout / dividend** (e.g. yearly) to active
-   members, or does profit just accumulate as each member's growing share until they exit?
-G3. **Active-member profit withdrawal.** Can an **active** member withdraw *only profit* without
-   leaving (the profit-split rule supports it), or is any withdrawal strictly a leave event?
-G4. **Bank/general interest visibility.** Bank interest is recognized when **received**
-   (`VENDOR_RETURN`). Do you want an **expected/accrued** bank-interest figure shown before
-   receipt (would need a rate per bank vendor), or is realized-on-receipt enough? (Currently
-   realized-only; only loans accrue.)
-G5. **Loan eligibility UX.** "Priority for first-time borrowers" — surface each member's
-   borrowing history/flag in the loan screen as **advisory** (not a hard block), correct?
-G6. **Catch-up amount source.** Is the late-join/delayed catch-up amount **auto-computed**
-   (= current profit-per-member × applicable months) and shown as a guide, with the **admin
-   entering the final** (like settlements)? Assuming yes.
-G7. **Member equal-value drift.** Between catch-ups, members who pay late are temporarily
-   "behind." Reporting shows pending; confirm no auto-penalty for late monthly deposits.
+4. **`getMemberTotalDeposit` month semantics** — join-month inclusive? first-month proration? (lock
+   to v1 fixtures).
+5. **Chit early-payout profit timing** — realize profit at payout while carrying remaining obligation
+   as a liability (recommended) — confirm.
+6. **`REVERSAL.occurredAt`** — date reversals to the target's date (recommended) vs now.
+7. **`SUPER_ADMIN` tier** — needed or not.
+8. **v1 access** — repo/export + fixtures required for P4 reconciliation (currently no access).
