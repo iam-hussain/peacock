@@ -10,6 +10,8 @@ The product is **Peacock Investment Club** — slogan **"Many feathers, one fort
 |----------|-----------|----------|-----------|
 | **`docs/ABOUT.md`** | **Non-technical guide** — plain-English, layman-friendly explanation of what the club is and each feature. No jargon, no spec detail. | Anyone (members, newcomers, general readers). | Friendly explainer; must agree with `PRODUCT.md`. |
 | **`docs/PRODUCT.md`** | **Product source of truth** — how every flow behaves, precisely (plain language + diagrams, no code). | Designers, stakeholders, the build team. | **Authoritative for product behavior.** If anything disagrees about *how the product should behave*, this wins. |
+| **`docs/FORMS_AND_FIELDS.md`** | **Field/spec reference** — exact inputs collected for members, vendors, chits, every transaction; admin settings & capabilities. | Designers, builders. | Must agree with `PRODUCT.md`. |
+| **`docs/SCREENS.md`** | **Screen-by-screen minimum expectations** — what each screen must show and do (functional, not visual). | Designers, builders. | Must agree with `PRODUCT.md`. |
 | **`docs/IMPLEMENTATION_PLAN.md`** | **Technical companion** — architecture, schema, calculations, ledger/interest engines, migration, build phases. | Engineers. | Authoritative for *how it's built*. Must stay consistent with `PRODUCT.md`. |
 
 ## Rules for the product docs (`PRODUCT.md` + `ABOUT.md`)
@@ -29,10 +31,10 @@ The product is **Peacock Investment Club** — slogan **"Many feathers, one fort
    Only proceed after an explicit "yes." (Pure typo/format fixes that don't change meaning don't need
    confirmation, but mention them.)
 
-4. **Keep all three docs in sync.** A confirmed product change updates `PRODUCT.md`, the matching
-   plain-language wording in `ABOUT.md`, and the technical detail in `IMPLEMENTATION_PLAN.md`. If a
-   technical constraint forces a product behavior change, surface it and ask before changing the
-   product docs.
+4. **Keep all docs in sync.** A confirmed product change updates `PRODUCT.md`, the plain-language
+   wording in `ABOUT.md`, the field/spec detail in `FORMS_AND_FIELDS.md`, the screen expectations in
+   `SCREENS.md`, and the technical detail in `IMPLEMENTATION_PLAN.md`. If a technical constraint
+   forces a product behavior change, surface it and ask before changing the product docs.
 
 5. **Keep the audiences clean.** `ABOUT.md` = no jargon, no spec/numbers-heavy detail beyond what a
    layman needs. `PRODUCT.md` = precise behavior, plain language + diagrams, **no code/schema**.

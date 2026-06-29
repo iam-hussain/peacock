@@ -88,6 +88,26 @@ flowchart TD
   P --> R3["can borrow, deposit,<br/>leave & rejoin"]
 ```
 
+### Logging in (no sign-up)
+
+There is **no public registration** — the club's members already exist. To get in, you **pick your
+name from a list** of members and **enter your password**.
+
+- The **default password is your phone number** (set when you're added); you can change it after.
+- **Forgot your password?** Request a reset — an **admin resets it** for you (back to your phone
+  number by default). There's no email-link reset.
+- Admins can always log in; members optionally (to view). Vendors never log in.
+
+```mermaid
+flowchart LR
+  L["Login screen: list of members"] --> PICK["Pick your name"]
+  PICK --> PW["Enter password (default = phone number)"]
+  PW -->|forgot?| REQ["Request reset → admin resets it"]
+  PW --> IN["You're in (admin can edit · member views)"]
+```
+
+(The exact fields stored per member are in `FORMS_AND_FIELDS.md`.)
+
 ---
 
 ## 3. Core concepts (glossary)
@@ -234,6 +254,9 @@ The club lends its pooled cash to members. Loans are a core source of the club's
 - **Borrower priority (a hint).** Peacock shows whether a member is **high priority** (hasn't
   borrowed before / borrows little) or **low priority** (borrows often). This is **advice only** —
   the admin decides who actually gets the loan.
+- **No separate "create loan" step.** The admin just records **"Give a loan"** for a member, and the
+  loan is **created automatically in the background**. Later hand-outs to the same member (before
+  that loan closes) attach as **further tranches** of the same loan.
 
 ### How a loan moves through its life
 
