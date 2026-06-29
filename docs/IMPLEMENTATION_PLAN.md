@@ -145,6 +145,36 @@ writes, derive time-based values on read, one cache layer, server actions instea
 | Hosting | **Vercel** + **Neon** | Serverless-friendly; no required background workers. |
 | Timezone | **Asia/Kolkata (IST)** | All month boundaries. |
 
+### 3.1 Database choice & portability (PostgreSQL now, MongoDB later?)
+
+**Decision for now: PostgreSQL + Prisma.** The owner may revisit MongoDB later; the plan keeps the
+door open with a clean seam, but is honest about the trade-offs.
+
+**Why PG is the better fit for *this* app:** a ledger lives or dies on **atomic multi-row writes**
+(`postTransaction` updates several account balances + entries + loan/chit rows in one transaction).
+PG gives that natively. The analytics are **grouped aggregates** (`GROUP BY month`, running
+`SUM`) — SQL's home turf.
+
+**Keeping it swappable (so a later move isn't a rewrite):**
+- **Prisma is the single data layer** and supports **both** PostgreSQL and MongoDB, so the schema
+  and most queries port with modest changes.
+- All DB access goes through **`server/queries/*` and the `ledger` engine** — no Prisma calls
+  scattered in components. Swapping the datasource touches a contained layer.
+- Avoid PG-only escapes in app logic: prefer Prisma's `groupBy`/aggregations over raw SQL so the
+  analytics layer has a portable path (a raw-SQL fast path can be added later for PG only).
+
+**Caveats to accept if Mongo is chosen later (flagged, not blocking):**
+- **Transactions need a replica set** in Mongo (Atlas provides this); single-node dev Mongo can't
+  do the multi-document `$transaction` the ledger relies on.
+- **`BigInt` mapping differs** — PG stores it natively; Mongo uses `Long`/`Decimal128`. The
+  `lib/money` boundary localizes this, but the Prisma field type changes.
+- **Referential integrity / unique compound constraints** (`@@unique([memberId, kind])`,
+  `onDelete: Restrict`) are weaker/different in Mongo and would shift enforcement into the service
+  layer.
+- Net: **migrating is "not a big deal" for the *schema*, but the *transaction guarantees* are the
+  thing to validate** on Mongo. Recommendation: build on PG; only move if there's a strong external
+  reason, and keep the ledger engine the single place that assumes ACID.
+
 ---
 
 ## 4. Locked decisions & defaults
@@ -630,6 +660,27 @@ sequenceDiagram
   ACT-->>UI: success (optimistic confirmed)
 ```
 
+### 12.1 Validations & invariants (no-drawbacks guardrails)
+
+Beyond `Σ lines == 0`, the engine + services enforce (each unit-tested):
+
+| Guard | Rule |
+|-------|------|
+| **Non-negative treasury** | A cash-out leg (`WITHDRAW`, `LOAN_TAKEN`, `VENDOR_INVEST`, `CHIT_PAYMENT`, `FUNDS_TRANSFER` source) must not drive `TREASURY_CASH(t).balance` below 0 — a treasurer can't pay out cash they don't hold. |
+| **Account-kind correctness** | Each `TxnType` may only touch the kinds in its §8 row (e.g. `LOAN_INTEREST` hits `TREASURY_CASH` + `INTEREST_INCOME` only). |
+| **Loan funding cap** | Σ disbursed tranches ≤ `loan.requestedAmount`; `requestedAmount ≤ ClubConfig.maxLoanPaise`. |
+| **No top-up** | No `LOAN_TAKEN` once the loan is fully funded (Σ tranches == requestedAmount) or in repayment. |
+| **One active loan / cooldown** | Opening a loan requires the member has **no** ACTIVE loan, no outstanding loan balance, and ≥ `loanCooldownMonths` since the last loan's `closedAt`. |
+| **Repay ≤ outstanding** | `LOAN_REPAY` principal leg ≤ `principalOutstanding`; closes the loan exactly at 0. |
+| **Vendor return split** | `P ≤ A` on `VENDOR_RETURN` / `CHIT_PAYOUT`; residual cleared via `VENDOR_WRITEOFF` on close. |
+| **Frozen member** | No new financial postings (except reactivation) against an `INACTIVE`/`LEFT` member. |
+| **Period lock** | If the target month is locked, refuse create/edit/reverse (seam off by default). |
+| **Positive amounts** | Every line `amount != 0`; intent amounts `> 0`; rounding only via `lib/money`. |
+
+These run in the **pure pre-validate** step (§12) where possible, and inside the `$transaction`
+(with `FOR UPDATE` locks) for balance-dependent checks (non-negative treasury, repay ≤ outstanding)
+so they're race-safe.
+
 ---
 
 ## 13. Reverse & edit
@@ -940,17 +991,23 @@ pendingAmounts          = totalMemberPending + interestBalance
 # KEY RULE (owner): pending INTEREST is profit; pending DEPOSITS are NOT profit (they are capital owed).
 realizedProfit          = totalInterestCollected + vendorProfit                      # already in the books
 pendingInterestProfit   = interestBalance                                            # loan interest accrued up to TODAY, not yet collected → PROFIT
-                          + Σ_active vendor pending P&L                              # bank/general accrued + chit netProfit-to-date → PROFIT
+                                                                                     # (loan interest is the only thing that ACCRUES continuously)
 obligationsOut          = chitRemainingObligation                                    # future chit installments still owed → reduces profit
 netDistributableProfit  = realizedProfit + pendingInterestProfit − obligationsOut − profitWithdrawals
 profitPerMember         = netDistributableProfit / activeMembers                     # ← DASHBOARD TILE
 returnPerMember         = profitPerMember                                            # alias (kept for parity)
 availableProfit         = realizedProfit − profitWithdrawals                         # cash-realizable subset
 
-# NOTE: totalMemberPending (unpaid deposits) is CAPITAL owed, NOT profit. It sits in
-# totalPortfolioValue / pendingAmounts but is deliberately EXCLUDED from netDistributableProfit.
-# In the withdraw guide (§16.3) a member's own pending deposits REDUCE their settlement (capital they
-# still owe), while their share of pendingInterestProfit INCREASES it.
+# NOTES:
+# - totalMemberPending (unpaid deposits) is CAPITAL owed, NOT profit. It sits in
+#   totalPortfolioValue / pendingAmounts but is deliberately EXCLUDED from netDistributableProfit.
+# - Bank/general/chit profit is recognized only when REALIZED (on VENDOR_RETURN / CHIT_PAYOUT),
+#   so it lands in realizedProfit. Only LOAN INTEREST accrues continuously, so it is the only
+#   "pending" item counted as profit. (A running chit before payout shows obligationsOut, not gain.)
+# - In the withdraw guide (§16.3) a member's own pending deposits REDUCE their settlement (capital
+#   still owed), while their share of pendingInterestProfit INCREASES it.
+# - Division remainder: profitPerMember floors to whole paise; the residual stays in the club pot
+#   (never silently dropped). Settlement uses the per-member share as a guide; admin enters the final.
 ```
 
 ---
@@ -1203,3 +1260,25 @@ Still open, non-blocking for P0 unless noted:
 5. **`REVERSAL.occurredAt`** — date reversals to the target's date (recommended) vs now.
 6. **`SUPER_ADMIN` tier** — needed or not.
 7. **v1 access** — repo/export + fixtures required for P4 reconciliation (currently no access).
+
+### Functionality gaps I want your call on (found while revisiting the plan)
+
+G1. **Overdue consequences.** Policy says "further terms apply for repayment failures (TBD)."
+   Past 5 months a loan is overdue but still active — is there a **penalty / higher interest**
+   after that, or purely a flag/reminder? (Affects the interest engine.)
+G2. **Profit distribution cadence.** Today profit is realized to a member only when they
+   **leave/withdraw**. Is there ever a **periodic payout / dividend** (e.g. yearly) to active
+   members, or does profit just accumulate as each member's growing share until they exit?
+G3. **Active-member profit withdrawal.** Can an **active** member withdraw *only profit* without
+   leaving (the profit-split rule supports it), or is any withdrawal strictly a leave event?
+G4. **Bank/general interest visibility.** Bank interest is recognized when **received**
+   (`VENDOR_RETURN`). Do you want an **expected/accrued** bank-interest figure shown before
+   receipt (would need a rate per bank vendor), or is realized-on-receipt enough? (Currently
+   realized-only; only loans accrue.)
+G5. **Loan eligibility UX.** "Priority for first-time borrowers" — surface each member's
+   borrowing history/flag in the loan screen as **advisory** (not a hard block), correct?
+G6. **Catch-up amount source.** Is the late-join/delayed catch-up amount **auto-computed**
+   (= current profit-per-member × applicable months) and shown as a guide, with the **admin
+   entering the final** (like settlements)? Assuming yes.
+G7. **Member equal-value drift.** Between catch-ups, members who pay late are temporarily
+   "behind." Reporting shows pending; confirm no auto-penalty for late monthly deposits.
