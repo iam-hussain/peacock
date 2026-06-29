@@ -61,7 +61,7 @@ vendors.
 | **Member** | A person in the club. Pays a recurring **monthly deposit**, can **borrow** (loans with daily interest), can **withdraw / leave** and later **rejoin**. All members hold **equal status and value**. |
 | **Treasurer** | A **member who currently physically holds club cash**. The club itself is not a physical entity and **holds no money** — cash always sits with one or more member-treasurers. Anyone can be a treasurer (admin or plain member; long- or short-term). |
 | **Admin** | A member with **write access** (daily data entry, managing members/vendors/loans/config). Admin is just a member with a role flag. |
-| **Vendor** | An external place the club puts money: a **`BANK`** (lump deposit, earns interest) or a **`CHIT`** fund (monthly installments toward a chit, payout later). |
+| **Vendor** | An external place the club puts money. Three types: **`BANK`** (lump deposit, earns interest), **`CHIT`** fund (monthly installments toward a chit, payout later, with an obligation to keep paying), and **`GENERAL`** (any other placement — invest, get returns, profit = returns − invested). |
 
 So there are really only two kinds of people — **members**, some of whom are **admins** — plus the
 **treasurer** capability (holding cash) which any member can have.
@@ -174,8 +174,10 @@ writes, derive time-based values on read, one cache layer, server actions instea
    days at a daily rate; before that date, whole-month only.
 8. **No repayment-amount validation** (no enforced minimum; round figures are advisory).
 9. **Loan limit = ₹5,00,000**, configurable in admin settings (revisable).
-10. **Vendors are typed:** `BANK` (lump, earns interest) and `CHIT` (monthly installments +
-    payout, with a remaining-obligation if payout taken early).
+10. **Vendors are typed:** `BANK` (lump, earns interest), `CHIT` (monthly installments + payout,
+    with a remaining-obligation if payout taken early), and `GENERAL` (generic placement:
+    invest → return, profit = returns − invested). `BANK` and `GENERAL` share the
+    invest/return postings; `CHIT` has its own schedule (§15).
 11. **Catch-up** replaces "offset": late-join + delayed-payment subtypes; equalizes member value.
 12. **Withdraw = settle (admin-entered amount) → freeze → INACTIVE**, keep history. **Reactivate**
     = repay (1–2 terms) + catch-up (profit-per-member + owed deposits).
@@ -276,7 +278,7 @@ No passbook. Nothing that can drift.
 | `TREASURY_CASH` | 1 per treasurer-member (on demand) | + | Club cash physically held by that member |
 | `MEMBER_EQUITY` | 1 per member | − | The member's stake/contributions |
 | `LOAN_RECEIVABLE` | 1 per member | + | Principal the member currently owes |
-| `VENDOR_RECEIVABLE` | 1 per vendor (bank or chit) | + | Principal/installments currently placed with the vendor |
+| `VENDOR_RECEIVABLE` | 1 per vendor (bank / general / chit) | + | Principal/installments currently placed with the vendor |
 | `INTEREST_INCOME` | exactly 1 | − | Club income from loan interest |
 | `VENDOR_PROFIT` | 1 per vendor | − | Realized profit (or loss) from that vendor |
 
@@ -376,7 +378,7 @@ model Member {
 model Vendor {
   id          String   @id @default(cuid())
   name        String
-  type        VendorType                        // BANK or CHIT
+  type        VendorType                        // BANK, GENERAL, or CHIT
   status      VendorStatus @default(ACTIVE)     // ACTIVE / INACTIVE / CLOSED
   accounts    LedgerAccount[]                   // receivable + profit
   chit        ChitFund?                          // present iff type = CHIT
@@ -498,7 +500,7 @@ enum TxnType { PERIODIC_DEPOSIT CATCHUP ADJUSTMENT WITHDRAW REJOIN FUNDS_TRANSFE
 enum TxnSubtype { LATE_JOIN DELAYED_PAYMENT }
 enum MemberRole { ADMIN MEMBER }
 enum MemberStatus { ACTIVE INACTIVE LEFT }
-enum VendorType { BANK CHIT }
+enum VendorType { BANK GENERAL CHIT }
 enum VendorStatus { ACTIVE INACTIVE CLOSED }
 enum ChitStatus { RUNNING PAID_OUT COMPLETED }
 enum LoanStatus { ACTIVE CLOSED }
@@ -811,11 +813,31 @@ flowchart LR
   PAY --> AC2["ACTIVE again, equal value"]
 ```
 
-- **Withdraw / leave:** the system **computes** the member's current value as of the date (equity
-  balance + their share of all accrued items incl. live loan interest) and **shows it as a
-  guide**. The **admin enters the actual settlement amount** (may be slightly less). Posting:
-  `TREASURY_CASH(t) −A`, `MEMBER_EQUITY(m) +A`. If `A` exceeds contributed principal, the excess is
-  **profit withdrawn** (rule §17). Member → `INACTIVE`, frozen; **all history retained**.
+- **Withdraw / leave:** the system **computes a comprehensive guide value** as of the date and
+  shows it; the **admin enters the actual settlement amount** (may be slightly less). The guide is
+  the member's full equal-value position — it nets in **all upcoming money and obligations**, not
+  just what's realized:
+
+  ```
+  memberSettlementGuide(m) =
+        contributedCapital(m)            # −MEMBER_EQUITY(m).balance : deposits + catch-up − prior withdrawals
+      + profitPerMember                  # comprehensive share (§17.3): realized + pending loan interest
+                                         #   + pending vendor/chit profit − chit obligations still owed
+      − memberLoanOutstanding(m)         # they must clear any loan principal
+      − memberInterestPending(m)         # and any interest accrued but unpaid
+      − memberDepositPending(m)          # and any deposits still owed
+  ```
+
+  So a leaver's number reflects pending deposit dues, accrued-but-uncollected loan interest, the
+  club's chit payout *and* the chit installments it still has to pay back — "everything in and
+  everything out" → their share of net profit. Posting: `TREASURY_CASH(t) −A`, `MEMBER_EQUITY(m)
+  +A`. If `A` exceeds contributed principal, the excess is **profit withdrawn** (rule §17). Member
+  → `INACTIVE`, frozen; **all history retained**.
+
+  > `‹TBD›` cash-flow caveat: `pendingProfitIn` (uncollected interest, unrealized chit gains) is
+  > value the club hasn't actually received yet. Paying a leaver their full share of it pays out
+  > cash before it's collected. The owner has chosen to **include** upcoming money in the guide;
+  > confirm whether the *settled cash* should also include unrealized profit, or only display it.
 - **Reactivate:** admin reactivates; member repays over **one or two terms** (`REJOIN` postings) and
   pays **catch-up** = current profit-per-member (+ any owed deposits), restoring equal value. Member
   → `ACTIVE`.
@@ -862,7 +884,7 @@ creates phantom debt.
 | Interest paid / pending | flow / derived | `flow(LOAN_INTEREST, m)` / `interestToDate − paid` |
 | Expected deposit (to date) | expected | `getMemberTotalDeposit(m, now)` |
 | Pending contribution | derived | `expected − (periodic + delayed-catchup)` (contributions, not balance) |
-| Profit share | derived | `availableProfit / activeMembers` |
+| Profit share | derived | `profitPerMember` (comprehensive, §17.3) |
 
 ### 17.3 Club / dashboard tiles
 
@@ -888,7 +910,7 @@ expectedTotalLoanInterest = Σ active loans interestToDate(loan)            # de
 interestBalance         = max(0, expectedTotalLoanInterest − totalInterestCollected)
 overdueLoans            = COUNT(active loans WHERE isOverdue)
 
-# Vendors (bank + chit)
+# Vendors (bank + general + chit)
 vendorHolding           = Σ VENDOR_RECEIVABLE.balance
 vendorProfit            = Σ vendor P&L (active: max(net,0); closed/completed: net)   # net = −VENDOR_PROFIT(v).balance
 chitRemainingObligation = Σ running chits' remainingObligation
@@ -896,11 +918,20 @@ chitRemainingObligation = Σ running chits' remainingObligation
 # Valuation
 totalProfit             = vendorProfit + totalInterestCollected
 totalInvested           = currentLoanOutstanding + vendorHolding
-currentValue            = availableCash + currentLoanOutstanding + vendorHolding     # asset-side identity
+currentValue            = availableCash + currentLoanOutstanding + vendorHolding     # asset-side identity (realized)
 totalPortfolioValue     = currentValue + interestBalance + totalMemberPending
 pendingAmounts          = totalMemberPending + interestBalance
-availableProfit         = totalProfit − profitWithdrawals
-returnPerMember         = availableProfit / activeMembers
+
+# Comprehensive profit-per-member (shown on dashboard; also the withdraw/rejoin guide, §16.3)
+# Includes ALL upcoming money in + obligations out, not just realized profit.
+realizedProfit          = totalInterestCollected + vendorProfit                      # already in the books
+pendingProfitIn         = interestBalance                                            # loan interest accrued, not yet collected
+                          + Σ_active vendor pending P&L                              # bank/general accrued, chit netProfit-to-date
+obligationsOut          = chitRemainingObligation                                    # future chit installments the club still owes
+netDistributableProfit  = realizedProfit + pendingProfitIn − obligationsOut − profitWithdrawals
+profitPerMember         = netDistributableProfit / activeMembers                     # ← DASHBOARD TILE
+returnPerMember         = profitPerMember                                            # alias (kept for parity)
+availableProfit         = realizedProfit − profitWithdrawals                         # cash-realizable subset
 ```
 
 ---
@@ -916,7 +947,7 @@ returnPerMember         = availableProfit / activeMembers
 | `listMembers()` | members + balances + pending + role/treasurer flags | members → accounts |
 | `listTreasurers()` | members holding cash + amounts | `TREASURY_CASH` accounts |
 | `listLoans(filter?)` | loans + outstanding + interestToDate + overdue | loans + interest engine |
-| `listVendors()` | banks + chits, holding + profit + obligation | vendor accounts + chit |
+| `listVendors()` | banks + general + chits, holding + profit + obligation | vendor accounts + chit |
 | `getChit(id)` | chit schedule, paid, payout, obligation | `ChitFund` + entries |
 | `listTransactions(filter, page)` | paginated ledger | transactions + entries (indexed) |
 | `getGraphSeries(range)` | §19 series | grouped aggregates over entries |
