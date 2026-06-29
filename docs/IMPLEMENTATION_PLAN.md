@@ -307,7 +307,20 @@ Every row **sums to zero**. `(m)` = the member's account; `(v)` = the vendor's a
 | `LOAN_INTEREST` | `CLUB_CASH +A`, `INTEREST_INCOME −A` | — |
 | `VENDOR_INVEST` | `CLUB_CASH −A`, `VENDOR_RECEIVABLE(v) +A` | — |
 | `VENDOR_RETURN` | `CLUB_CASH +A`, `VENDOR_RECEIVABLE(v) −P`, `VENDOR_PROFIT(v) −(A−P)` | — |
+| `VENDOR_WRITEOFF` | on close with a shortfall: `VENDOR_RECEIVABLE(v) −R`, `VENDOR_PROFIT(v) +R` (R = residual receivable) | — |
 | `REVERSAL` | negated copy of the target transaction's lines | undo the target's loan side-effect |
+
+> **Vendor return vs. shortfall (why `VENDOR_WRITEOFF` exists).** A single `VENDOR_RETURN`
+> carries `P ≤ A`, so it can only clear receivable up to the cash actually received — it can
+> never recognize a *loss*. If a vendor **closes having returned less than invested** (e.g.
+> invest ₹20k, total returns ₹18k), ₹2k of `VENDOR_RECEIVABLE` would otherwise linger as a live
+> asset, overstating `vendorInvestment` / `currentValue`. The **close** step posts a
+> `VENDOR_WRITEOFF` that clears the residual `R = VENDOR_RECEIVABLE(v).balance` into
+> `VENDOR_PROFIT(v)` as a loss (`VENDOR_PROFIT` is normally negative; `+R` moves it toward/past
+> zero, i.e. a loss). This makes the ledger agree with business rule §7.3 (*closed vendor profit =
+> `returns − invested`, which may be negative*). Conversely, if a closing vendor has *excess*
+> cash beyond receivable, that excess is already booked as `VENDOR_PROFIT` by the final
+> `VENDOR_RETURN`, so no write-off is needed.
 
 ### Worked examples
 
@@ -331,6 +344,14 @@ Transaction(type=PERIODIC_DEPOSIT, amount basis=500000)
   Entry  CLUB_CASH           +2200000
   Entry  VENDOR_RECEIVABLE(v) -2000000
   Entry  VENDOR_PROFIT(v)      -200000   // sum = 0 ✓
+```
+
+**Vendor closes after returning only ₹18,000 of a ₹20,000 investment** — write off the ₹2,000
+shortfall (R = 200000):
+```
+  Entry  VENDOR_RECEIVABLE(v) -200000   // clears residual asset to 0
+  Entry  VENDOR_PROFIT(v)     +200000   // recognizes a ₹2,000 loss ; sum = 0 ✓
+→ VENDOR_PROFIT(v).balance moves toward/past zero → net P&L = returns − invested = −₹2,000
 ```
 
 > **`FUNDS_TRANSFER` note:** This is a placeholder for a cash sub-bucket move (e.g. "cash on
@@ -461,7 +482,7 @@ model AuditLog {
 // model MonthlyRollup { month DateTime @id; data Json; builtAt DateTime }
 
 enum LedgerAccountKind { CLUB_CASH MEMBER_EQUITY LOAN_RECEIVABLE VENDOR_RECEIVABLE INTEREST_INCOME VENDOR_PROFIT }
-enum TxnType { PERIODIC_DEPOSIT OFFSET_DEPOSIT ADJUSTMENT WITHDRAW REJOIN FUNDS_TRANSFER LOAN_TAKEN LOAN_REPAY LOAN_INTEREST VENDOR_INVEST VENDOR_RETURN REVERSAL }
+enum TxnType { PERIODIC_DEPOSIT OFFSET_DEPOSIT ADJUSTMENT WITHDRAW REJOIN FUNDS_TRANSFER LOAN_TAKEN LOAN_REPAY LOAN_INTEREST VENDOR_INVEST VENDOR_RETURN VENDOR_WRITEOFF REVERSAL }
 enum MemberStatus { ACTIVE INACTIVE LEFT }
 enum VendorStatus { ACTIVE INACTIVE CLOSED }
 enum LoanStatus { ACTIVE CLOSED }
@@ -703,13 +724,30 @@ editTransaction(targetId, correctedInput, actorId):
 Every figure below is a **stock** (balance read), **flow** (`SUM`), **expected** (config
 function), or **derived-on-read**. All formulas match v1 exactly; only the inputs change.
 
+> **⚠ Sign normalization (read this before every formula below).** Because of the sign
+> convention (§6), entries posted to **equity/income** accounts (`MEMBER_EQUITY`,
+> `INTEREST_INCOME`, `VENDOR_PROFIT`) are **negative** for the "normal" direction (a deposit
+> posts `MEMBER_EQUITY −A`; interest posts `INTEREST_INCOME −A`). So a raw `SUM(entry.amount)`
+> over those legs is **negative** and must **not** be used directly in display/pending math.
+> Define a single helper that always returns a **positive magnitude**:
+>
+> ```
+> flow(type, m?) = | Σ entry.amount WHERE txn.type=type [AND account belongs to m] |
+> ```
+>
+> Concretely: sum the **cash leg** (which is positive for inflows), or **negate** the
+> equity/income leg. Equivalently, a "balance read" of an income/equity account is reported as
+> `−account.balance`. **Throughout §14, every `SUM(...)`/`flow(...)`/income-balance below is the
+> normalized positive value** unless a `±` sign is explicitly shown. This is unit-tested (a
+> member who has paid deposits must show *positive* deposits and *reduced* pending).
+
 ### 14.1 Member figures (member `m`)
 
 | Figure | Kind | Derivation |
 |--------|------|-----------|
-| Periodic deposits | flow | `SUM(entry.amount)` over `m`'s `PERIODIC_DEPOSIT` entries to `MEMBER_EQUITY(m)` |
-| Adjustments / offset | flow | `SUM` over `m`'s `OFFSET_DEPOSIT` + `ADJUSTMENT` entries |
-| Total deposits / balance | stock | `MEMBER_EQUITY(m).balance` (= deposits + adjustments − withdrawals) |
+| Periodic deposits | flow | `flow(PERIODIC_DEPOSIT, m)` — positive magnitude (cash leg, or negated `MEMBER_EQUITY(m)` leg) |
+| Adjustments / offset | flow | `flow(OFFSET_DEPOSIT, m) + flow(ADJUSTMENT, m)` (positive) |
+| Total deposits / balance | stock | `−MEMBER_EQUITY(m).balance` (equity is stored negative; negate to display deposits + adjustments − withdrawals as positive) |
 | Withdrawals | flow | `SUM` over `m`'s `WITHDRAW` entries |
 | Profit withdrawn | flow | `SUM` of the portion of each `WITHDRAW` beyond principal (rule §7.2) |
 | Loan outstanding | stock | `LOAN_RECEIVABLE(m).balance` |
@@ -727,9 +765,9 @@ function), or **derived-on-read**. All formulas match v1 exactly; only the input
 activeMembers           = COUNT(members WHERE status = ACTIVE)
 clubAgeMonths           = monthsSince(ClubConfig.startedAt, now)             # IST
 
-totalAdjustments        = SUM(all ADJUSTMENT entries)
-totalInterestCollected  = INTEREST_INCOME.balance            (= Σ LOAN_INTEREST)
-totalVendorProfit       = Σ vendor P&L  (active: max(net,0); closed: net)   # rule §7.3
+totalAdjustments        = flow(ADJUSTMENT)                   # positive magnitude
+totalInterestCollected  = −INTEREST_INCOME.balance           # income stored negative → negate (= Σ LOAN_INTEREST, positive)
+totalVendorProfit       = Σ vendor P&L  (active: max(net,0); closed: net)   # rule §7.3 ; net = −VENDOR_PROFIT(v).balance
 totalProfitCollected    = totalAdjustments? + totalInterestCollected + totalVendorProfit
 availableProfit         = totalProfitCollected − profitWithdrawals
 returnPerMember         = availableProfit / activeMembers
@@ -743,23 +781,23 @@ expectedLoanProfitPerMember = interestBalance / activeMembers
 ```
 # Member funds
 totalDeposits (expected)   = getMemberTotalDeposit(now) * activeMembers      # config × count
-memberDepositsPaid         = SUM(PERIODIC_DEPOSIT)
+memberDepositsPaid         = flow(PERIODIC_DEPOSIT)                           # positive magnitude
 memberBalance              = memberDepositsPaid − totalDeposits
 totalMemberPending         = Σ_active( expected + offsetExpected − (periodic + offset) )
 
 # Member outflow
-profitWithdrawals          = SUM(profit portion of WITHDRAW)                  # rule §7.2
-memberAdjustments          = SUM(ADJUSTMENT)
+profitWithdrawals          = flow(profit portion of WITHDRAW)                 # rule §7.2, positive
+memberAdjustments          = flow(ADJUSTMENT)
 pendingAdjustments         = max(0, expectedAdjustments − receivedAdjustments)
 
 # Loans
-totalLoanGiven (lifetime)  = SUM(LOAN_TAKEN)
-totalInterestCollected     = INTEREST_INCOME.balance
+totalLoanGiven (lifetime)  = flow(LOAN_TAKEN)                                 # positive
+totalInterestCollected     = −INTEREST_INCOME.balance                         # income stored negative → negate
 currentLoanTaken (o/s)     = Σ LOAN_RECEIVABLE.balance
 interestBalance            = max(0, expectedTotalLoanInterest − totalInterestCollected)
 
 # Vendor
-vendorProfit               = Σ vendor P&L (active: max(net,0); closed: net)
+vendorProfit               = Σ vendor P&L (active: max(net,0); closed: net)   # net = −VENDOR_PROFIT(v).balance
 vendorInvestment (holding) = Σ VENDOR_RECEIVABLE.balance
 
 # Cash flow
@@ -953,6 +991,15 @@ Wraps every protected action and protected page. One guard, used everywhere.
 | `analytics` | graph series | any financial mutation (historical edits included) |
 | `config` | ClubConfig | config edits |
 
+> **⚠ Config edits cascade.** Expected deposits, pending contributions, and interest all derive
+> from `ClubConfig.stages` / `monthlyRateBps`. So `updateClubConfig` must invalidate **not just
+> `config`** but every derived read-model that consumes config: `dashboard`, `members`, all
+> `member:*`, `loans`, and `analytics`. Otherwise a stage/rate change leaves those views stale.
+> Because per-member tags can't be enumerated cheaply, the practical approach is to revalidate the
+> coarse tags (`dashboard`, `members`, `loans`, `analytics`) — member statements read through
+> `members`-tagged queries — or bump a global `config-version` tag that all config-dependent
+> queries also carry.
+
 ### `affectedTags(input)` (computed in the service/action after commit)
 
 ```
@@ -962,6 +1009,9 @@ affectedTags(input):
   if input is loan-related:   tags += ["loans"]
   if input is vendor-related: tags += ["vendors"]
   return unique(tags)
+
+# config mutations don't go through affectedTags(input); updateClubConfig invalidates:
+configTags() = ["config", "dashboard", "members", "loans", "analytics"]   # + all member:* (or via config-version tag)
 ```
 
 `revalidateTag()` is called **only after** the DB transaction commits. No NodeCache, no ETags,
