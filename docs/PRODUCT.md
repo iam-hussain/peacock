@@ -196,6 +196,12 @@ Every member is expected to pay the **current monthly deposit** (today ₹2,000)
 expected amount has changed over the club's life (the "stages" above), and Peacock knows, for any
 member and any date, **how much they should have paid in total so far**.
 
+**Everyone is measured against the full club life.** A member's *expected* total is the sum of the
+monthly amounts **from the club's start to today** (today that's ₹1,00,000 = ₹1,000 × 36 months +
+₹2,000 × 32 months, **counting the current month**) — the **same for every active member**. Late
+joiners reach that same baseline via their **catch-up** (§7), so "expected" is equal for all, and a
+member's *paid* total counts their deposits **plus** any catch-up.
+
 - **Paid vs expected:** Peacock always shows what a member *has* paid against what they *should*
   have paid. The difference is their **pending** deposit.
 - **Late deposits** are flagged as **pending / overdue** in the UI. There's an optional penalty
@@ -472,7 +478,7 @@ There are two kinds of penalty — one automatic (configurable, off today), one 
 | Penalty | How it works | Today |
 |---------|--------------|-------|
 | **Overdue loan penalty** | An **automatic** extra interest rate on loans kept past the **5-month** term. A config setting; when switched on it applies **immediately to all loans**. | **0** — overdue loans are only **flagged**. |
-| **Delayed-payment penalty** | A **manual** charge the admin records when a member has been **significantly late on monthly deposits**. The admin decides the amount and enters it as its own entry; the money the member pays is **club income** (adds to profit). | Applied **case-by-case** by the admin (no automatic charge). |
+| **Delayed-payment penalty** | A **manual** charge the admin records when a member has been **significantly late on monthly deposits**. The admin decides the amount and enters it as its own entry; the money the member pays is **club income** that is **shared as profit among all members** (including the member who paid it). | Applied **case-by-case** by the admin (no automatic charge). |
 
 So **overdue loans** and **late deposits** are always **flagged** with clear indicators (red
 badges) regardless of penalties. The **overdue-loan penalty** is an automatic switch (off today),
@@ -622,6 +628,8 @@ Peacock is built to be **auditable**: nothing is ever silently deleted.
 
 - A mistake is fixed with a **reversing correction** that cancels the original, and (for an edit) a
   new correct entry is added. The original stays visible for the record.
+- A correction is **dated to the original entry's month** so past months and charts stay accurate,
+  while separately recording **when** the correction was made (the audit trail).
 - Every change is **logged** (who did what, when).
 - Because corrections are real entries, **all the numbers and history update instantly and stay
   consistent** — including past months and charts.

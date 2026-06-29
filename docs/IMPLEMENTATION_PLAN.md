@@ -1289,24 +1289,60 @@ the few specifics for the chosen intent.
 
 ## 24. Migration v1 → v2
 
+> **Confirmed:** we **migrate** v1's full history. The owner provides a v1 export (a JSON backup);
+> it lives **git-ignored** at `migration/data/v1-backup.json` (contains PII + credentials — never
+> committed). The importer is **idempotent / re-runnable** so it can sync repeatedly until cutover.
+> See `migration/README.md` for the source shape.
+
+### v1 source shape (from the real backup)
+
+One JSON object with `account` (33), `passbook` (35), `transaction` (1344). **Amounts are in
+rupees** (× 100 → paise). **`fromId`/`toId` are account ids and one side is the treasurer**, so the
+correct `TREASURY_CASH` is recorded for every entry.
+
+### Type mapping (v1 → v2)
+
+| v1 | v2 |
+|----|----|
+| `account.type=MEMBER` | `Member` (+ `MEMBER_EQUITY`, lazy `LOAN_RECEIVABLE`) |
+| `account.type=VENDOR`, passbook `isChit=false` | `Vendor(GENERAL)` (bank → `category="Bank"`) |
+| `account.type=VENDOR`, passbook `isChit=true` | `Vendor(CHIT)` + `ChitFund` |
+| `passbook.kind=CLUB` | not an entity in v2 — its `payload` is the **reconciliation target** |
+| txn `PERIODIC_DEPOSIT` | `PERIODIC_DEPOSIT` |
+| txn `OFFSET_DEPOSIT` | `CATCHUP` |
+| txn `WITHDRAW` | `WITHDRAW` (full-exit settlement) |
+| txn `LOAN_TAKEN` / `LOAN_REPAY` / `LOAN_INTEREST` | same (loans rebuilt per member, date order) |
+| txn `VENDOR_INVEST` | `VENDOR_INVEST` |
+| txn `VENDOR_RETURNS` | `VENDOR_RETURN` |
+| txn `FUNDS_TRANSFER` | `FUNDS_TRANSFER` (treasury→treasury) |
+| passbook `joiningOffset` (>0) | one `CATCHUP` posting |
+| passbook `delayOffset` (>0) | one `DELAY_PENALTY` posting |
+
 ```mermaid
 flowchart TD
-  S1["1. Neon + v2 schema"] --> S2["2. Seed ClubConfig: name, startedAt, stages (alpha/bravo), rateSchedule [1% from start], dayInterestFrom, maxLoanPaise=₹5L"]
-  S2 --> S3["3. Accounts: 1× INTEREST_INCOME; per member MEMBER_EQUITY (+LOAN_RECEIVABLE); per vendor RECEIVABLE+PROFIT; TREASURY_CASH per historical cash-holder"]
-  S3 --> S4["4. Replay each v1 txn (by date) → balanced v2 postings (§8), assigning the correct treasury"]
-  S4 --> S5["5. joiningOffset → CATCHUP; delayOffset → DELAY_PENALTY"]
-  S5 --> S6["6. Rebuild Loans + tranches/repayments from v1 loan history; recompute interest via §14"]
-  S6 --> S7{"7. RECONCILE every §17 figure (v2) == v1 reported?"}
+  S1["1. Neon + v2 schema"] --> S2["2. Seed ClubConfig: stages (alpha/bravo), rateSchedule [1%], dayInterestFrom=01Jun2024, maxLoanPaise=₹5L"]
+  S2 --> S3["3. Create accounts: 1× INTEREST_INCOME + 1× OTHER_INCOME; per member EQUITY(+LOAN); per vendor RECEIVABLE+PROFIT; TREASURY_CASH per cash-holder (from txn from/to ids)"]
+  S3 --> S4["4. Replay each v1 txn (by occurredAt) → balanced v2 postings (§8), rupees×100, treasury from from/to id"]
+  S4 --> S5["5. Per-member joiningOffset → CATCHUP; delayOffset → DELAY_PENALTY"]
+  S5 --> S6["6. Rebuild Loans from LOAN_TAKEN/REPAY (per member); import recorded LOAN_INTEREST as-is (no historical recompute)"]
+  S6 --> S7{"7. RECONCILE v2 == v1 CLUB payload fixtures?"}
   S7 -->|no| S8["fix mapping; re-run (idempotent)"] --> S4
   S7 -->|yes| S9["8. cut over; keep v1 read-only"]
 ```
 
-- **Treasury assignment (resolved):** v1 **does** record a treasurer on every transaction (and
-  maintains treasurer balances), so the importer maps each v1 transaction's recorded treasurer →
-  the corresponding `TREASURY_CASH` account and assigns the cash leg there. No default/opening
-  treasury needed; v2 per-treasurer balances should reconcile against v1's.
-- Importer is **idempotent**. **Blocker:** need v1 repo/data export + fixture numbers (different
-  repo, no access yet).
+### Reconciliation gate (captured fixtures from the CLUB passbook `payload`)
+
+The import must reproduce v1's reported numbers, e.g. (from the provided backup):
+`availableCashBalance ₹2,87,865 · loansOutstanding ₹14,50,000 · loansPrincipalDisbursed ₹58,15,000 ·
+interestCollectedTotal ₹1,64,127 · pendingLoanInterest ₹66,249 · expectedTotalLoanInterest ₹2,30,376 ·
+vendorInvestmentTotal ₹16,45,600 · vendorReturnsTotal ₹17,08,940 · activeMembersCount 16 ·
+memberTotalDepositExpected ₹1,00,000/member · activeMemberPendingTotal ₹82,000`. These are the
+hard pass/fail targets (and double as unit-test fixtures for the calc engine).
+
+- **No historical interest recompute:** `LOAN_INTEREST` is imported as recorded, so pre-2024
+  rounding is irrelevant; derive-on-read interest only ever runs on **active** (daily-era) loans.
+- **`memberTotalDepositExpected = ₹1,00,000`** validates the expected-deposit model: full club life
+  for everyone (₹1,000×36 + ₹2,000×32, current month counted).
 
 ---
 
@@ -1416,14 +1452,24 @@ not** (capital owed).
 - **Notifications:** simple DB-backed, inline-triggered, in-app (members: relevant events; admins:
   forgot-password requests, new entries, lifecycle).
 
-Still open, non-blocking for P0 unless noted:
+**Resolved (Rev 6 — final open items + v1 data received):**
+- **A1 Penalty:** delayed-payment penalty is **shared profit** (`OTHER_INCOME`) — everyone shares,
+  **including the member who paid it**.
+- **A2 Reversal date:** reversal/edit carries the **original entry's `occurredAt`** (so historical
+  months/charts stay correct), with `createdAt = now` for the audit trail.
+- **A3 `SUPER_ADMIN`:** **not added** — roles stay `ADMIN`/`MEMBER` (any admin manages admins).
+- **A4 Chit profit timing:** **realize at payout**, and always **net the remaining obligation** in
+  club profit (per-vendor line shows gross + net-of-obligation).
+- **B0 Migration:** **migrating full history** from the owner's v1 JSON export (git-ignored at
+  `migration/data/`). Idempotent script; reconciles to the v1 CLUB payload (§24).
+- **B1 Pre-2024 rounding:** **moot** — historical `LOAN_INTEREST` is imported as recorded; interest
+  is only derived-on-read for active (daily-era) loans.
+- **B2 Expected deposit:** **full club life for everyone, current month counted** — validated by v1's
+  `memberTotalDepositExpected = ₹1,00,000` (₹1,000×36 + ₹2,000×32). `paid = periodic + catch-up`.
 
-1. **Pre-`dayInterestFrom` rounding** — partial month rounds up to a full month? (assumed; lock to
-   v1 fixtures).
-2. **`getMemberTotalDeposit` month semantics** — join-month inclusive? first-month proration? (lock
-   to v1 fixtures).
-3. **Chit early-payout profit timing** — realize profit at payout while carrying remaining obligation
-   as a liability (recommended) — confirm.
-4. **`REVERSAL.occurredAt`** — date reversals to the target's date (recommended) vs now.
-5. **`SUPER_ADMIN` tier** — needed or not.
-6. **v1 access** — repo/export + fixtures required for P4 reconciliation (currently no access).
+Still open (truly minor, non-blocking):
+
+1. **Chit installment exact ramp** — actual amounts come from each `CHIT_PAYMENT` entry; the margin
+   is the cap. (No decision needed unless you want a fixed schedule.)
+2. **(none blocking)** — all prior items resolved. Remaining nuances lock automatically against the
+   v1 fixtures during P4 reconciliation.
