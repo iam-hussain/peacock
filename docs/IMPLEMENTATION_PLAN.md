@@ -1,17 +1,17 @@
 # Peacock v2 — Implementation Plan (Build Bible)
 
-> **Status:** Pre-build, design-in-progress. This is the single, expanded, line-by-line
-> engineering plan for building the new Peacock repository from scratch. It consolidates and
-> supersedes (for build purposes) the three source planning docs: *Master Build Document*,
-> *How every number is calculated*, and *Greenfield Architecture Plan*.
+> **Status:** Pre-build, design-in-progress. Single, expanded, line-by-line engineering plan for
+> building the new Peacock repository from scratch. Consolidates and supersedes (for build
+> purposes) the three source planning docs.
 >
-> **Audience:** the engineer(s) building this — including future-me. Everything needed to start
-> typing code lives here: purpose, domain, schema, every calculation, every posting, the write
-> path in pseudocode, the read models, auth, caching, migration, tests, and a phase-by-phase
-> build order.
+> **Revision 2** — folds in the owner's domain clarifications: the club holds **no cash**
+> (member-treasurers do), **multi-tranche loans** with a **time-versioned global interest rate**,
+> **chit-fund** vendors as a first-class mechanism, **catch-up** (renamed from "offset"), and a
+> **settle / freeze / reactivate** withdraw-rejoin flow. Items still genuinely undecided are
+> marked **`‹TBD›`**.
 >
-> **Out of scope of this doc:** visual/UI styling. The UI brief lives in `DESIGN_PROMPTS.md`
-> (to be added). Functionally the UI mirrors v1; stylistically it is new.
+> **Audience:** the engineer(s) building this. Everything needed to start typing lives here.
+> **Out of scope:** visual styling (see `DESIGN_PROMPTS.md`). Functionally the UI mirrors v1.
 
 ---
 
@@ -28,71 +28,76 @@
 9. [Database schema (full Prisma + commentary)](#9-database-schema-full-prisma--commentary)
 10. [Money handling — the BigInt/paise contract](#10-money-handling--the-bigintpaise-contract)
 11. [Dates, timezone & month boundaries](#11-dates-timezone--month-boundaries)
-12. [The critical write path — `postTransaction` line by line](#12-the-critical-write-path--posttransaction-line-by-line)
+12. [The critical write path — `postTransaction`](#12-the-critical-write-path--posttransaction)
 13. [Reverse & edit](#13-reverse--edit)
-14. [Calculations — every figure derived, line by line](#14-calculations--every-figure-derived-line-by-line)
-15. [Interest — the one time-based number](#15-interest--the-one-time-based-number)
-16. [Read models / queries](#16-read-models--queries)
-17. [Analytics & graphs](#17-analytics--graphs)
-18. [Auth, roles & permissions](#18-auth-roles--permissions)
-19. [Caching & revalidation](#19-caching--revalidation)
-20. [Validation (Zod) & the service contract](#20-validation-zod--the-service-contract)
-21. [App structure, routes & the entry drawer](#21-app-structure-routes--the-entry-drawer)
-22. [Migration v1 → v2](#22-migration-v1--v2)
-23. [Testing strategy](#23-testing-strategy)
-24. [Build phases & checklists](#24-build-phases--checklists)
-25. [Performance budget & "why this is fast"](#25-performance-budget--why-this-is-fast)
-26. [Open questions to confirm](#26-open-questions-to-confirm)
+14. [Loans in depth — tranches, rate schedule, interest](#14-loans-in-depth--tranches-rate-schedule-interest)
+15. [Chit funds in depth](#15-chit-funds-in-depth)
+16. [Members — deposits, catch-up, withdraw & rejoin](#16-members--deposits-catch-up-withdraw--rejoin)
+17. [Calculations — every figure derived, line by line](#17-calculations--every-figure-derived-line-by-line)
+18. [Read models / queries](#18-read-models--queries)
+19. [Analytics & graphs](#19-analytics--graphs)
+20. [Auth, roles & permissions](#20-auth-roles--permissions)
+21. [Caching & revalidation](#21-caching--revalidation)
+22. [Validation (Zod) & the service contract](#22-validation-zod--the-service-contract)
+23. [App structure, routes & the entry drawer](#23-app-structure-routes--the-entry-drawer)
+24. [Migration v1 → v2](#24-migration-v1--v2)
+25. [Testing strategy](#25-testing-strategy)
+26. [Build phases & checklists](#26-build-phases--checklists)
+27. [Performance budget](#27-performance-budget)
+28. [Open questions / TBDs](#28-open-questions--tbds)
 
 ---
 
 ## 1. Purpose & domain
 
-**Peacock** is a **private investment-club / chit-fund manager** for a single club ("Many
-feathers, one fortune"). It models real money moving between four kinds of parties:
+**Peacock** is a private investment-club / chit-fund manager for a single club ("Many feathers,
+one fortune"). It models real money moving between members, the club's pooled value, and external
+vendors.
 
-- **The club** — the central pot of pooled money (`CLUB_CASH`).
-- **Members** — people who pay recurring monthly **deposits** into the club, can **withdraw**,
-  and can **borrow** from the club (loans with interest).
-- **Vendors** — external parties the club hands money to so they can invest it and **return** it
-  with profit.
-- **The club's income** — interest earned from member loans, and profit earned from vendors.
+### The parties
 
-There are two human audiences:
+| Party | What it is |
+|-------|-----------|
+| **Member** | A person in the club. Pays a recurring **monthly deposit**, can **borrow** (loans with daily interest), can **withdraw / leave** and later **rejoin**. All members hold **equal status and value**. |
+| **Treasurer** | A **member who currently physically holds club cash**. The club itself is not a physical entity and **holds no money** — cash always sits with one or more member-treasurers. Anyone can be a treasurer (admin or plain member; long- or short-term). |
+| **Admin** | A member with **write access** (daily data entry, managing members/vendors/loans/config). Admin is just a member with a role flag. |
+| **Vendor** | An external place the club puts money: a **`BANK`** (lump deposit, earns interest) or a **`CHIT`** fund (monthly installments toward a chit, payout later). |
 
-| Audience | What they do |
-|----------|--------------|
-| **Admin** (1–few) | Daily data entry: record deposits, withdrawals, loans, repayments, interest, vendor moves. Manage members/vendors/loans/config. |
-| **Members** (many) | **Read-only transparency**: see the club's full financial picture, all members, all loans, all vendors, all transactions, and their own statement. They do not write. |
+So there are really only two kinds of people — **members**, some of whom are **admins** — plus the
+**treasurer** capability (holding cash) which any member can have.
 
 ### The money flows, in plain English
 
-1. Each month a member is **expected** to deposit a certain amount. That expected amount has
-   **changed over the club's life** (it started low and was raised in *stages*). The app tracks
-   *expected vs actually paid* per member.
-2. The club uses pooled cash to **lend to members**. A loan accrues **interest monthly** (plus a
-   pro-rated daily amount for partial months). Members repay principal and pay interest.
-3. The club also gives cash to **vendors** to invest. Vendors later **return** money; the amount
-   above what was invested is **profit** to the club.
-4. Members can **withdraw**. A withdrawal up to their contributed principal is just principal
-   coming back; anything **beyond** principal is treated as **withdrawing profit**.
-5. The dashboard shows the club's total worth, available cash, money out on loan, money out with
-   vendors, profit earned, and what's still pending (unpaid deposits, uncollected interest).
+1. **Deposits.** Every member owes a monthly deposit. The amount is **stage-based** and has been
+   raised over time (₹1,000 → ₹2,000). The app tracks *expected vs paid* per member.
+2. **Cash lives with treasurers.** When a member pays, the cash goes to a specific treasurer.
+   Treasurers can move club cash between themselves (**internal transfer**). Total club cash =
+   sum of all treasurers' holdings.
+3. **Loans.** The club lends pooled cash to a member. A loan may be **disbursed in tranches**
+   (different treasurers chip in over a few days), accrues **daily interest** on the
+   outstanding-principal timeline, must be repaid within **5 months** (after which it is
+   **overdue** but still active), and is repaid (possibly in parts) back to treasurers.
+4. **Vendors.** The club places cash with a **bank** (earns interest) or pays into a **chit fund**
+   monthly (gets a payout later, with profit/loss). Money out with vendors is club value too.
+5. **Catch-up (equalization).** A new or returning member must pay, on top of the prevailing
+   deposit, a **catch-up** equal to existing members' accumulated profit-per-member, so everyone
+   holds equal value. Two kinds: **late-join** and **delayed-payment**.
+6. **Withdraw / rejoin.** A member leaving **settles out** their value (admin enters the amount);
+   their account is **frozen → INACTIVE** but history is kept. They can later **reactivate** by
+   repaying (in one or two terms) plus catch-up.
 
-### Why v2 exists (what v1 got wrong)
+### Two audiences
 
-| v1 problem | v2 fix |
-|------------|--------|
-| `Float` money → rounding drift | **Integer paise (`BigInt`)**, format to ₹ only at display |
-| MongoDB JSON "passbook" blobs as a second source of truth | **One ledger**, full stop |
-| Derived passbooks **stored *and* fully recomputed on every write** | Ledger is the only truth; balances updated **incrementally**; time-based values **derived on read** |
-| Four caching layers + "invalidate everything" | **One** tag-based cache layer |
-| Background recompute jobs on serverless | **No scheduled jobs at all** |
-| Heavy REST + transformers + handlers | **Server Actions → services → ledger**, no REST |
+| Audience | Does |
+|----------|------|
+| **Admin** (a member) | Daily data entry + management. |
+| **Members** | **Read-only transparency** over the whole club. No writes. |
 
-The design goals, restated: **one source of truth, exact money, O(1) writes, no background
-loops, one cache layer, far less code, an auditable ledger, and reporting that is mostly
-`SELECT`s.**
+### Why v2 (what v1 got wrong)
+
+`Float` money → drift; MongoDB JSON "passbook" recomputed on every write; two sources of truth;
+four cache layers; background recompute jobs; heavy REST. v2: **one ledger, integer paise, O(1)
+writes, derive time-based values on read, one cache layer, server actions instead of REST.**
 
 ---
 
@@ -100,43 +105,43 @@ loops, one cache layer, far less code, an auditable ledger, and reporting that i
 
 | Term | Meaning |
 |------|---------|
-| **Paise** | Indian minor currency unit. ₹1 = 100 paise. All money stored as integer paise in `BigInt`. |
-| **Ledger account** (`LedgerAccount`) | A balance bucket in the chart of accounts. Has a cached `balance`. Not the same as a Better-Auth `Account`. |
+| **Paise** | ₹1 = 100 paise. All money stored as integer paise in `BigInt`. |
+| **Ledger account** (`LedgerAccount`) | A balance bucket in the chart of accounts (≠ Better-Auth `Account`). |
+| **Treasury** (`TREASURY_CASH`) | A cash-holding account owned by a member-treasurer. |
 | **Entry** | One signed line of a transaction, posted to one ledger account. |
 | **Transaction** | A balanced group of entries whose `amount`s **sum to zero**. |
-| **Posting** | The act of writing a transaction + its entries and updating balances. |
-| **Stock** | A "right now" balance (e.g. available cash). In v2 = a ledger account balance. |
-| **Flow** | A running lifetime total (e.g. total loans disbursed). In v2 = a `SUM` of typed entries. |
-| **Derived-on-read** | A value computed at read time, never stored (e.g. interest-to-date). |
-| **Stage** | A period during which the expected monthly deposit is a fixed amount. The club has multiple stages over time. |
-| **Reversal** | A transaction that negates a prior transaction's lines; how edits/deletes happen. |
-| **Offset / adjustment** | A legacy/manual correction to a member's expected or actual contribution (v1 `joiningOffset`, `delayOffset`). Becomes an `ADJUSTMENT` posting. |
-| **bps** | Basis points. 1 bps = 0.01%. Loan rate stored as `monthlyRateBps`. |
-| **IST** | Asia/Kolkata timezone; all month bucketing uses it. |
+| **Stock / Flow** | A "right now" balance vs a lifetime running total. |
+| **Derived-on-read** | Computed at read time, never stored (e.g. loan interest-to-date). |
+| **Stage** | A period with a fixed expected monthly deposit (alpha ₹1,000, bravo ₹2,000). |
+| **Catch-up** | Equalization payment by a new/returning member (was v1 "offset"). Subtypes: **late-join**, **delayed-payment**. |
+| **Tranche** | One disbursement installment of a single loan (loans may be funded by several). |
+| **Rate schedule** | Time-versioned global monthly interest rate `[{ rateBps, effectiveFrom }]`. |
+| **`dayInterestFrom`** | Date from which interest is pro-rated daily; before it, whole-month only. |
+| **Overdue** | A loan still active past its 5-month term — **derived**, not a stored status. |
+| **Chit fund** | A `CHIT` vendor: pay a fixed monthly installment for N months, receive a payout. |
+| **Reversal** | A transaction negating a prior one; how edits/deletes happen. |
+| **bps** | Basis points. 1% = 100 bps. |
+| **IST** | Asia/Kolkata; all month bucketing uses it. |
 
 ---
 
 ## 3. Tech stack
 
-| Layer | Choice | Rationale |
-|-------|--------|-----------|
-| Language | **TypeScript** (strict) | Type-safety end to end; shared types between server and UI. |
-| Framework | **Next.js (App Router)**, RSC + Server Actions | One codebase, minimal client JS, no hand-written REST. |
-| UI runtime | **React Server Components** by default; client components only where interactivity is needed | Fast first paint, small bundles. |
-| Database | **PostgreSQL** (Neon free tier) | Relational + ACID; ideal for a ledger; free hosting. |
+| Layer | Choice | Why |
+|-------|--------|-----|
+| Language | **TypeScript** (strict) | End-to-end type safety. |
+| Framework | **Next.js App Router**, RSC + Server Actions | One codebase, minimal client JS, no REST. |
+| Database | **PostgreSQL** (Neon) | Relational + ACID; ideal for a ledger; free tier. |
 | ORM | **Prisma** | Typed queries, migrations, `$transaction` for atomic posting. |
-| Money | **`BigInt` paise** | Exact integer math; convert to ₹ only at the display edge. |
-| Auth | **Better Auth** (Prisma adapter) | Modern, lightweight; owns User/Session/Account/Verification. |
-| Validation | **Zod** | Single validation source shared by actions and forms. |
+| Money | **`BigInt` paise** | Exact integer math; format to ₹ only at the display edge. |
+| Auth | **Better Auth** (Prisma adapter) | Lightweight; owns User/Session/Account/Verification. |
+| Validation | **Zod** | One validation source for actions and forms. |
 | Caching | **Next.js cache + `revalidateTag()`** | One predictable invalidation layer. |
-| File storage | **Vercel Blob** | Avatars/files; no custom upload infra. |
-| Charts | **A lightweight chart lib** (e.g. Recharts/visx — pick in P3) | Series come pre-computed from the ledger; lib just renders. |
-| Testing | **Vitest** (unit) + **Playwright** (e2e, later) | Fast unit tests for the ledger; e2e for flows. |
-| Hosting | **Vercel** + **Neon** | Serverless-friendly; no background workers needed. |
-| Timezone | **Asia/Kolkata** | All month boundaries. |
-
-> Versions get pinned in `package.json` at P0. Prefer the latest stable Next.js + Prisma at
-> build time.
+| File storage | **Vercel Blob** | Avatars/files. |
+| Charts | lightweight lib (pick in P3) | Series come pre-computed from the ledger. |
+| Testing | **Vitest** (unit) + **Playwright** (e2e later) | Heavy unit testing on the ledger/interest. |
+| Hosting | **Vercel** + **Neon** | Serverless-friendly; no required background workers. |
+| Timezone | **Asia/Kolkata (IST)** | All month boundaries. |
 
 ---
 
@@ -144,41 +149,52 @@ loops, one cache layer, far less code, an auditable ledger, and reporting that i
 
 ### 4.1 Hard-locked
 
-| Area | Choice |
-|------|--------|
-| Database | PostgreSQL (Neon) + Prisma |
-| Money model | Double-entry ledger + incremental cached balances |
-| Amounts | Integer paise as `BigInt` |
-| Stack | Next.js App Router + RSC + Server Actions (no REST) |
-| Time-based interest | Derive-on-read (no jobs/cron) |
-| Auth | Better Auth |
-| Caching | Next.js cache + tag revalidation only |
-| Scope | Single club, with a clean `clubId` seam for later |
-| Sign convention | Assets/receivables **positive**; equity & income **negative** |
-| Timezone | Asia/Kolkata (IST) for all month boundaries |
+- PostgreSQL (Neon) + Prisma; double-entry ledger + incremental cached balances.
+- Money = integer paise (`BigInt`); format to ₹ only at display.
+- Next.js App Router + RSC + Server Actions (no REST).
+- Time-based interest derived on read; optional cached rollups allowed (no *required* jobs).
+- Better Auth; tag-based caching only; Vercel Blob.
+- **Sign convention:** assets/receivables **positive**; equity & income **negative**.
+- **Asia/Kolkata** for all month boundaries.
+- Single club, clean `clubId` seam for later.
 
-### 4.2 Defaults (override any in one message)
+### 4.2 Domain rules locked in Revision 2
 
-1. **Transaction types:** keep `REJOIN` + `FUNDS_TRANSFER` (club-internal, net-zero). No
-   member↔member transfers.
-2. **Loans per member:** multiple concurrent loans allowed.
-3. **Loan status:** `ACTIVE` / `CLOSED` only (no separate "overdue").
-4. **Interest rounding:** round to whole rupee (parity with v1), stored as paise.
-5. **Who logs in:** admins + opt-in members; vendors do **not** log in.
-6. **Roles:** `SUPER_ADMIN`, `ADMIN`, `MEMBER`.
-7. **Member visibility:** full read transparency, no write.
-8. **Edit/delete:** admin only, always via reversal (audited); allowed unless the month is
-   locked. Period-locking seam built, **off by default**.
-9. **File/avatar storage:** Vercel Blob.
-10. **Config storage:** single-row `ClubConfig` table (no hardcoding).
-11. **Timezone:** Asia/Kolkata.
-12. **Sign convention:** assets/receivables positive; equity & income negative.
-13. **Legacy offsets:** `joiningOffset` + `delayOffset` → `ADJUSTMENT` postings at migration.
-14. **Member ↔ User:** separate entities, optional link (`Member.userId` nullable).
-15. **Graphs:** computed live from the ledger; optional rollup cache only if needed later.
-16. **Analytics series:** portfolio value, available cash, outstanding loans, deposits/month,
-    interest/month, member-vs-club-average.
-17. **P2 extras:** optimistic UI on the entry drawer; defer notifications, PWA/offline.
+1. **Club holds no cash.** Cash lives in **`TREASURY_CASH`** accounts, one per treasurer-member,
+   created **on demand**. Anyone can be a treasurer. `availableCash = Σ TREASURY_CASH`.
+2. **`FUNDS_TRANSFER`** (treasury → treasury) is a real, frequently-used, net-zero transaction.
+3. **Loans are sequential, not concurrent:** one active loan per member; must clear all
+   outstanding before a new one; **no top-ups**; **1-month cooldown** after full repayment.
+4. **A loan may be disbursed in multiple tranches** (different treasurers, over days) — modeled as
+   one `Loan` with several `LOAN_TAKEN` events.
+5. **Loan term = 5 months.** Past term → **overdue** (derived flag), **still ACTIVE**.
+6. **Interest rate is global & time-versioned.** 1%/month from club start; admin can change it
+   (e.g. → 2%) effective a date; accrual uses the rate in effect for each period.
+7. **Interest is daily** from `dayInterestFrom` (01 Jun 2024): whole anchored months + leftover
+   days at a daily rate; before that date, whole-month only.
+8. **No repayment-amount validation** (no enforced minimum; round figures are advisory).
+9. **Loan limit = ₹5,00,000**, configurable in admin settings (revisable).
+10. **Vendors are typed:** `BANK` (lump, earns interest) and `CHIT` (monthly installments +
+    payout, with a remaining-obligation if payout taken early).
+11. **Catch-up** replaces "offset": late-join + delayed-payment subtypes; equalizes member value.
+12. **Withdraw = settle (admin-entered amount) → freeze → INACTIVE**, keep history. **Reactivate**
+    = repay (1–2 terms) + catch-up (profit-per-member + owed deposits).
+13. **Roles = `ADMIN` / `MEMBER`** only; **treasurer is a flag**, not a role. (`SUPER_ADMIN`
+    optional later if a "manages admins" tier is wanted.)
+14. **Member visibility:** full read transparency, no write.
+15. **Edit/delete:** admin only, via reversal (audited); period-lock seam built, off by default.
+16. **Member ↔ User:** separate entities, optional `Member.userId` link.
+
+### 4.3 Deposit stages (locked from owner data)
+
+```
+alpha : ₹1,000/month  01 Sep 2020 → 31 Aug 2023
+bravo : ₹2,000/month  31 Aug 2023 → present
+club startedAt        01 Sep 2020
+dayInterestFrom       01 Jun 2024
+```
+Stored in `ClubConfig.stages` as paise. Month boundaries defined so exactly one stage owns each
+month (alpha through Aug 2023, bravo from Sep 2023). Dates were given MM/DD/YYYY in IST.
 
 ---
 
@@ -187,87 +203,69 @@ loops, one cache layer, far less code, an auditable ledger, and reporting that i
 ```mermaid
 flowchart TD
   subgraph Client["Browser (minimal JS)"]
-    UI["React Server Components<br/>+ a few client islands<br/>(entry drawer, charts)"]
+    UI["React Server Components<br/>+ client islands (entry drawer, charts)"]
   end
-
   subgraph Server["Next.js server (Vercel)"]
     RSC["Server Components"]
-    ACT["server/actions/*<br/>('use server' thin entry points)"]
-    SVC["server/services/*<br/>(business logic)"]
-    LED["server/ledger/*<br/>(double-entry engine + invariants)"]
-    QRY["server/queries/*<br/>(read models)"]
-    AUTH["server/auth/*<br/>(Better Auth + requireRole)"]
-    CACHE["Next.js cache<br/>(tag-based)"]
+    ACT["server/actions/* ('use server')"]
+    SVC["server/services/* (business logic)"]
+    LED["server/ledger/* (double-entry engine)"]
+    QRY["server/queries/* (read models)"]
+    AUTH["server/auth/* (Better Auth + requireRole)"]
+    CACHE["Next.js cache (tag-based)"]
   end
-
   subgraph Data["Neon PostgreSQL"]
-    DB[("Prisma<br/>LedgerAccount / Transaction / Entry /<br/>Member / Vendor / Loan / ClubConfig / AuditLog")]
+    DB[("Prisma: LedgerAccount / Transaction / Entry /<br/>Member / Vendor / ChitFund / Loan / ClubConfig / AuditLog")]
   end
-
   UI -->|render| RSC
   RSC -->|read| QRY
   UI -->|mutations| ACT
   ACT --> AUTH
-  ACT --> SVC
-  SVC --> LED
-  LED -->|prisma.$transaction| DB
+  ACT --> SVC --> LED -->|prisma.$transaction| DB
   QRY -->|SELECT| DB
   QRY <--> CACHE
   SVC -->|revalidateTag| CACHE
 ```
 
-**Rules of the road:**
-
-- **Reads:** Server Components call `server/queries/*` directly (typed function call, no HTTP).
-  Queries are cached and tagged.
-- **Writes:** UI → `server/actions/*` (thin, `'use server'`) → `server/services/*` (logic) →
-  `server/ledger/*` (the engine) → `prisma.$transaction`. Then `revalidateTag()` the few
-  affected tags.
-- **No REST layer.** If an external client ever needs one, add a thin one then.
-- **Money conversion** (₹↔paise) lives **only** in `lib/money`.
-- **The ledger engine is the single choke point** for all balance changes and is the most
-  heavily tested module.
+- **Reads:** Server Components call `server/queries/*` directly (typed, no HTTP), cached + tagged.
+- **Writes:** UI → `actions/*` → `services/*` → `ledger/*` → `prisma.$transaction`, then
+  `revalidateTag()` only the affected tags.
+- **Money conversion** lives only in `lib/money`. The **ledger engine is the single choke point**
+  for all balance changes and is the most heavily tested module.
 
 ---
 
 ## 6. The double-entry ledger — mental model
 
-Every financial event is **one balanced `Transaction`** composed of signed `Entry` lines that
-**sum to zero**. Each line posts to one `LedgerAccount`, and that account's cached `balance` is
-updated **in the same DB transaction**.
+Every financial event is **one balanced `Transaction`** of signed `Entry` lines that **sum to
+zero**. Each line posts to one `LedgerAccount` whose cached `balance` is updated **in the same DB
+transaction**.
 
-### The invariant
+### Invariants
 
 ```
-For every Transaction t:  Σ (entry.amount for entry in t.entries) == 0
-For every LedgerAccount a: a.balance == Σ (entry.amount for entry in a.entries)
+Per Transaction t:    Σ entry.amount == 0                 (enforced before commit)
+Per LedgerAccount a:  a.balance == Σ entry.amount         (maintained incrementally; re-summed only to audit)
 ```
 
-The first invariant is enforced **before commit**. The second is maintained **incrementally**:
-when we add entries we add their amounts to the cached balance, so a full re-sum is never
-required — but the re-sum is also the canonical way to **verify** the cache in tests/audits.
+### Sign convention
 
-### Sign convention (decision 12)
+- **Asset/receivable** (`TREASURY_CASH`, `LOAN_RECEIVABLE`, `VENDOR_RECEIVABLE`) → **positive**.
+- **Equity/income** (`MEMBER_EQUITY`, `INTEREST_INCOME`, `VENDOR_PROFIT`) → **negative**.
 
-- **Asset / receivable** accounts (`CLUB_CASH`, `LOAN_RECEIVABLE`, `VENDOR_RECEIVABLE`) carry
-  **positive** balances when the club holds value there.
-- **Equity / income** accounts (`MEMBER_EQUITY`, `INTEREST_INCOME`, `VENDOR_PROFIT`) carry
-  **negative** balances (they are claims against the club / income the club has recognized).
+Net club value nets to zero automatically (assets = equity + income), so we never hand-maintain a
+`netClubValue` field.
 
-Because of this, the **net club value identity falls out automatically**: sum every account
-balance and it nets to zero (assets = equity + income), which is exactly why we never
-hand-maintain a `netClubValue` field.
-
-### The four kinds of numbers (this is the whole calculation philosophy)
+### The four kinds of numbers
 
 | Kind | Definition | How v2 computes it |
 |------|-----------|--------------------|
-| **Stock** | A balance "right now" | Read `LedgerAccount.balance` (O(1)) |
-| **Flow** | A lifetime running total | `SUM(entry.amount)` filtered by txn type / account (indexed) |
-| **Expected/config** | A pure function of config + time | `getMemberTotalDeposit(now)` over `ClubConfig.stages` |
-| **Derived-on-read** | Time-based, computed when displayed | `interestToDate(loan)`, `pending = expected − actual` |
+| **Stock** | balance "right now" | read `LedgerAccount.balance` (O(1)) |
+| **Flow** | lifetime running total | `SUM(entry.amount)` filtered by type/account (indexed) |
+| **Expected/config** | pure function of config + time | `getMemberTotalDeposit(now)` over stages |
+| **Derived-on-read** | time-based, computed on display | `interestToDate(loan)`, `pending = expected − actual` |
 
-There is **no passbook**. Nothing that can drift.
+No passbook. Nothing that can drift.
 
 ---
 
@@ -275,95 +273,81 @@ There is **no passbook**. Nothing that can drift.
 
 | Kind (`LedgerAccountKind`) | Cardinality | Normal sign | Meaning |
 |----------------------------|-------------|-------------|---------|
-| `CLUB_CASH` | exactly 1 | + | Club money on hand |
+| `TREASURY_CASH` | 1 per treasurer-member (on demand) | + | Club cash physically held by that member |
 | `MEMBER_EQUITY` | 1 per member | − | The member's stake/contributions |
 | `LOAN_RECEIVABLE` | 1 per member | + | Principal the member currently owes |
-| `VENDOR_RECEIVABLE` | 1 per vendor | + | Principal currently placed with the vendor |
+| `VENDOR_RECEIVABLE` | 1 per vendor (bank or chit) | + | Principal/installments currently placed with the vendor |
 | `INTEREST_INCOME` | exactly 1 | − | Club income from loan interest |
-| `VENDOR_PROFIT` | 1 per vendor | − | Realized profit from that vendor |
+| `VENDOR_PROFIT` | 1 per vendor | − | Realized profit (or loss) from that vendor |
 
-Account creation rules:
-- `CLUB_CASH` and `INTEREST_INCOME` are created **once** at club seed.
-- `MEMBER_EQUITY` + `LOAN_RECEIVABLE` are created **when a member is created**.
-- `VENDOR_RECEIVABLE` + `VENDOR_PROFIT` are created **when a vendor is created**.
+Creation rules: `INTEREST_INCOME` once at seed; `MEMBER_EQUITY` (+ `LOAN_RECEIVABLE` lazily) when a
+member is created; `VENDOR_RECEIVABLE` + `VENDOR_PROFIT` when a vendor is created; `TREASURY_CASH`
+the first time a member holds cash (or when flagged treasurer).
+
+> There is **no single club-cash account**. "Available cash" is always `Σ TREASURY_CASH`. This is
+> the central structural difference from v1 and from Revision 1 of this plan.
 
 ---
 
 ## 8. Posting spec — every transaction type, line by line
 
-`A` = transaction amount (paise, > 0). `P` = principal portion of a vendor return.
-Every row **sums to zero**. `(m)` = the member's account; `(v)` = the vendor's account.
+`A` = amount (paise, > 0). `(m)` member, `(v)` vendor, `(t)`/`(t1,t2)` treasury. `P` = principal
+portion. Every row **sums to zero**.
 
-| `TxnType` | Postings (signed paise) | Loan side-effect |
-|-----------|-------------------------|------------------|
-| `PERIODIC_DEPOSIT` | `CLUB_CASH +A`, `MEMBER_EQUITY(m) −A` | — |
-| `OFFSET_DEPOSIT` | `CLUB_CASH +A`, `MEMBER_EQUITY(m) −A` (tagged offset) | — |
-| `ADJUSTMENT` | `CLUB_CASH +A`, `MEMBER_EQUITY(m) −A` | — |
-| `WITHDRAW` | `CLUB_CASH −A`, `MEMBER_EQUITY(m) +A` | — |
-| `REJOIN` | `CLUB_CASH +A`, `MEMBER_EQUITY(m) −A` (reverses a prior withdraw) | — |
-| `FUNDS_TRANSFER` | club-internal cash sub-bucket move; **net-zero on club value** | — |
-| `LOAN_TAKEN` | `CLUB_CASH −A`, `LOAN_RECEIVABLE(m) +A` | `loan.principalOutstanding += A` |
-| `LOAN_REPAY` | `CLUB_CASH +A`, `LOAN_RECEIVABLE(m) −A` | `loan.principalOutstanding −= A`; if 0 → `CLOSED` |
-| `LOAN_INTEREST` | `CLUB_CASH +A`, `INTEREST_INCOME −A` | — |
-| `VENDOR_INVEST` | `CLUB_CASH −A`, `VENDOR_RECEIVABLE(v) +A` | — |
-| `VENDOR_RETURN` | `CLUB_CASH +A`, `VENDOR_RECEIVABLE(v) −P`, `VENDOR_PROFIT(v) −(A−P)` | — |
-| `VENDOR_WRITEOFF` | on close with a shortfall: `VENDOR_RECEIVABLE(v) −R`, `VENDOR_PROFIT(v) +R` (R = residual receivable) | — |
-| `REVERSAL` | negated copy of the target transaction's lines | undo the target's loan side-effect |
+| `TxnType` | Postings (signed paise) | Side-effect |
+|-----------|-------------------------|-------------|
+| `PERIODIC_DEPOSIT` | `TREASURY_CASH(t) +A`, `MEMBER_EQUITY(m) −A` | — |
+| `CATCHUP` (subtype late-join / delayed) | `TREASURY_CASH(t) +A`, `MEMBER_EQUITY(m) −A` | — |
+| `ADJUSTMENT` | `TREASURY_CASH(t) +A`, `MEMBER_EQUITY(m) −A` (or signed for corrections) | — |
+| `WITHDRAW` | `TREASURY_CASH(t) −A`, `MEMBER_EQUITY(m) +A` | on full settlement: member → INACTIVE, frozen |
+| `REJOIN` | `TREASURY_CASH(t) +A`, `MEMBER_EQUITY(m) −A` | member → ACTIVE |
+| `FUNDS_TRANSFER` | `TREASURY_CASH(t1) −A`, `TREASURY_CASH(t2) +A` | net-zero on total club cash |
+| `LOAN_TAKEN` (tranche) | `TREASURY_CASH(t) −A`, `LOAN_RECEIVABLE(m) +A` | `loan.principalOutstanding += A` |
+| `LOAN_REPAY` | `TREASURY_CASH(t) +P`, `LOAN_RECEIVABLE(m) −P` [+ interest leg] | `principalOutstanding −= P`; if 0 → CLOSED |
+| `LOAN_INTEREST` | `TREASURY_CASH(t) +A`, `INTEREST_INCOME −A` | — |
+| `VENDOR_INVEST` (bank) | `TREASURY_CASH(t) −A`, `VENDOR_RECEIVABLE(v) +A` | — |
+| `VENDOR_RETURN` (bank) | `TREASURY_CASH(t) +A`, `VENDOR_RECEIVABLE(v) −P`, `VENDOR_PROFIT(v) −(A−P)` | — |
+| `VENDOR_WRITEOFF` | `VENDOR_RECEIVABLE(v) −R`, `VENDOR_PROFIT(v) +R` (R = residual) | clears shortfall as loss on close |
+| `CHIT_PAYMENT` (installment) | `TREASURY_CASH(t) −A`, `VENDOR_RECEIVABLE(v) +A` | `chit.installmentsPaid += 1` |
+| `CHIT_PAYOUT` | `TREASURY_CASH(t) +A`, `VENDOR_RECEIVABLE(v) −P`, `VENDOR_PROFIT(v) −(A−P)` | mark payout; track remaining obligation |
+| `REVERSAL` | negated copy of target's lines | undo target's side-effects |
 
-> **Vendor return vs. shortfall (why `VENDOR_WRITEOFF` exists).** A single `VENDOR_RETURN`
-> carries `P ≤ A`, so it can only clear receivable up to the cash actually received — it can
-> never recognize a *loss*. If a vendor **closes having returned less than invested** (e.g.
-> invest ₹20k, total returns ₹18k), ₹2k of `VENDOR_RECEIVABLE` would otherwise linger as a live
-> asset, overstating `vendorInvestment` / `currentValue`. The **close** step posts a
-> `VENDOR_WRITEOFF` that clears the residual `R = VENDOR_RECEIVABLE(v).balance` into
-> `VENDOR_PROFIT(v)` as a loss (`VENDOR_PROFIT` is normally negative; `+R` moves it toward/past
-> zero, i.e. a loss). This makes the ledger agree with business rule §7.3 (*closed vendor profit =
-> `returns − invested`, which may be negative*). Conversely, if a closing vendor has *excess*
-> cash beyond receivable, that excess is already booked as `VENDOR_PROFIT` by the final
-> `VENDOR_RETURN`, so no write-off is needed.
+Notes:
+- A `LOAN_REPAY` may carry a combined principal + interest payment — the interest portion is posted
+  as a `LOAN_INTEREST` leg in the same transaction (admin allocates principal vs interest).
+- `WITHDRAW` amount is **admin-entered** (the system shows the computed settlement value as a
+  guide; the entered figure may be slightly less — see §16).
+- `ADJUSTMENT` is the generic signed correction; catch-up and deposits are the common positives.
 
 ### Worked examples
 
-**Member pays a ₹5,000 deposit** (A = 500000 paise):
+**Deposit ₹2,000 collected by treasurer T** (A = 200000):
 ```
-Transaction(type=PERIODIC_DEPOSIT, amount basis=500000)
-  Entry  CLUB_CASH        +500000
-  Entry  MEMBER_EQUITY(m) -500000      // sum = 0 ✓
-→ CLUB_CASH.balance += 500000 ; MEMBER_EQUITY(m).balance -= 500000
+TREASURY_CASH(T) +200000 ; MEMBER_EQUITY(m) -200000        // sum 0 ✓
 ```
 
-**Loan of ₹10,000 to a member** (A = 1000000):
+**Internal transfer ₹50,000 from treasurer A to B** (A = 5000000):
 ```
-  Entry  CLUB_CASH            -1000000
-  Entry  LOAN_RECEIVABLE(m)   +1000000   // sum = 0 ✓
-→ loan.principalOutstanding += 1000000
+TREASURY_CASH(A) -5000000 ; TREASURY_CASH(B) +5000000      // sum 0 ✓ ; total cash unchanged
 ```
 
-**Vendor returns ₹22,000, of which ₹20,000 is principal** (A = 2200000, P = 2000000):
+**Loan tranche 1: treasurer A funds ₹1,00,000 of a ₹2,50,000 loan** (A = 10000000):
 ```
-  Entry  CLUB_CASH           +2200000
-  Entry  VENDOR_RECEIVABLE(v) -2000000
-  Entry  VENDOR_PROFIT(v)      -200000   // sum = 0 ✓
+TREASURY_CASH(A) -10000000 ; LOAN_RECEIVABLE(m) +10000000  // loan.principalOutstanding += 10000000
 ```
 
-**Vendor closes after returning only ₹18,000 of a ₹20,000 investment** — write off the ₹2,000
-shortfall (R = 200000):
+**Vendor (bank) returns ₹22,000, ₹20,000 principal** (A = 2200000, P = 2000000):
 ```
-  Entry  VENDOR_RECEIVABLE(v) -200000   // clears residual asset to 0
-  Entry  VENDOR_PROFIT(v)     +200000   // recognizes a ₹2,000 loss ; sum = 0 ✓
-→ VENDOR_PROFIT(v).balance moves toward/past zero → net P&L = returns − invested = −₹2,000
+TREASURY_CASH(t) +2200000 ; VENDOR_RECEIVABLE(v) -2000000 ; VENDOR_PROFIT(v) -200000   // sum 0 ✓
 ```
 
-> **`FUNDS_TRANSFER` note:** This is a placeholder for a cash sub-bucket move (e.g. "cash on
-> hand" vs "bank") that must not change total club value. Until we model sub-buckets it can be a
-> no-op/2-line transfer between two `CLUB_CASH`-kind accounts. Flagged in §26 for confirmation.
+**Chit closes ₹2,000 short** (R = 200000): `VENDOR_RECEIVABLE −200000 ; VENDOR_PROFIT +200000` (loss).
 
 ---
 
 ## 9. Database schema (full Prisma + commentary)
 
-> Ledger accounts are named **`LedgerAccount`** specifically to avoid clashing with Better
-> Auth's own `Account` table. Better Auth manages `User`, `Session`, `Account`, `Verification`.
+> Ledger accounts are `LedgerAccount` to avoid clashing with Better Auth's `Account`.
 
 ```prisma
 generator client { provider = "prisma-client-js" }
@@ -371,28 +355,31 @@ datasource db { provider = "postgresql"; url = env("DATABASE_URL") }
 
 // ---------- Identity ----------
 model Member {
-  id         String   @id @default(cuid())
-  firstName  String
-  lastName   String?
-  phone      String?
-  avatarUrl  String?
-  status     MemberStatus @default(ACTIVE)
-  joinedAt   DateTime @default(now())
-  userId     String?  @unique          // optional Better Auth user link
-  equity     LedgerAccount? @relation("MemberEquity")
-  loanAcct   LedgerAccount? @relation("MemberLoan")
-  loans      Loan[]
-  archivedAt DateTime?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id          String   @id @default(cuid())
+  firstName   String
+  lastName    String?
+  phone       String?
+  avatarUrl   String?
+  role        MemberRole   @default(MEMBER)   // ADMIN or MEMBER (admin = write access)
+  isTreasurer Boolean      @default(false)    // convenience flag; treasury cash lives in LedgerAccount
+  status      MemberStatus @default(ACTIVE)   // ACTIVE / INACTIVE (frozen) / LEFT
+  joinedAt    DateTime                         // admission date (drives late-join catch-up)
+  userId      String?  @unique                 // optional Better Auth user link
+  accounts    LedgerAccount[]                  // equity, loan-receivable, and treasury (if any)
+  loans       Loan[]
+  archivedAt  DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  @@index([status])
 }
 
 model Vendor {
   id          String   @id @default(cuid())
   name        String
-  status      VendorStatus @default(ACTIVE)
-  receivable  LedgerAccount? @relation("VendorReceivable")
-  profitAcct  LedgerAccount? @relation("VendorProfit")
+  type        VendorType                        // BANK or CHIT
+  status      VendorStatus @default(ACTIVE)     // ACTIVE / INACTIVE / CLOSED
+  accounts    LedgerAccount[]                   // receivable + profit
+  chit        ChitFund?                          // present iff type = CHIT
   startedAt   DateTime @default(now())
   closedAt    DateTime?
   archivedAt  DateTime?
@@ -400,27 +387,47 @@ model Vendor {
   updatedAt   DateTime @updatedAt
 }
 
+model ChitFund {
+  id                 String  @id @default(cuid())
+  vendorId           String  @unique
+  vendor             Vendor  @relation(fields: [vendorId], references: [id])
+  chitValue          BigInt                      // face value, e.g. ₹5,00,000
+  durationMonths     Int                         // e.g. 20
+  monthlyInstallment BigInt                      // expected monthly payment (may vary; see §15)
+  startedAt          DateTime
+  payoutMonth        Int?                        // month index the payout was taken (10..20 or last)
+  payoutAt           DateTime?
+  payoutAmount       BigInt?                     // cash received at payout
+  status             ChitStatus @default(RUNNING) // RUNNING / PAID_OUT / COMPLETED
+  createdAt          DateTime @default(now())
+}
+
 // ---------- Ledger ----------
 model LedgerAccount {
   id        String   @id @default(cuid())
   kind      LedgerAccountKind
-  balance   BigInt   @default(0)        // cached running balance (paise)
-  memberId  String?  @unique
-  vendorId  String?
+  balance   BigInt   @default(0)               // cached running balance (paise)
+  memberId  String?                             // for TREASURY_CASH / MEMBER_EQUITY / LOAN_RECEIVABLE
+  member    Member?  @relation(fields: [memberId], references: [id])
+  vendorId  String?                             // for VENDOR_RECEIVABLE / VENDOR_PROFIT
+  vendor    Vendor?  @relation(fields: [vendorId], references: [id])
   entries   Entry[]
   createdAt DateTime @default(now())
+  @@unique([memberId, kind])                    // one equity / one loan-acct / one treasury per member, per kind
+  @@unique([vendorId, kind])
   @@index([kind])
-  @@index([vendorId])
 }
 
 model Transaction {
   id          String   @id @default(cuid())
   type        TxnType
-  occurredAt  DateTime                  // drives month bucketing (stored UTC, bucketed in IST)
+  subtype     TxnSubtype?                        // e.g. catch-up LATE_JOIN / DELAYED_PAYMENT
+  occurredAt  DateTime                           // drives month bucketing (UTC stored, IST bucketed)
   description String?
   reference   String?
-  reversesId  String?  @unique          // set when this reverses another txn
-  loanId      String?                   // link for loan-related txns
+  reversesId  String?  @unique                   // set when this reverses another txn
+  loanId      String?                            // link for loan-related txns (tranches, repay, interest)
+  vendorId    String?                            // link for vendor/chit txns
   entries     Entry[]
   createdById String?
   createdAt   DateTime @default(now())
@@ -428,13 +435,14 @@ model Transaction {
   @@index([occurredAt])
   @@index([type, occurredAt])
   @@index([loanId])
+  @@index([vendorId])
 }
 
-model Entry {                            // journal line; SUM(amount) per txn = 0
+model Entry {
   id            String  @id @default(cuid())
   transactionId String
   accountId     String
-  amount        BigInt                   // signed paise
+  amount        BigInt                            // signed paise
   transaction   Transaction   @relation(fields: [transactionId], references: [id], onDelete: Restrict)
   account       LedgerAccount @relation(fields: [accountId], references: [id])
   @@index([accountId])
@@ -445,32 +453,36 @@ model Loan {
   id                   String   @id @default(cuid())
   memberId             String
   member               Member   @relation(fields: [memberId], references: [id])
-  principal            BigInt
-  principalOutstanding BigInt                 // kept current via repayments
-  monthlyRateBps       Int                    // basis points/month (from ClubConfig default)
-  startedAt            DateTime
+  requestedAmount      BigInt                     // what the member asked for (funded via tranches)
+  principalOutstanding BigInt   @default(0)       // Σ disbursed − Σ repaid (kept current)
+  startedAt            DateTime                   // first tranche date; drives the 5-month term
   closedAt             DateTime?
-  status               LoanStatus @default(ACTIVE)
+  status               LoanStatus @default(ACTIVE) // ACTIVE / CLOSED  (overdue is derived)
   createdAt            DateTime @default(now())
   @@index([memberId])
   @@index([status])
+  // NOTE: no per-loan rate — interest uses the global time-versioned rate schedule (§14).
 }
 
 // ---------- Config & audit ----------
 model ClubConfig {
-  id             String   @id @default("singleton")
-  name           String
-  startedAt      DateTime
-  monthlyRateBps Int                           // default loan interest, basis points/month
-  stages         Json                          // [{ amount, startDate, endDate? }]
-  timezone       String   @default("Asia/Kolkata")
-  updatedAt      DateTime @updatedAt
+  id               String   @id @default("singleton")
+  name             String
+  startedAt        DateTime
+  stages           Json     // [{ name, amountPaise, startDate, endDate? }]
+  rateSchedule     Json     // [{ rateBps, effectiveFrom }]  (1% from start; admin appends changes)
+  dayInterestFrom  DateTime // daily proration applies from this date onward
+  maxLoanPaise     BigInt   // current loan limit (₹5,00,000), revisable
+  loanTermMonths   Int      @default(5)
+  loanCooldownMonths Int    @default(1)
+  timezone         String   @default("Asia/Kolkata")
+  updatedAt        DateTime @updatedAt
 }
 
 model AuditLog {
   id         String   @id @default(cuid())
   actorId    String?
-  action     String                           // e.g. "txn.create", "txn.reverse"
+  action     String
   entityType String
   entityId   String
   meta       Json?
@@ -478,216 +490,140 @@ model AuditLog {
   @@index([entityType, entityId])
 }
 
-// Optional, added only if graphs need it later (deterministically rebuilt from ledger):
+// Optional cache, rebuilt deterministically from the ledger (added only if profiling needs it):
 // model MonthlyRollup { month DateTime @id; data Json; builtAt DateTime }
 
-enum LedgerAccountKind { CLUB_CASH MEMBER_EQUITY LOAN_RECEIVABLE VENDOR_RECEIVABLE INTEREST_INCOME VENDOR_PROFIT }
-enum TxnType { PERIODIC_DEPOSIT OFFSET_DEPOSIT ADJUSTMENT WITHDRAW REJOIN FUNDS_TRANSFER LOAN_TAKEN LOAN_REPAY LOAN_INTEREST VENDOR_INVEST VENDOR_RETURN VENDOR_WRITEOFF REVERSAL }
+enum LedgerAccountKind { TREASURY_CASH MEMBER_EQUITY LOAN_RECEIVABLE VENDOR_RECEIVABLE INTEREST_INCOME VENDOR_PROFIT }
+enum TxnType { PERIODIC_DEPOSIT CATCHUP ADJUSTMENT WITHDRAW REJOIN FUNDS_TRANSFER LOAN_TAKEN LOAN_REPAY LOAN_INTEREST VENDOR_INVEST VENDOR_RETURN VENDOR_WRITEOFF CHIT_PAYMENT CHIT_PAYOUT REVERSAL }
+enum TxnSubtype { LATE_JOIN DELAYED_PAYMENT }
+enum MemberRole { ADMIN MEMBER }
 enum MemberStatus { ACTIVE INACTIVE LEFT }
+enum VendorType { BANK CHIT }
 enum VendorStatus { ACTIVE INACTIVE CLOSED }
+enum ChitStatus { RUNNING PAID_OUT COMPLETED }
 enum LoanStatus { ACTIVE CLOSED }
 ```
 
-### Schema commentary
+### Commentary
 
-- **`LedgerAccount.memberId` is `@unique`** but a member has *two* accounts (equity + loan). The
-  two named relations (`MemberEquity`, `MemberLoan`) both point back; the uniqueness applies per
-  relation in practice via the relation name. **⚠ This needs verification at P0** — a single
-  `@unique memberId` cannot back two distinct member relations. Likely fix: drop `@unique` and
-  instead enforce one-equity-one-loan per member in the service layer, or split into
-  `memberEquityId` / `memberLoanId` columns. Tracked in §26.
-- **`Entry.amount` is signed.** Never store absolute values; the sign is the whole point.
-- **`Transaction.occurredAt`** drives all month bucketing and is the date the user picks. It is
-  distinct from `createdAt` (when the row was written).
-- **`reversesId` is `@unique`** so a transaction can be reversed at most once.
-- **`ClubConfig.stages`** shape: `[{ amount: number /* paise */, startDate: ISO, endDate?: ISO }]`,
-  contiguous, covering the club's whole life. Money inside JSON is stored as a string or number
-  of paise (decide at P0; prefer string to avoid JS float in JSON).
-- **`onDelete: Restrict`** on `Entry.transaction` guards against orphaning; we never hard-delete
-  transactions anyway (we reverse).
+- **`@@unique([memberId, kind])`** resolves Revision 1's bug: a member can now hold up to three
+  accounts (equity, loan-receivable, treasury), at most one of each kind.
+- **Loan principal timeline is reconstructed from `LOAN_TAKEN`/`LOAN_REPAY` entries** (by
+  `loanId` + `occurredAt`); no separate tranche table. `principalOutstanding` is the cached stock.
+- **No per-loan rate**: interest uses the global `rateSchedule` (a rate bump applies to all live
+  loans from its effective date). `‹TBD›` if any loan ever needs an override.
+- **`ClubConfig.rateSchedule`** seeded as `[{ rateBps: 100, effectiveFrom: clubStart }]` (1%).
+- Money inside JSON (`stages`, `payoutAmount` etc.) is stored as **string paise** to avoid JS
+  float in JSON.
 
 ---
 
 ## 10. Money handling — the BigInt/paise contract
 
-**Rule: money is `BigInt` paise on the server, everywhere. It becomes a formatted ₹ string only
-at the display edge, only via `lib/money`.**
+Money is `BigInt` paise on the server, everywhere. It becomes a formatted ₹ string only at the
+display edge, only via `lib/money`.
 
-### Why this needs explicit care in Next.js
+`BigInt` is **not** serializable in RSC payloads / Server Action returns by default, so DTOs cross
+the boundary as **string paise** (field suffix `Paise`, e.g. `availableCashPaise: string`).
 
-`BigInt` is **not serializable** in React Server Component payloads or Server Action
-return values by default (`JSON.stringify` throws on `BigInt`). So we define a strict boundary:
-
-```
-DB (BigInt) ──read──▶ queries (BigInt) ──serialize──▶ RSC payload (string paise)
-                                                          │
-                                                          ▼
-                                              lib/money.format() → "₹5,000.00"
-```
-
-### `lib/money` API (to build at P0)
+### `lib/money` API (P0)
 
 ```ts
-type Paise = bigint;            // branded if we want: type Paise = bigint & { __paise: true }
-
-rupeesToPaise(rupees: number | string): Paise   // "5000" -> 500000n ; validates 2-dp max
-paiseToRupees(p: Paise): number                 // 500000n -> 5000   (for math/charts only)
-formatINR(p: Paise): string                     // 500000n -> "₹5,000.00"  (Intl, en-IN)
-serializePaise(p: Paise): string                // 500000n -> "500000"  (RSC boundary)
-parsePaise(s: string): Paise                    // "500000" -> 500000n   (server-side parse)
-addPaise(...xs: Paise[]): Paise
-negate(p: Paise): Paise
-isZero(p: Paise): boolean
+type Paise = bigint
+rupeesToPaise(r: number|string): Paise   // validates ≤ 2 dp
+paiseToRupees(p: Paise): number          // for charts/math only
+formatINR(p: Paise): string              // Intl en-IN → "₹5,000.00"
+serializePaise(p): string ; parsePaise(s): Paise
+addPaise(...xs): Paise ; negate(p): Paise ; isZero(p): boolean
+roundToWholeRupee(p: Paise): Paise       // interest rounding (§14)
 ```
 
-### Conventions
-
-- **Never** do floating-point arithmetic on money. All sums are `BigInt`.
-- **Rounding** happens only where a real-world rounding rule applies (interest → whole rupee,
-  §15). Rounding is a deliberate, tested function, not an accident of `number`.
-- DTOs crossing the server→client boundary expose money as **string paise** fields named with a
-  `Paise` suffix (e.g. `availableCashPaise: string`), and the UI formats with `formatINR`.
-- Prisma returns `BigInt` for `BigInt` columns natively — good. We must add a global
-  `BigInt.prototype.toJSON` shim **only** if we ever pass raw rows to the client (prefer mapping
-  to DTOs instead, so we don't globally monkey-patch).
+Never do floating-point math on money. Map rows → DTOs (don't globally monkey-patch
+`BigInt.toJSON`). Rounding happens only where a real rule applies (interest), as a tested function.
 
 ---
 
 ## 11. Dates, timezone & month boundaries
 
-All month bucketing and "club age" math is in **Asia/Kolkata (IST)**, even though timestamps are
-stored as UTC `DateTime`.
+All bucketing/age math in **IST** (no DST — simplifies things), timestamps stored UTC.
 
-### `lib/date` API (to build at P0)
+### `lib/date` API (P0)
 
 ```ts
 TZ = "Asia/Kolkata"
-
-monthStartIST(d: Date): Date      // first instant of d's month, in IST, as a UTC Date
-monthEndIST(d: Date): Date        // last instant of d's month, in IST
-monthsSince(start: Date, asOf: Date): number   // whole months elapsed, IST
-daysInMonthIST(d: Date): number   // 28..31
-extraDaysIST(start: Date, asOf: Date): number  // leftover days beyond whole months
-bucketKey(d: Date): string        // "2026-06" — the month bucket label, IST
+monthStartIST(d) ; monthEndIST(d)
+monthsSince(start, asOf): number               // whole months, IST
+anchoredMonths(from, asOf): { months, extraDays }  // day-of-month anchored (the "20th→20th" rule, §14)
+daysInMonthIST(d): number
+bucketKey(d): "YYYY-MM"
 ```
 
-These wrap a date library (e.g. `date-fns-tz` or `Temporal` when stable). Implemented once,
-unit-tested against DST-free IST (IST has no DST, which simplifies things) and month-length edge
-cases (Jan 31 → Feb).
+`anchoredMonths` implements the owner's loan-interest counting: a loan from the **20th** completes
+one "month" on the **20th** of the next month; trailing days are counted separately. Unit-tested
+against month-length edges (e.g. 31 Jan → 28 Feb).
 
 ---
 
-## 12. The critical write path — `postTransaction` line by line
+## 12. The critical write path — `postTransaction`
 
-This is **the heart of the system**. Everything that changes money goes through it. It lives in
-`server/ledger/postTransaction.ts`.
-
-### Input shape
+The single choke point for all balance changes (`server/ledger/postTransaction.ts`).
 
 ```ts
 interface PostTransactionInput {
-  type: TxnType;
-  occurredAt: Date;
-  description?: string;
-  reference?: string;
-  loanId?: string;                 // when loan-related
-  reversesId?: string;             // set only by reverseTransaction
-  lines: Array<{ accountId: string; amount: Paise }>;  // signed paise, must sum to 0
-  actorId?: string;               // who did it (from session)
+  type: TxnType; subtype?: TxnSubtype
+  occurredAt: Date; description?: string; reference?: string
+  loanId?: string; vendorId?: string; reversesId?: string
+  lines: { accountId: string; amount: Paise }[]   // signed, must sum to 0
+  actorId?: string
 }
 ```
 
-> Callers usually don't hand-build `lines`. Higher-level service helpers (e.g.
-> `depositForMember`, `giveLoan`) build the correct lines from §8 and then call
-> `postTransaction`. This keeps the posting spec in one place.
-
-### Pseudocode (with the exact ordering that guarantees correctness)
+Callers rarely hand-build `lines`; intent helpers (§22) build them from §8.
 
 ```
-function postTransaction(input):
-  # ---- 0. pre-validate (pure, no DB) ----
+postTransaction(input):
+  # 0. pure pre-validate
   assert input.lines.length >= 2
-  assert sum(line.amount for line in input.lines) == 0      # the core invariant
-  for line in input.lines:
-      assert line.amount != 0                                # no zero lines
-  validate type-specific shape via Zod (correct account kinds, A>0, P<=A for vendor return)
+  assert Σ line.amount == 0
+  assert every line.amount != 0
+  Zod type-specific shape check (correct account kinds; A>0; P<=A; etc.)
 
-  # ---- 1. one DB transaction (atomic) ----
-  return prisma.$transaction(async tx => {
-
-    # 1a. lock & load every affected account row (FOR UPDATE) to serialize concurrent posts
-    accounts = tx.ledgerAccount.findMany({ where: id IN input.lines.accountId })
-    assert every referenced accountId exists
-
-    # 1b. create the transaction header
-    txn = tx.transaction.create({
-      type, occurredAt, description, reference, reversesId, loanId, createdById: actorId
-    })
-
-    # 1c. create entries
-    tx.entry.createMany(input.lines.map(l => ({ transactionId: txn.id, accountId: l.accountId, amount: l.amount })))
-
-    # 1d. incrementally update each account balance — O(lines)
-    for line in input.lines:
-        tx.ledgerAccount.update({ where: id=line.accountId, data: { balance: { increment: line.amount } } })
-
-    # 1e. loan side-effects (see §8 table)
-    if input.loanId:
-        loan = tx.loan.findUnique(input.loanId)
-        if type == LOAN_TAKEN:   loan.principalOutstanding += A
-        if type == LOAN_REPAY:   loan.principalOutstanding -= principalPortion
-                                 if loan.principalOutstanding == 0: status=CLOSED, closedAt=occurredAt
-        if type == REVERSAL of a loan txn: undo the above
-        tx.loan.update(...)
-
-    # 1f. audit
-    tx.auditLog.create({ actorId, action: reversesId ? "txn.reverse" : "txn.create",
-                         entityType: "Transaction", entityId: txn.id, meta: {...} })
-
+  # 1. one DB transaction
+  prisma.$transaction(tx => {
+    accounts = tx.ledgerAccount.findMany(id IN lines.accountId)  # FOR UPDATE (lock)
+    assert all referenced accounts exist
+    txn = tx.transaction.create({ ...header })
+    tx.entry.createMany(lines → { transactionId, accountId, amount })
+    for line: tx.ledgerAccount.update(id=line.accountId, balance += line.amount)   # atomic increment, O(lines)
+    if input.loanId: apply loan side-effects (LOAN_TAKEN/REPAY/REVERSAL) → principalOutstanding, status
+    if input.vendorId && chit: apply chit side-effects (installmentsPaid, payout, status)
+    tx.auditLog.create({ ... })
     return txn
   })
-  # ---- 2. cache invalidation (after commit) ----
-  revalidateTag(...affectedTags(input))     # see §19
+
+  # 2. after commit
+  revalidateTag(...affectedTags(input))
 ```
 
-### Why the ordering matters
-
-- **Validate before any write** → a bad transaction never touches the DB.
-- **All inside `$transaction`** → header, entries, balance updates, loan update, and audit
-  either all commit or all roll back. No partial postings, ever.
-- **`increment` (atomic SQL `balance = balance + x`)** rather than read-modify-write in app code
-  → safe under concurrency; the `FOR UPDATE` lock (1a) plus atomic increment means two
-  simultaneous deposits can't lose an update.
-- **`revalidateTag` only after commit** → the cache is never invalidated for a write that rolled
-  back.
-
-### Flow diagram
+Why the ordering: validate before any write; everything atomic in one `$transaction`; balances via
+SQL `increment` (safe under concurrency with row locks); `revalidateTag` only after commit.
 
 ```mermaid
 sequenceDiagram
-  participant UI as Entry drawer (client)
-  participant ACT as action (use server)
-  participant SVC as service helper
+  participant UI as Entry drawer
+  participant ACT as action
+  participant SVC as intent helper
   participant LED as postTransaction
   participant DB as Postgres ($transaction)
-
-  UI->>ACT: submit { intent, amount, member, date }
-  ACT->>ACT: requireRole(ADMIN)
-  ACT->>ACT: Zod validate input
-  ACT->>SVC: depositForMember(memberId, amount, date)
+  UI->>ACT: submit { intent, amount, member/treasury, date }
+  ACT->>ACT: requireRole(ADMIN) + Zod
+  ACT->>SVC: e.g. giveLoanTranche(loanId, treasuryId, amount, date)
   SVC->>SVC: build balanced lines (§8)
   SVC->>LED: postTransaction(input)
-  LED->>LED: assert sum(lines)==0
-  LED->>DB: BEGIN
-  DB-->>LED: lock accounts
-  LED->>DB: insert Transaction + Entries
-  LED->>DB: balance += amount (per line)
-  LED->>DB: update Loan (if loan-related)
-  LED->>DB: insert AuditLog
-  LED->>DB: COMMIT
+  LED->>DB: BEGIN → lock accounts → insert txn+entries → balances += → loan/chit update → audit → COMMIT
   LED-->>ACT: txn
   ACT->>ACT: revalidateTag(affected)
-  ACT-->>UI: success (optimistic UI confirmed)
+  ACT-->>UI: success (optimistic confirmed)
 ```
 
 ---
@@ -696,545 +632,519 @@ sequenceDiagram
 
 ```
 reverseTransaction(targetId, actorId):
-  target = load txn + entries ; assert not already reversed (reversesId unique)
-  assert period not locked for target.occurredAt
-  negatedLines = target.entries.map(e => ({ accountId: e.accountId, amount: -e.amount }))
-  return postTransaction({
-    type: REVERSAL, occurredAt: now (or target.occurredAt — see §26),
-    reversesId: target.id, loanId: target.loanId, lines: negatedLines, actorId
-  })
-  # loan side-effect is undone inside postTransaction's REVERSAL branch
+  target = load txn + entries ; assert not already reversed ; assert period not locked
+  post REVERSAL with negated lines, reversesId=target.id, same loanId/vendorId
+  # loan/chit side-effects undone in the REVERSAL branch
 
-editTransaction(targetId, correctedInput, actorId):
-  in prisma.$transaction (outer):
-    reverseTransaction(targetId)         # net out the old
-    postTransaction(correctedInput)      # post the new
-  # net effect == the edit ; full history preserved ; cost O(lines)
+editTransaction(targetId, corrected, actorId):
+  $transaction: reverseTransaction(targetId) ; postTransaction(corrected)   # atomic; O(lines)
 ```
 
-- **Delete** = `reverseTransaction` (the original stays for audit, balances exactly restored).
-- **Edit** = reverse + re-post atomically.
-- Both refuse to act on a **locked period** (seam built, off by default).
-- No replay, no rescans — an edit costs **O(lines)**, same as the original write.
+Delete = reverse (history kept, balances restored). Edit = reverse + re-post. Both refuse on a
+locked period. `‹TBD›` `REVERSAL.occurredAt`: date "now" (audit-accurate) vs target's date
+(keeps analytics buckets stable) — recommend dating the reversal to the target's `occurredAt` for
+edits so buckets stay correct.
 
 ---
 
-## 14. Calculations — every figure derived, line by line
+## 14. Loans in depth — tranches, rate schedule, interest
 
-Every figure below is a **stock** (balance read), **flow** (`SUM`), **expected** (config
-function), or **derived-on-read**. All formulas match v1 exactly; only the inputs change.
+The richest part of the system. **One `Loan` = one borrowing**, funded by tranches, repaid in
+parts, interest derived from the principal timeline crossed with the global rate schedule.
 
-> **⚠ Sign normalization (read this before every formula below).** Because of the sign
-> convention (§6), entries posted to **equity/income** accounts (`MEMBER_EQUITY`,
-> `INTEREST_INCOME`, `VENDOR_PROFIT`) are **negative** for the "normal" direction (a deposit
-> posts `MEMBER_EQUITY −A`; interest posts `INTEREST_INCOME −A`). So a raw `SUM(entry.amount)`
-> over those legs is **negative** and must **not** be used directly in display/pending math.
-> Define a single helper that always returns a **positive magnitude**:
->
-> ```
-> flow(type, m?) = | Σ entry.amount WHERE txn.type=type [AND account belongs to m] |
-> ```
->
-> Concretely: sum the **cash leg** (which is positive for inflows), or **negate** the
-> equity/income leg. Equivalently, a "balance read" of an income/equity account is reported as
-> `−account.balance`. **Throughout §14, every `SUM(...)`/`flow(...)`/income-balance below is the
-> normalized positive value** unless a `±` sign is explicitly shown. This is unit-tested (a
-> member who has paid deposits must show *positive* deposits and *reduced* pending).
+### 14.1 Lifecycle & rules
 
-### 14.1 Member figures (member `m`)
-
-| Figure | Kind | Derivation |
-|--------|------|-----------|
-| Periodic deposits | flow | `flow(PERIODIC_DEPOSIT, m)` — positive magnitude (cash leg, or negated `MEMBER_EQUITY(m)` leg) |
-| Adjustments / offset | flow | `flow(OFFSET_DEPOSIT, m) + flow(ADJUSTMENT, m)` (positive) |
-| Total deposits / balance | stock | `−MEMBER_EQUITY(m).balance` (equity is stored negative; negate to display deposits + adjustments − withdrawals as positive) |
-| Withdrawals | flow | `SUM` over `m`'s `WITHDRAW` entries |
-| Profit withdrawn | flow | `SUM` of the portion of each `WITHDRAW` beyond principal (rule §7.2) |
-| Loan outstanding | stock | `LOAN_RECEIVABLE(m).balance` |
-| Loan taken / repaid | flow | `SUM` of `m`'s `LOAN_TAKEN` / `LOAN_REPAY` |
-| Interest paid | flow | `SUM` of `m`'s `LOAN_INTEREST` |
-| Interest pending | derived | `Σ_activeLoans interestToDate(loan) − interestPaid` |
-| Expected deposit (to date) | expected | `getMemberTotalDeposit(now)` over `ClubConfig.stages` |
-| Pending contribution | derived | `expected + offsetExpected − (periodic + offset)` — uses **contributions, not balance** (rule §7.1) |
-| Expected return / profit share | derived | `availableProfit / activeMemberCount` |
-| Current value | derived | equity balance + profit share − amounts already withdrawn |
-
-### 14.2 Club statistics
-
-```
-activeMembers           = COUNT(members WHERE status = ACTIVE)
-clubAgeMonths           = monthsSince(ClubConfig.startedAt, now)             # IST
-
-totalAdjustments        = flow(ADJUSTMENT)                   # positive magnitude
-totalInterestCollected  = −INTEREST_INCOME.balance           # income stored negative → negate (= Σ LOAN_INTEREST, positive)
-totalVendorProfit       = Σ vendor P&L  (active: max(net,0); closed: net)   # rule §7.3 ; net = −VENDOR_PROFIT(v).balance
-totalProfitCollected    = totalAdjustments? + totalInterestCollected + totalVendorProfit
-availableProfit         = totalProfitCollected − profitWithdrawals
-returnPerMember         = availableProfit / activeMembers
-expectedTotalLoanInterest = Σ_loans interestToDate(loan)     # derived on read (§15)
-interestBalance         = max(0, expectedTotalLoanInterest − totalInterestCollected)
-expectedLoanProfitPerMember = interestBalance / activeMembers
+```mermaid
+flowchart LR
+  R["request (requestedAmount ≤ maxLoanPaise)"] --> D1["LOAN_TAKEN tranche 1 (treasurer A)"]
+  D1 --> D2["LOAN_TAKEN tranche 2 (treasurer B)…"]
+  D2 --> A["ACTIVE (interest accrues daily)"]
+  A --> RP["LOAN_REPAY (partial, principal + interest legs)"]
+  RP --> A
+  A -->|now > start+5mo| OV["overdue (derived) — still ACTIVE"]
+  RP -->|principalOutstanding == 0| C["CLOSED"]
+  C -->|+1 month cooldown| R2["eligible for next loan"]
 ```
 
-### 14.3 Dashboard tiles (exact formulas)
+- **Eligibility:** member has **no** ACTIVE loan and no outstanding balance; ≥ 1 month since last
+  loan's `closedAt`; `requestedAmount ≤ ClubConfig.maxLoanPaise`.
+- **Tranches:** multiple `LOAN_TAKEN` until cumulative disbursed = `requestedAmount`. **No top-ups
+  after fully funded.** `startedAt` = first tranche date.
+- **Overdue:** `isOverdue(loan) = status==ACTIVE && monthsSince(startedAt, now) > loanTermMonths`.
+  Derived; not stored.
+- **Repayment:** any amount (no minimum), to any treasury; may include an interest portion.
+- **Close:** when `principalOutstanding == 0` → `CLOSED`, `closedAt = occurredAt`.
+
+### 14.2 The global rate schedule
 
 ```
-# Member funds
-totalDeposits (expected)   = getMemberTotalDeposit(now) * activeMembers      # config × count
-memberDepositsPaid         = flow(PERIODIC_DEPOSIT)                           # positive magnitude
-memberBalance              = memberDepositsPaid − totalDeposits
-totalMemberPending         = Σ_active( expected + offsetExpected − (periodic + offset) )
-
-# Member outflow
-profitWithdrawals          = flow(profit portion of WITHDRAW)                 # rule §7.2, positive
-memberAdjustments          = flow(ADJUSTMENT)
-pendingAdjustments         = max(0, expectedAdjustments − receivedAdjustments)
-
-# Loans
-totalLoanGiven (lifetime)  = flow(LOAN_TAKEN)                                 # positive
-totalInterestCollected     = −INTEREST_INCOME.balance                         # income stored negative → negate
-currentLoanTaken (o/s)     = Σ LOAN_RECEIVABLE.balance
-interestBalance            = max(0, expectedTotalLoanInterest − totalInterestCollected)
-
-# Vendor
-vendorProfit               = Σ vendor P&L (active: max(net,0); closed: net)   # net = −VENDOR_PROFIT(v).balance
-vendorInvestment (holding) = Σ VENDOR_RECEIVABLE.balance
-
-# Cash flow
-totalProfit                = vendorProfit + totalInterestCollected
-totalInvested              = currentLoanTaken + vendorInvestment
-pendingAmounts             = totalMemberPending + interestBalance
-
-# Valuation / portfolio
-availableCash              = CLUB_CASH.balance
-currentValue               = availableCash + currentLoanTaken + vendorInvestment     # asset-side identity, rule §7.4
-totalPortfolioValue        = currentValue + interestBalance + totalMemberPending
+ClubConfig.rateSchedule = [{ rateBps, effectiveFrom }, ...]   # sorted
+rateAt(date) = rateBps of the latest entry with effectiveFrom <= date
 ```
+Seed: `[{ rateBps: 100, effectiveFrom: clubStart }]` (1%/month). Admin appends e.g.
+`{ rateBps: 200, effectiveFrom: <date> }` and all live loans accrue at 2% from that date.
 
-### 14.4 The six business rules (must carry over verbatim — unit-tested)
+### 14.3 Interest engine (derive-on-read)
 
-1. **Pending uses contributions, not balance.** `pending = expected + offset − (periodic + offset
-   deposits)`. A member who withdrew principal doesn't appear to "owe" it back.
-2. **Profit-withdrawal split.** A `WITHDRAW` beyond the member's principal is booked as profit
-   withdrawn, not principal.
-3. **Vendor profit recognition.** Active vendor → `max(returns − invested, 0)`; closed/inactive →
-   full `returns − invested`.
-4. **Current value = asset-side identity** `cash + loansOutstanding + vendorHolding` — never the
-   equity-side sum (which over-counts withdrawals).
-5. **Interest = monthly rate + pro-rated days, rounded to whole ₹.**
-6. **Stage-based expected deposits** from `ClubConfig.stages`.
-
-These live as small, pure, unit-tested functions in `server/queries/*` and `server/ledger/*`,
-gated by characterization fixtures (v1 numbers).
-
-### 14.5 `getMemberTotalDeposit` (stage-based expected)
-
-```
-getMemberTotalDeposit(asOf):                 # expected cumulative deposit for one member, to date
-  total = 0
-  for stage in ClubConfig.stages:            # [{ amount, startDate, endDate? }]
-      from = max(stage.startDate, member-relevant start)
-      to   = min(stage.endDate ?? asOf, asOf)
-      months = monthsBetweenInclusive(from, to)      # IST, clamp >= 0
-      total += stage.amount * months
-  return total                                # paise
-```
-
-> Exact month-counting semantics (inclusive of join month? proration in first month?) must be
-> copied from v1's `getMemberTotalDeposit` and locked by fixtures. Tracked in §26.
-
----
-
-## 15. Interest — the one time-based number
-
-This is the **only** genuinely time-based figure, and it is **never stored** — computed on read
-for active loans.
+The principal-over-time curve has **breakpoints** at: each tranche, each repayment, each
+rate-change date, and `dayInterestFrom`. **The month-anchor resets at each principal change**
+("from that day the interest is calculated for that ₹30,000").
 
 ```
 interestToDate(loan, asOf = now):
-  outstanding = loan.principalOutstanding                      # paise
-  monthRate   = loan.monthlyRateBps / 10000                    # e.g. 200 bps -> 0.02
-  whole       = monthsSince(loan.startedAt, asOf)              # IST whole months
-  days        = daysInMonthIST(asOf)
-  extra       = extraDaysIST(loan.startedAt, asOf)             # leftover days in partial month
+  events   = sorted [(date, ±amount)] from LOAN_TAKEN(+) and LOAN_REPAY principal legs(−)
+  segments = principalTimeline(events, asOf)   # list of (balance B, segStart, segEnd) where B constant
+  total = 0
+  for (B, s, e) in segments:
+      for (ss, ee, rateBps, daily) in splitByRateAndDailyBoundary(s, e):   # split at rate changes & dayInterestFrom
+          rate = rateBps / 10000
+          { months, extraDays } = anchoredMonths(ss, ee)        # anchored at ss (the segment's own start)
+          if daily:                                              # on/after dayInterestFrom
+              total += B*rate*months + (B*rate / daysInMonthIST(ee)) * extraDays
+          else:                                                  # before dayInterestFrom: whole-month, round partial up
+              total += B*rate * (months + (extraDays > 0 ? 1 : 0))
+  return roundToWholeRupee(total)
 
-  base        = outstanding * monthRate * whole
-  prorated    = (outstanding * monthRate / days) * extra
-  return roundToWholeRupee(base + prorated)                    # rule §7.5; result in paise
+interestPending(loan) = interestToDate(loan) − Σ loan's LOAN_INTEREST payments
 ```
 
-- `monthRate` math is done carefully in integer/decimal terms to avoid float drift; the final
-  result is **rounded to whole rupee** and stored/displayed as paise (multiple of 100).
-- This mirrors v1's `calculateInterestByAmount()` exactly. The rounding function and the
-  month/day boundary semantics are locked by fixtures.
-- For analytics "interest through month M", call `interestToDate(loan, monthEndIST(M))` for loans
-  active in that window.
+Worked example (owner's): ₹1L disbursed day 0; +₹1.5L on day 7 (→ ₹2.5L); single-shot repay at ~5
+months ⇒ interest = `accrue(₹1L, day0→day7)` + `accrue(₹2.5L, day7→repay)`. Partial path: repay
+₹2L mid-way, remaining ₹50k accrues from that day (anchor reset) until paid two weeks later at the
+daily rate.
+
+`‹TBD›` to lock by fixtures: (a) exact `daysInMonthIST` basis for the daily rate (month of `ee`
+vs fixed 30); (b) rate change landing *inside* an anchored month (current model splits and
+re-anchors at the boundary — confirm against a real example); (c) pre-`dayInterestFrom` partial
+month rounds up (assumed).
+
+### 14.4 Loan figures
+
+```
+loan.outstanding        = LOAN_RECEIVABLE(m).balance contribution from this loan (or principalOutstanding)
+loan.interestToDate     = §14.3
+loan.interestPending    = interestToDate − interestPaid
+loan.isOverdue          = derived (§14.1)
+member.currentLoanOutstanding = LOAN_RECEIVABLE(m).balance
+expectedTotalLoanInterest     = Σ active loans interestToDate(loan)   # club-level, derive-on-read
+```
 
 ---
 
-## 16. Read models / queries
+## 15. Chit funds in depth
 
-All in `server/queries/*`, each: typed, Zod-validated output DTO (money as string paise),
-cached with an explicit tag.
+A `CHIT` vendor models: pay a fixed monthly installment for `durationMonths`; receive a **payout**
+at some month (10..20 or last); **must keep paying to term even if payout taken early**.
+
+### Mechanics (owner's example: ₹5,00,000 chit, 20 months, ~₹20,000/month max)
+
+```mermaid
+flowchart LR
+  S["create CHIT vendor + ChitFund (value, duration, installment, start)"] --> P["monthly CHIT_PAYMENT (installment → VENDOR_RECEIVABLE)"]
+  P --> P
+  P --> PO["CHIT_PAYOUT at month k (cash in; profit = payout − net paid so far)"]
+  PO --> O["remaining (duration−k) installments stay as an OBLIGATION; payments continue"]
+  O --> P2["CHIT_PAYMENT continues to term"]
+  P2 --> CL["month = duration → COMPLETED"]
+```
+
+### Accounts & postings
+
+- **Installment:** `CHIT_PAYMENT` → `TREASURY_CASH(t) −A`, `VENDOR_RECEIVABLE(v) +A`; `installmentsPaid++`.
+- **Payout:** `CHIT_PAYOUT` → `TREASURY_CASH(t) +A`, `VENDOR_RECEIVABLE(v) −P`, `VENDOR_PROFIT(v) −(A−P)`.
+- **Close short / loss:** `VENDOR_WRITEOFF`.
+
+### Derived figures
+
+```
+chit.totalPaid          = Σ CHIT_PAYMENT to date
+chit.installmentsLeft    = max(0, durationMonths − installmentsPaid)
+chit.remainingObligation = installmentsLeft × monthlyInstallment      # liability still owed
+chit.netProfit           = (payoutAmount ?? 0) − totalPaid            # may be negative
+   active : reported as max(netProfit, 0) until COMPLETED (rule §17)
+   completed: full netProfit
+```
+
+`‹TBD›` to confirm with owner: (a) whether the installment is fixed or varies month to month
+(chit dividends often reduce it) — schema allows a per-payment amount via the actual
+`CHIT_PAYMENT` entries, with `monthlyInstallment` as the planning default; (b) exact profit
+recognition timing for an early payout while obligations remain (recommend: realize profit at
+payout, carry `remainingObligation` as a disclosed liability reducing `currentValue`).
+
+---
+
+## 16. Members — deposits, catch-up, withdraw & rejoin
+
+### 16.1 Expected deposit (stage-based)
+
+```
+getMemberTotalDeposit(member, asOf):           # expected cumulative deposit, paise
+  total = 0
+  for stage in ClubConfig.stages:
+      from = max(stage.startDate, member.joinedAt-relevant start)
+      to   = min(stage.endDate ?? asOf, asOf)
+      total += stage.amountPaise × monthsBetweenInclusive(from, to)   # IST, clamp ≥ 0
+  return total
+```
+`‹TBD›` exact month-count semantics (join-month inclusive? first-month proration?) — lock to v1
+fixtures during migration.
+
+### 16.2 Catch-up (equalization)
+
+A new/returning member pays, beyond the prevailing deposit, a **catch-up** so they hold equal
+value:
+- **late-join** (`subtype = LATE_JOIN`): = existing members' **accumulated profit-per-member** up
+  to admission date.
+- **delayed-payment** (`subtype = DELAYED_PAYMENT`): = deposits owed for months they were behind.
+
+Posted as `CATCHUP` (deposit-shaped: `TREASURY_CASH +A`, `MEMBER_EQUITY −A`), reported separately
+from periodic deposits. Maps from v1 `joiningOffset` → LATE_JOIN, `delayOffset` → DELAYED_PAYMENT.
+
+### 16.3 Withdraw → freeze → reactivate
+
+```mermaid
+flowchart LR
+  AC["ACTIVE"] -->|leaving| W["WITHDRAW (admin-entered settlement amount)"]
+  W --> Z["profit → 0 ; equity settled out ; status = INACTIVE (frozen) ; history kept"]
+  Z -->|returns| RA["REACTIVATE"]
+  RA --> PAY["repay in 1–2 terms (REJOIN) + CATCHUP (profit-per-member + owed deposits)"]
+  PAY --> AC2["ACTIVE again, equal value"]
+```
+
+- **Withdraw / leave:** the system **computes** the member's current value as of the date (equity
+  balance + their share of all accrued items incl. live loan interest) and **shows it as a
+  guide**. The **admin enters the actual settlement amount** (may be slightly less). Posting:
+  `TREASURY_CASH(t) −A`, `MEMBER_EQUITY(m) +A`. If `A` exceeds contributed principal, the excess is
+  **profit withdrawn** (rule §17). Member → `INACTIVE`, frozen; **all history retained**.
+- **Reactivate:** admin reactivates; member repays over **one or two terms** (`REJOIN` postings) and
+  pays **catch-up** = current profit-per-member (+ any owed deposits), restoring equal value. Member
+  → `ACTIVE`.
+
+Pending uses **contributions, not balance** (rule §17.1), so a settled/negative equity never
+creates phantom debt.
+
+---
+
+## 17. Calculations — every figure derived, line by line
+
+> **⚠ Sign normalization (read first).** Entries on equity/income accounts (`MEMBER_EQUITY`,
+> `INTEREST_INCOME`, `VENDOR_PROFIT`) are **negative** for the normal direction. Use a helper that
+> returns a **positive magnitude**:
+> ```
+> flow(type, scope?) = | Σ entry.amount WHERE txn.type=type [AND scope] |
+> ```
+> i.e. sum the cash leg (positive for inflows) or negate the equity/income leg; an income/equity
+> "balance read" is reported as `−account.balance`. Every `SUM`/`flow`/income-balance below is the
+> **normalized positive** value unless a `±` is shown. Unit-tested.
+
+### 17.1 Business rules (carry over verbatim)
+
+1. **Pending uses contributions, not balance** — withdrawn principal isn't phantom debt.
+2. **Profit-withdrawal split** — a `WITHDRAW`/settlement beyond contributed principal is profit
+   withdrawn.
+3. **Vendor/chit profit recognition** — active → `max(net, 0)`; closed/completed → full `net`
+   (may be negative).
+4. **Current value = asset-side identity** — `Σ treasuries + Σ loans outstanding + Σ vendor
+   holdings` (never the equity-side sum).
+5. **Interest = anchored months + daily, time-versioned rate, rounded to ₹** (§14).
+6. **Stage-based expected deposits** (§16.1); **catch-up equalizes value** (§16.2).
+
+### 17.2 Member figures (member `m`)
+
+| Figure | Kind | Derivation |
+|--------|------|-----------|
+| Periodic deposits | flow | `flow(PERIODIC_DEPOSIT, m)` |
+| Catch-up (late-join / delayed) | flow | `flow(CATCHUP, m)` (split by `subtype`) |
+| Total deposits / balance | stock | `−MEMBER_EQUITY(m).balance` |
+| Withdrawals / settled | flow | `flow(WITHDRAW, m)` |
+| Profit withdrawn | derived | settlement beyond contributed principal (rule §17.1.2) |
+| Loan outstanding | stock | `LOAN_RECEIVABLE(m).balance` |
+| Interest paid / pending | flow / derived | `flow(LOAN_INTEREST, m)` / `interestToDate − paid` |
+| Expected deposit (to date) | expected | `getMemberTotalDeposit(m, now)` |
+| Pending contribution | derived | `expected − (periodic + delayed-catchup)` (contributions, not balance) |
+| Profit share | derived | `availableProfit / activeMembers` |
+
+### 17.3 Club / dashboard tiles
+
+```
+activeMembers           = COUNT(members WHERE status = ACTIVE)
+clubAgeMonths           = monthsSince(ClubConfig.startedAt, now)            # IST
+
+# Cash (no single club account)
+availableCash           = Σ TREASURY_CASH.balance                          # + per-treasurer breakdown
+perTreasurer[t]         = TREASURY_CASH(t).balance
+
+# Member funds
+totalExpectedDeposits   = Σ_active getMemberTotalDeposit(m, now)
+memberDepositsPaid      = flow(PERIODIC_DEPOSIT)
+totalMemberPending      = Σ_active( expected − (periodic + delayed-catchup) )
+totalCatchUp            = flow(CATCHUP)
+
+# Loans
+totalLoanGiven          = flow(LOAN_TAKEN)                                  # lifetime disbursed
+currentLoanOutstanding  = Σ LOAN_RECEIVABLE.balance
+totalInterestCollected  = −INTEREST_INCOME.balance
+expectedTotalLoanInterest = Σ active loans interestToDate(loan)            # derive-on-read (§14)
+interestBalance         = max(0, expectedTotalLoanInterest − totalInterestCollected)
+overdueLoans            = COUNT(active loans WHERE isOverdue)
+
+# Vendors (bank + chit)
+vendorHolding           = Σ VENDOR_RECEIVABLE.balance
+vendorProfit            = Σ vendor P&L (active: max(net,0); closed/completed: net)   # net = −VENDOR_PROFIT(v).balance
+chitRemainingObligation = Σ running chits' remainingObligation
+
+# Valuation
+totalProfit             = vendorProfit + totalInterestCollected
+totalInvested           = currentLoanOutstanding + vendorHolding
+currentValue            = availableCash + currentLoanOutstanding + vendorHolding     # asset-side identity
+totalPortfolioValue     = currentValue + interestBalance + totalMemberPending
+pendingAmounts          = totalMemberPending + interestBalance
+availableProfit         = totalProfit − profitWithdrawals
+returnPerMember         = availableProfit / activeMembers
+```
+
+---
+
+## 18. Read models / queries
+
+`server/queries/*`, each typed, Zod-validated DTO (money = string paise), tag-cached.
 
 | Query | Returns | Backed by |
 |-------|---------|-----------|
-| `getDashboard()` | all §14.3 tiles | a few balance reads + a handful of `SUM`s + interest pass over active loans |
-| `getMemberStatement(id)` | §14.1 figures + that member's transactions | member accounts + filtered entries + their loans |
-| `listMembers()` | members with equity/loan balances + pending | join members → their accounts; expected from config |
-| `listLoans(filter?)` | loans with outstanding + interest-to-date | loans + `interestToDate` |
-| `listVendors()` | vendors with holding + profit | vendor accounts |
-| `listTransactions(filter, page)` | paginated ledger with entries | transactions + entries, indexed by `occurredAt`/`type` |
-| `getGraphSeries(range)` | analytics series (§17) | grouped aggregates over entries |
-
-Every query reads **balances or indexed `SUM`s** — no eager recompute, no passbook.
-
----
-
-## 17. Analytics & graphs
-
-Two kinds of series, both **straight from the ledger**, so historical add/edit/delete reflects
-instantly with no snapshot rebuild.
-
-### a) Point-in-time ("as of" a month-end)
-
-```
-balanceAsOf(account, monthEnd) = Σ entry.amount WHERE account = a AND occurredAt <= monthEnd
-```
-One windowed/grouped SQL query yields the running month-end balance for the whole range
-(portfolio value, available cash, outstanding loans).
-
-### b) Per-month flow (activity within a month)
-
-```
-flow(type, month) = Σ entry.amount
-                    WHERE type = t AND occurredAt IN [monthStart, monthEnd]
-                    GROUP BY date_trunc('month', occurredAt)
-```
-One grouped aggregate returns the whole time series (deposits/month, interest/month, loans
-disbursed/month).
-
-### c) Time-based interest per month
-
-`interestThroughMonth(M) = Σ_activeLoans interestToDate(loan, monthEndIST(M))`.
-
-### Series we ship (decision 16)
-
-portfolio value · available cash · outstanding loans · deposits/month · interest/month ·
-member-vs-club-average.
-
-### Why this beats v1's Summary snapshots
-
-- **Historical edits reflect instantly** (computed from entries, not frozen rows).
-- **Re-dating works for free** (changing `occurredAt` moves a txn between buckets).
-- **No snapshot table to maintain or rot.**
-
-### Optional rollup (only if needed)
-
-If the ledger grows large, add a `MonthlyRollup` cache, **deterministically rebuilt from the
-ledger**, invalidated for the **earliest dirty month** on any historical mutation. The ledger
-stays authoritative; the rollup is just a cache. Not built unless profiling demands it.
+| `getDashboard()` | §17.3 tiles + per-treasurer cash | balance reads + a few `SUM`s + interest over active loans |
+| `getMemberStatement(id)` | §17.2 figures + member's txns + loans | member accounts + filtered entries |
+| `listMembers()` | members + balances + pending + role/treasurer flags | members → accounts |
+| `listTreasurers()` | members holding cash + amounts | `TREASURY_CASH` accounts |
+| `listLoans(filter?)` | loans + outstanding + interestToDate + overdue | loans + interest engine |
+| `listVendors()` | banks + chits, holding + profit + obligation | vendor accounts + chit |
+| `getChit(id)` | chit schedule, paid, payout, obligation | `ChitFund` + entries |
+| `listTransactions(filter, page)` | paginated ledger | transactions + entries (indexed) |
+| `getGraphSeries(range)` | §19 series | grouped aggregates over entries |
 
 ---
 
-## 18. Auth, roles & permissions
+## 19. Analytics & graphs
 
-### Identity
-
-- **Better Auth** owns `User`/`Session`/`Account`/`Verification` via its Prisma adapter.
-- A `Member` optionally links to a user via `Member.userId` (nullable). Members and users are
-  **separate entities**: a member can exist with no login; a user (admin) can exist with no
-  member record.
-- Roles (`SUPER_ADMIN` / `ADMIN` / `MEMBER`) live on the Better Auth user as a custom field (or a
-  small `UserRole` mapping). Decide the exact mechanism at P0.
-
-### `requireRole()` guard
+Both kinds straight from the ledger; historical edits reflect instantly.
 
 ```
-requireRole(min): 
-  session = getServerSession()
-  if !session: redirect(/login)
-  if roleRank(session.role) < roleRank(min): throw Forbidden
-  return session
+balanceAsOf(account, monthEnd) = Σ entry.amount WHERE account=a AND occurredAt <= monthEnd
+flow(type, month)              = Σ entry.amount WHERE type=t AND occurredAt IN month  GROUP BY month
+interestThroughMonth(M)        = Σ active loans interestToDate(loan, monthEndIST(M))
 ```
-Wraps every protected action and protected page. One guard, used everywhere.
 
-### Permissions matrix
-
-| Capability | SUPER_ADMIN | ADMIN | MEMBER |
-|------------|:-----------:|:-----:|:------:|
-| View club dashboard & statistics | ✓ | ✓ | ✓ |
-| View all members / loans / vendors / transactions | ✓ | ✓ | ✓ (read) |
-| View own member statement | ✓ | ✓ | ✓ |
-| Create / edit / reverse transactions | ✓ | ✓ | — |
-| Manage members / vendors / loans | ✓ | ✓ | — |
-| Edit club config & run maintenance | ✓ | ✓ | — |
-| Lock / unlock periods | ✓ | ✓ | — |
-| Manage admins & roles | ✓ | — | — |
+Series (decision 16): portfolio value · available cash (and per-treasurer) · outstanding loans ·
+deposits/month · interest/month · member-vs-club-average. **Optional `MonthlyRollup`** cache,
+rebuilt deterministically from the ledger and invalidated for the earliest dirty month, added only
+if profiling demands (owner OK'd background caching for non-time-sensitive aggregates).
 
 ---
 
-## 19. Caching & revalidation
+## 20. Auth, roles & permissions
 
-**One layer:** Next.js cache, invalidated by **tags**.
+- **Better Auth** owns User/Session/Account/Verification. `Member.userId` optionally links.
+- **Roles: `ADMIN` / `MEMBER`** on the member (write vs read). **Treasurer** is a separate
+  capability (`isTreasurer` + holding a `TREASURY_CASH` account), not a role.
+- `requireRole(min)` wraps protected actions/pages.
 
-### Tag scheme
+| Capability | ADMIN | MEMBER |
+|------------|:-----:|:------:|
+| View dashboard, members, loans, vendors, transactions, own statement | ✓ | ✓ (read) |
+| Create / edit / reverse transactions; manage members/vendors/loans/chits | ✓ | — |
+| Hold club cash (be a treasurer) | ✓ (any member) | ✓ (any member) |
+| Edit club config (stages, rate schedule, loan limit); lock periods | ✓ | — |
+
+`‹TBD›` whether to add `SUPER_ADMIN` (manages admins) — not needed for v1 functionality.
+
+---
+
+## 21. Caching & revalidation
+
+One layer: Next.js cache, tag-invalidated, only after commit.
 
 | Tag | Covers | Invalidated by |
 |-----|--------|----------------|
-| `dashboard` | dashboard tiles | any financial mutation |
-| `member:{id}` | one member's statement | mutations touching that member |
-| `members` | member list | member create/archive, member-touching txns |
-| `loans` | loan list/views | loan/repay/interest mutations |
-| `vendors` | vendor list/views | vendor mutations |
-| `transactions` | ledger list | any txn create/reverse |
-| `analytics` | graph series | any financial mutation (historical edits included) |
+| `dashboard` | tiles | any financial mutation |
+| `member:{id}` / `members` | statement / list | member-touching mutations |
+| `treasuries` | treasurer cash | any cash movement / transfer |
+| `loans` | loan views | loan mutations |
+| `vendors` | bank + chit views | vendor/chit mutations |
+| `transactions` | ledger | any txn create/reverse |
+| `analytics` | graphs | any financial mutation |
 | `config` | ClubConfig | config edits |
-
-> **⚠ Config edits cascade.** Expected deposits, pending contributions, and interest all derive
-> from `ClubConfig.stages` / `monthlyRateBps`. So `updateClubConfig` must invalidate **not just
-> `config`** but every derived read-model that consumes config: `dashboard`, `members`, all
-> `member:*`, `loans`, and `analytics`. Otherwise a stage/rate change leaves those views stale.
-> Because per-member tags can't be enumerated cheaply, the practical approach is to revalidate the
-> coarse tags (`dashboard`, `members`, `loans`, `analytics`) — member statements read through
-> `members`-tagged queries — or bump a global `config-version` tag that all config-dependent
-> queries also carry.
-
-### `affectedTags(input)` (computed in the service/action after commit)
 
 ```
 affectedTags(input):
-  tags = ["dashboard", "analytics", "transactions"]
-  if input touches member m: tags += ["member:"+m, "members"]
-  if input is loan-related:   tags += ["loans"]
-  if input is vendor-related: tags += ["vendors"]
+  tags = ["dashboard","analytics","transactions","treasuries"]   # cash leg almost always present
+  if touches member m: tags += ["member:"+m, "members"]
+  if loan-related:      tags += ["loans"]
+  if vendor/chit:       tags += ["vendors"]
   return unique(tags)
 
-# config mutations don't go through affectedTags(input); updateClubConfig invalidates:
-configTags() = ["config", "dashboard", "members", "loans", "analytics"]   # + all member:* (or via config-version tag)
+# config mutations cascade (stages/rate/limit feed derived views):
+configTags() = ["config","dashboard","members","loans","vendors","analytics"]   # or a global config-version tag
 ```
-
-`revalidateTag()` is called **only after** the DB transaction commits. No NodeCache, no ETags,
-no sessionStorage.
 
 ---
 
-## 20. Validation (Zod) & the service contract
+## 22. Validation (Zod) & the service contract
 
-Zod is the single validation source, shared by actions and forms.
+**Mutations** (`actions/*` → `services/*` → `ledger`): `postTransaction`, `reverseTransaction`,
+`editTransaction`; member CRUD + `withdrawMember` / `reactivateMember`; treasurer
+designate/transfer; vendor CRUD (`BANK`/`CHIT`); chit `payInstallment` / `recordPayout`;
+loan `openLoan` / `addTranche` / `repayLoan` / `payInterest` / `closeLoan`; `updateClubConfig`
+(incl. `appendRateChange`, `setLoanLimit`, `editStages`); `lockPeriod`.
 
-### Service / action build list
+**Intent helpers** that build §8 lines: `depositForMember`, `catchUpForMember`, `transferCash`,
+`giveLoanTranche`, `repayLoan`, `payLoanInterest`, `bankInvest`, `bankReturn`, `chitPayment`,
+`chitPayout`, `settleMember`, `rejoinMember`.
 
-**Mutations** (`server/actions/*` → `server/services/*` → `ledger`):
-`postTransaction`, `reverseTransaction`, `editTransaction`, member CRUD, vendor CRUD,
-loan open/close, `updateClubConfig`, `lockPeriod`.
-
-Plus intent-shaped helpers that build the §8 lines:
-`depositForMember`, `withdrawForMember`, `giveLoan`, `repayLoan`, `payLoanInterest`,
-`vendorInvest`, `vendorReturn`, `adjustMember`.
-
-**Queries** (`server/queries/*`):
-`getDashboard`, `getMemberStatement`, `listMembers`, `listLoans`, `listVendors`,
-`listTransactions`, `getGraphSeries`.
-
-All inputs and outputs validated by Zod. Money fields in DTOs are **string paise**.
-
-### Example action shape
+**Queries:** as §18. All inputs/outputs Zod-validated; money fields = string paise.
 
 ```ts
 'use server'
-export async function deposit(formData: unknown) {
-  const session = await requireRole('ADMIN')
-  const input = DepositSchema.parse(formData)          // { memberId, amountPaise, occurredAt, reference? }
-  const txn = await depositForMember(input, session.userId)
-  revalidateTag('dashboard'); revalidateTag('member:'+input.memberId); /* ...affectedTags */
+export async function repayLoan(form: unknown) {
+  const s = await requireRole('ADMIN')
+  const i = RepayLoanSchema.parse(form)   // { loanId, treasuryId, principalPaise, interestPaise?, occurredAt }
+  const txn = await services.repayLoan(i, s.userId)
+  for (const t of affectedTags({ type:'LOAN_REPAY', loanId:i.loanId, memberId:i.memberId })) revalidateTag(t)
   return { ok: true, id: txn.id }
 }
 ```
 
 ---
 
-## 21. App structure, routes & the entry drawer
+## 23. App structure, routes & the entry drawer
 
 ```
 src/
-  app/                      # App Router (RSC by default)
-    (auth)/login
-    dashboard/
-    members/  members/[id]
-    loans/
-    transactions/
-    vendors/
-    analytics/
-    settings/
-    profile/
-  server/
-    ledger/                 # double-entry engine + invariants (core, fully tested)
-    services/               # postTransaction wrappers, intent helpers, CRUD
-    actions/                # 'use server' thin entry points → services
-    queries/                # read models: balances, dashboard, statements, graphs
-    auth/                   # Better Auth config + requireRole guard
-  lib/                      # money (paise<->₹), dates (IST), zod schemas, formatting
-  components/               # UI per DESIGN_PROMPTS.md
-  db/                       # prisma client (singleton)
+  app/  (auth)/login  dashboard/  members/[id]  loans/  transactions/  vendors/[id]  treasury/  analytics/  settings/  profile/
+  server/  ledger/  services/  actions/  queries/  auth/
+  lib/  money  date  zod  format
+  components/  db/
 prisma/  schema.prisma  seed.ts  migrate-from-v1.ts
 ```
 
-### The intent-first entry drawer (the admin's main tool)
-
-The admin doesn't pick a `TxnType` enum; they pick an **intent**, and the drawer builds the
-posting:
+The admin picks an **intent**, the drawer builds the posting and **always asks which treasury**
+handles the cash:
 
 ```mermaid
 flowchart LR
-  A["Admin opens drawer"] --> B{"What happened?"}
-  B -->|Member paid deposit| C["pick member, amount, date"]
-  B -->|Member withdrew| D["pick member, amount, date"]
-  B -->|Gave a loan| E["pick member, amount, rate, date"]
-  B -->|Loan repaid| F["pick loan, principal, date"]
-  B -->|Loan interest paid| G["pick loan, amount, date"]
-  B -->|Vendor invest/return| H["pick vendor, amount, (principal portion), date"]
-  C & D & E & F & G & H --> I["intent helper builds balanced §8 lines"]
-  I --> J["postTransaction"]
-  J --> K["optimistic UI confirms + revalidateTag"]
+  A["Admin: what happened?"] --> B{intent}
+  B -->|Deposit / Catch-up| C["member, amount, treasury, date"]
+  B -->|Internal transfer| D["from-treasury, to-treasury, amount, date"]
+  B -->|Give loan / tranche| E["member/loan, amount, treasury, date"]
+  B -->|Repay loan| F["loan, principal (+interest), treasury, date"]
+  B -->|Bank invest/return| G["vendor, amount, (principal), treasury, date"]
+  B -->|Chit payment/payout| H["chit, amount, treasury, date"]
+  B -->|Withdraw / reactivate| I["member, amount, treasury, date"]
+  C & D & E & F & G & H & I --> J["intent helper → balanced §8 lines"] --> K["postTransaction → optimistic UI + revalidateTag"]
 ```
-
-- **Optimistic UI** on submit (decision 17): the row appears immediately, confirmed/rolled back
-  when the action resolves.
-- Server Components render lists/dashboards directly from `server/queries/*`.
 
 ---
 
-## 22. Migration v1 → v2
-
-One-time, with a **hard reconciliation gate**.
+## 24. Migration v1 → v2
 
 ```mermaid
 flowchart TD
-  S1["1. Stand up Neon + apply v2 schema"] --> S2["2. Seed ClubConfig from v1 clubConfig (name, startedAt, stages, monthlyRateBps)"]
-  S2 --> S3["3. Create ledger accounts:<br/>1× CLUB_CASH, 1× INTEREST_INCOME;<br/>per member MEMBER_EQUITY+LOAN_RECEIVABLE;<br/>per vendor VENDOR_RECEIVABLE+VENDOR_PROFIT"]
-  S3 --> S4["4. Replay each v1 Transaction (ordered by date)<br/>→ balanced v2 postings (§8) via postTransaction"]
-  S4 --> S5["5. Map joiningOffset + delayOffset → one ADJUSTMENT posting each"]
-  S5 --> S6["6. Rebuild Loan rows (principal, rate, start/close, status)"]
-  S6 --> S7{"7. RECONCILE:<br/>every §14 figure (v2) == v1 reported numbers?"}
-  S7 -->|no| S8["Fix mapping, re-run (idempotent)"]
-  S8 --> S4
-  S7 -->|yes| S9["8. Cut over; keep v1 read-only as reference"]
+  S1["1. Neon + v2 schema"] --> S2["2. Seed ClubConfig: name, startedAt, stages (alpha/bravo), rateSchedule [1% from start], dayInterestFrom, maxLoanPaise=₹5L"]
+  S2 --> S3["3. Accounts: 1× INTEREST_INCOME; per member MEMBER_EQUITY (+LOAN_RECEIVABLE); per vendor RECEIVABLE+PROFIT; TREASURY_CASH per historical cash-holder"]
+  S3 --> S4["4. Replay each v1 txn (by date) → balanced v2 postings (§8), assigning the correct treasury"]
+  S4 --> S5["5. joiningOffset → CATCHUP(LATE_JOIN); delayOffset → CATCHUP(DELAYED_PAYMENT)"]
+  S5 --> S6["6. Rebuild Loans + tranches/repayments from v1 loan history; recompute interest via §14"]
+  S6 --> S7{"7. RECONCILE every §17 figure (v2) == v1 reported?"}
+  S7 -->|no| S8["fix mapping; re-run (idempotent)"] --> S4
+  S7 -->|yes| S9["8. cut over; keep v1 read-only"]
 ```
 
-- The reconciliation step compares **every figure in §14** computed from the v2 ledger against
-  v1's reported numbers, using **fixtures captured from current prod data**. This is the
-  pass/fail gate; migration is not "done" until it's green.
-- The importer (`prisma/migrate-from-v1.ts`) must be **idempotent / re-runnable** (truncate +
-  rebuild, or upsert by a stable external id) so it can be iterated safely.
-- **Blocker:** I currently have no access to v1 source/data/fixtures (different repo). Needed at
-  P4: the v1 repo or a data export + the captured fixture numbers.
+- **Treasury assignment** is the new migration wrinkle: v1 may not record *which* member held cash
+  per transaction. `‹TBD›` — either backfill from v1 data if present, or assign to a default
+  "opening treasury" and let admins re-distribute via `FUNDS_TRANSFER`. Needs owner input.
+- Importer is **idempotent**. **Blocker:** need v1 repo/data export + fixture numbers (different
+  repo, no access yet).
 
 ---
 
-## 23. Testing strategy
-
-Correctness gates every phase. Tests are concentrated on the ledger and calculations.
+## 25. Testing strategy
 
 | Layer | Tool | What |
 |-------|------|------|
-| **Ledger invariants** | Vitest | `sum(lines)==0` enforced; balance == Σ entries after random sequences; reversal restores exactly; double-reverse rejected. |
-| **Every `TxnType`** | Vitest | each posting from §8 produces the right lines + balance deltas + loan side-effects. |
-| **Business rules §7** | Vitest | each of the 6 rules has dedicated cases (pending-from-contributions, profit-split, vendor active/closed, asset-side value, interest rounding, stage deposits). |
-| **Money** | Vitest | paise↔₹ round-trips, no float drift, formatting, serialization boundary. |
-| **Dates/IST** | Vitest | month boundaries, month counts, pro-rated days, month-length edges. |
-| **Interest** | Vitest | `interestToDate` vs hand-computed and vs v1 `calculateInterestByAmount` fixtures. |
-| **Queries** | Vitest + test DB | dashboard/statement numbers vs fixtures. |
-| **Reconciliation** | Vitest/script | v2-derived totals == v1 reported (the migration gate). |
-| **E2E (later)** | Playwright | login, record deposit, give/repay loan, vendor return, see dashboard update. |
+| Ledger invariants | Vitest | `Σ lines = 0`; `balance == Σ entries`; reversal restores exactly; double-reverse rejected |
+| Every `TxnType` | Vitest | postings + balance deltas + loan/chit side-effects (treasury-aware) |
+| **Loan interest** | Vitest | multi-tranche + partial repay + rate-change + dayInterestFrom + anchored months/days vs hand-computed and v1 fixtures |
+| Chit | Vitest | installments, early payout + remaining obligation, profit recognition |
+| Business rules §17.1 | Vitest | pending-from-contributions, profit split, vendor/chit active/closed, asset-side value |
+| Money / dates | Vitest | paise↔₹, no drift, IST boundaries, anchored months |
+| Withdraw/rejoin | Vitest | settle→freeze→reactivate; equal-value catch-up |
+| Reconciliation | script | v2 totals == v1 reported (migration gate) |
+| E2E (later) | Playwright | login → deposit → loan tranche → repay → chit → dashboard updates |
 
-Characterization fixtures (the **v1 numbers**) are the source of truth for "correct."
+v1 fixtures are the source of truth for "correct."
 
 ---
 
-## 24. Build phases & checklists
-
-Each phase ships independently; **correctness gates every step**.
+## 26. Build phases & checklists
 
 ### P0 — Foundation
-
-- [ ] Repo init: Next.js (App Router, TS strict), ESLint/Prettier, CI (typecheck + test).
-- [ ] Prisma + Neon connection; apply the schema; resolve the `LedgerAccount.memberId @unique`
-      question (§9 / §26).
-- [ ] `lib/money` (paise/₹, serialization) + exhaustive tests.
-- [ ] `lib/date` (IST boundaries) + tests.
-- [ ] Better Auth wired (User/Session/Account/Verification); `requireRole`.
-- [ ] **`server/ledger/postTransaction` + `reverseTransaction`** with **exhaustive unit tests**
-      (invariants, every `TxnType`, all §7 rules), gated by v1 fixtures.
-- [ ] `db/` prisma client singleton; `prisma/seed.ts` (ClubConfig + base accounts).
+- [ ] Next.js (App Router, TS strict), ESLint/Prettier, CI (typecheck + test).
+- [ ] Prisma + Neon; apply schema (with `@@unique([memberId,kind])`).
+- [ ] `lib/money` + `lib/date` (incl. `anchoredMonths`) + exhaustive tests.
+- [ ] Better Auth + `requireRole`.
+- [ ] **`ledger/postTransaction` + `reverseTransaction`** + exhaustive tests (invariants, every
+      `TxnType`, treasury-aware), gated by v1 fixtures.
+- [ ] **Interest engine** (§14.3) + tests (multi-tranche, partial, rate schedule, daily boundary).
+- [ ] `seed.ts` (ClubConfig with stages/rateSchedule/limit; INTEREST_INCOME account).
 
 ### P1 — Core data + entry
-
-- [ ] ClubConfig CRUD (Settings).
-- [ ] Member / Vendor / Loan CRUD (services + actions + Zod), auto-create their ledger accounts.
-- [ ] Intent helpers (`depositForMember`, `giveLoan`, …) building §8 lines.
-- [ ] Intent-first **entry drawer** wired to `postTransaction` (optimistic UI).
-- [ ] Transactions ledger view (`listTransactions`).
+- [ ] ClubConfig settings (stages, rate-change append, loan limit).
+- [ ] Member CRUD (role, treasurer flag); Vendor CRUD (BANK/CHIT + ChitFund).
+- [ ] Loan open/tranche/repay/interest/close; chit payment/payout.
+- [ ] Withdraw/settle + reactivate + catch-up flows.
+- [ ] Intent helpers + entry drawer (treasury-aware, optimistic UI); transactions view.
 
 ### P2 — Reads & dashboards
-
-- [ ] `getDashboard`, `getMemberStatement`, `listMembers`, `listLoans`, `listVendors`.
-- [ ] Interest-on-read everywhere it appears.
-- [ ] Tag-based caching + `affectedTags` wired into every mutation.
+- [ ] `getDashboard` (+ per-treasurer), `getMemberStatement`, `listMembers`, `listTreasurers`,
+      `listLoans` (overdue), `listVendors`/`getChit`. Interest-on-read everywhere.
+- [ ] Tag caching + `affectedTags` / config cascade wired in.
 
 ### P3 — Analytics & polish
-
-- [ ] `getGraphSeries` (point-in-time + per-month + interest-through-month).
-- [ ] Charts; the 6 series from decision 16.
-- [ ] Exports (CSV/JSON), empty/loading states, mobile card views.
+- [ ] `getGraphSeries`; the 6 series; exports; empty/loading; mobile cards.
 
 ### P4 — Migration
-
-- [ ] `prisma/migrate-from-v1.ts` (idempotent) + reconciliation script.
-- [ ] Reconcile every §14 figure vs v1 fixtures → green.
-- [ ] Cut over; keep v1 read-only.
+- [ ] `migrate-from-v1.ts` (idempotent) incl. treasury assignment + reconciliation → green; cut over.
 
 ---
 
-## 25. Performance budget & "why this is fast"
+## 27. Performance budget
 
-- **Writes are O(lines)** (typically 2–3): insert header + entries, `increment` each balance,
-  maybe update one loan, one audit row. No recompute, no replay.
-- **Dashboard read** = a handful of indexed balance reads + a few `SUM`s + one pass over
-  **active** loans for interest. All indexed (`@@index([kind])`, `@@index([type, occurredAt])`,
-  `@@index([occurredAt])`).
-- **Analytics** = one or two grouped aggregates over an indexed `occurredAt`/`type`.
-- **No background jobs**, so no serverless cron cost and no eventual-consistency windows.
-- **One cache layer**: tag invalidation touches only affected views; everything else stays warm.
-- **Edits are as cheap as writes** (reverse + re-post = O(lines)).
+- **Writes O(lines)** (2–3 typical): header + entries + atomic `increment`s + maybe one loan/chit
+  update + audit. No recompute, no replay. Edits = reverse + re-post = O(lines).
+- **Dashboard** = a few indexed balance reads + a few `SUM`s + one interest pass over **active**
+  loans. Indexed by `kind`, `type+occurredAt`, `occurredAt`, `loanId`, `vendorId`.
+- **Analytics** = one/two grouped aggregates over indexed `occurredAt`/`type`.
+- **No required background jobs**; optional rollup cache only if profiling needs it.
+- One cache layer; tag invalidation touches only affected views.
 
-The net effect: the "very fast website" goal is met because the expensive thing v1 did
-(recompute-everything-per-write + multi-layer cache invalidation) **does not exist** in v2.
+The "very fast website" goal holds because v1's expensive move
+(recompute-everything-per-write + multi-layer invalidation) **does not exist** here.
 
 ---
 
-## 26. Open questions to confirm
+## 28. Open questions / TBDs
 
-These don't block starting P0, but resolving them sharpens the schema and the fixtures:
+Tracked, non-blocking for P0 unless noted:
 
-1. **`LedgerAccount.memberId @unique` vs two member accounts.** A single `@unique memberId`
-   cannot back both `MemberEquity` and `MemberLoan` relations. **Proposed fix:** drop `@unique`,
-   add `@@unique([memberId, kind])`, and enforce one-equity/one-loan in the service layer. Confirm.
-2. **`FUNDS_TRANSFER` semantics.** Do we actually need cash sub-buckets (e.g. cash vs bank), or
-   is this a legacy no-op we can drop until needed?
-3. **`getMemberTotalDeposit` exact month-counting.** Inclusive of the join month? First-month
-   proration? Must copy v1 semantics exactly — need v1 source or fixtures.
-4. **Interest rounding details.** Round per-loan or on the aggregate? Round half-up? Need v1
-   `calculateInterestByAmount` to match to the rupee.
-5. **`REVERSAL.occurredAt`.** Date it "now" (audit-accurate) or copy the target's `occurredAt`
-   (keeps analytics buckets stable)? For edits we likely want the corrected txn's own date and
-   the reversal dated to match the original — confirm.
-6. **Role storage mechanism** in Better Auth (custom field vs `UserRole` table).
-7. **Profit-withdrawal split source of "principal".** Rule §7.2 needs a definition of a member's
-   "principal" at withdrawal time (contributed principal = periodic + offset deposits, minus
-   prior principal withdrawals?). Lock against v1.
-8. **Money-in-JSON for `ClubConfig.stages`.** String paise vs number — recommend string.
-9. **v1 access for P4.** Need the v1 repo or a data export + captured fixture numbers.
-
-> Reply with any overrides (e.g. "drop FUNDS_TRANSFER", "add overdue status", "round interest
-> half-up") and I'll fold them in before P0 scaffolding.
+1. **Interest daily basis** — daily rate denominator: days in the segment-end month vs fixed 30?
+   (lock by fixture).
+2. **Rate change inside an anchored month** — current model splits + re-anchors at the boundary;
+   confirm against a real club example.
+3. **Pre-`dayInterestFrom` rounding** — partial month rounds up to a full month? (assumed).
+4. **`getMemberTotalDeposit` month semantics** — join-month inclusive? first-month proration?
+   (lock to v1 fixtures).
+5. **Chit installment variability** — fixed monthly or varies (dividend)? Profit recognition
+   timing for early payout with remaining obligation.
+6. **Treasury assignment in migration** — does v1 record the cash-holder per txn, or do we seed a
+   default opening treasury? (needs owner input + v1 data).
+7. **`REVERSAL.occurredAt`** — date reversals to the target's date (recommended) vs now.
+8. **`SUPER_ADMIN` tier** — needed or not.
+9. **v1 access** — repo/export + fixtures required for P4 reconciliation (currently no access).
