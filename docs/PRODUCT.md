@@ -33,7 +33,7 @@
 14. [The dashboard](#14-the-dashboard)
 15. [Transparency & permissions](#15-transparency--permissions)
 16. [Corrections & history](#16-corrections--history)
-17. [Glossary of every money event](#17-glossary-of-every-money-event)
+17. [Transaction types (the "What happened?" entry screen)](#17-transaction-types-the-what-happened-entry-screen)
 18. [End-to-end example](#18-end-to-end-example)
 
 ---
@@ -451,26 +451,119 @@ show overdue loans and pending deposits (e.g. red badges) even though no money p
 
 ## 14. The dashboard
 
-The dashboard is the club's at-a-glance health. It shows (all figures live):
+The dashboard is the club's at-a-glance health, all figures **live**. It has two views the user
+can switch between:
 
-- **Available cash**, with a **breakdown by treasurer** (who holds what).
-- **Total portfolio value** — cash + money out on loan + money out with vendors, plus what's
-  pending to come in.
-- **Profit per member** (§11) — the headline "how are we doing" number.
-- **Loans** — how much is currently out, total ever lent, interest collected, interest still
-  pending, and **how many loans are overdue**.
-- **Vendors** — money currently placed, profit earned, and chit obligations still owed.
-- **Members** — active count, total deposits paid vs expected, and **total pending**.
+- **Summary** — a friendly, modern overview (headline numbers, a trend chart, recent activity).
+- **Club Passbook** — the full, detailed breakdown of every figure (for members who want all the
+  numbers), plus a one-tap **Screenshot/Share**.
+
+### 14.1 Headline cards (top of Summary)
+
+The first thing you see — the five numbers that matter most:
+
+| Card | What it means (plain) |
+|------|------------------------|
+| **Total portfolio value** | Everything the club is worth = cash in hand + money out on loan + money with vendors + money still coming in (pending interest & deposits). Shows the **change this month** (e.g. +4.2%). |
+| **Available cash** | The liquid money the club can use right now (sum of all treasurers' holdings). |
+| **Outstanding loans** | How much is currently out on loan, and **how many active loans** (with an **overdue** flag if any are past term). |
+| **Pending deposits** | Monthly savings members still owe, and how many members are behind. |
+| **Profit per member** | The club's shareable profit ÷ number of members — the "how are we doing per head" number. |
+
+### 14.2 Trend chart
+
+A line chart of **portfolio value over time**, with **3M / 1Y / All** ranges, so members can see
+the club steadily growing.
+
+### 14.3 Recent activity
+
+A simple running feed of the latest money events — name, what happened (deposit, loan disbursed,
+vendor return, interest, withdrawal, repayment…), the date, and the amount in **green (money in)**
+or **red (money out)**. A "View all" link opens the full history.
+
+### 14.4 The detailed breakdown (Club Passbook)
+
+Grouped, labelled sections — every number has a short "what it means". Each figure has an info
+tooltip.
+
+**Club snapshot**
+| Figure | Meaning |
+|--------|---------|
+| Active members | How many members are currently active. |
+| Club age | How long the club has been running (in months). |
+
+**Member funds**
+| Figure | Meaning |
+|--------|---------|
+| Member deposits | Total monthly savings paid in so far. |
+| Catch-up contributions | Total equalisation money paid by late-joiners / those who fell behind. |
+| Average balance | Average money each member holds in the club. |
+
+**Member pending**
+| Figure | Meaning |
+|--------|---------|
+| Member pending | Monthly savings still owed across all members. |
+| Catch-up pending | Equalisation amounts still expected. |
+
+**Loans — lifetime**
+| Figure | Meaning |
+|--------|---------|
+| Total loan given | Everything ever lent to members. |
+| Total interest collected | Interest actually received from borrowers. |
+
+**Loans — active**
+| Figure | Meaning |
+|--------|---------|
+| Current loans outstanding | Money currently out with borrowers. |
+| Interest pending | Interest built up on active loans but not yet collected. |
+| Active / overdue loans | How many loans are running, and how many are past their 5-month term. |
+
+**Vendors**
+| Figure | Meaning |
+|--------|---------|
+| Vendor investment (holding) | Money currently placed with vendors (bank/general/chit). |
+| Vendor profit | Profit earned from vendors so far. |
+| Chit obligations | Future chit installments the club still has to pay. |
+
+**Profit summary**
+| Figure | Meaning |
+|--------|---------|
+| Current profit | The club's earnings (collected + pending interest, net of chit obligations). |
+| Profit withdrawn | Profit already paid out to members who left. |
+
+**Cash-flow position**
+| Figure | Meaning |
+|--------|---------|
+| Total invested | Money working outside the cash pile (loans + vendors). |
+| Total pending | Everything still expected to come in (pending deposits + pending interest). |
+| 30-day inflow / outflow / net | Money in, money out, and the net over the last 30 days. |
+
+**Valuation & liquidity**
+| Figure | Meaning |
+|--------|---------|
+| Available cash (per treasurer) | Liquid cash, **broken down by who holds it**. |
+| Current value | Cash + loans outstanding + vendor holdings (what the club has right now). |
+| **Total portfolio value** | Current value **+ pending loan interest + pending member deposits** — the grand total. |
 
 ```mermaid
 flowchart TD
-  DASH["Dashboard"] --> CASH["Available cash + per-treasurer"]
-  DASH --> VALUE["Total portfolio value"]
-  DASH --> PPM["Profit per member"]
-  DASH --> LOANS["Loans out / collected / pending / overdue"]
-  DASH --> VEND["Vendors: placed / profit / chit obligations"]
-  DASH --> MEM["Members: active / paid vs expected / pending"]
+  DASH["Dashboard"] --> SUM["Summary view"]
+  DASH --> PB["Club Passbook view"]
+  SUM --> CARDS["5 headline cards: portfolio · cash · loans · pending · profit/member"]
+  SUM --> CHART["Portfolio trend (3M/1Y/All)"]
+  SUM --> FEED["Recent activity (green in / red out)"]
+  PB --> SNAP["Club snapshot"]
+  PB --> MF["Member funds & pending"]
+  PB --> LN["Loans lifetime & active (+ overdue)"]
+  PB --> VN["Vendors & chit obligations"]
+  PB --> PR["Profit summary"]
+  PB --> CF["Cash-flow & valuation (+ per-treasurer cash)"]
 ```
+
+> **Design intent:** *Summary* answers "is the club healthy?" in five seconds; *Club Passbook*
+> answers "show me every number" for members who want full transparency. The per-treasurer cash
+> breakdown and profit-per-member are the two figures unique to how this club works — keep them
+> prominent.
 
 ---
 
@@ -504,28 +597,56 @@ Peacock is built to be **auditable**: nothing is ever silently deleted.
 
 ---
 
-## 17. Glossary of every money event
+## 17. Transaction types (the "What happened?" entry screen)
 
-Every financial action in Peacock is one of these. (Designers: these are the "intents" the entry
-screen offers.)
+When recording activity, the admin doesn't deal with accounting — they pick **what happened in
+plain language** ("Member paid deposit", "Give a loan"…) and the app does the rest. Every entry is
+**money IN** (club gains cash), **money OUT** (club pays cash), or **neutral** (cash just moves
+around / no net change). The app **always asks which treasurer** the cash came from or went to.
 
-| Event | Plain meaning |
-|-------|---------------|
-| **Monthly deposit** | A member pays their monthly amount to a treasurer. |
-| **Catch-up** | A new/returning member pays to reach equal value (late-join or delayed-payment). |
-| **Adjustment** | A manual correction to a member's balance. |
-| **Withdraw (settlement)** | A member leaves and takes their money out. |
-| **Rejoin** | A returning member pays back in to reactivate. |
-| **Internal transfer** | One treasurer hands club cash to another. |
-| **Loan given** | The club hands a loan (or a tranche of one) to a member. |
-| **Loan repayment** | A member pays back loan principal (and possibly interest). |
-| **Loan interest paid** | A member pays interest on their loan. |
-| **Vendor investment** | The club places money with a general vendor. |
-| **Vendor return** | A general vendor returns money (principal + profit). |
-| **Vendor write-off** | Closing a vendor that returned less than invested (records the loss). |
-| **Chit installment** | The club pays a monthly chit amount. |
-| **Chit payout** | The club receives a chit's lump payout. |
-| **Correction (reversal)** | Cancels a previous event for an edit or delete. |
+Below is the **complete, correct list** of transaction types for Peacock Investment Club, grouped
+the way the entry screen should present them.
+
+### Everyday entries (the common ones)
+
+| What happened | Direction | What it does |
+|---------------|:---------:|--------------|
+| **Member paid deposit** | IN | A member pays their monthly savings to a treasurer. |
+| **Catch-up payment** | IN | A new/returning member pays equalisation money — *late-join* (their share of past profit) and/or *delayed-payment* (missed monthly savings). |
+| **Give a loan** | OUT | The club hands a loan to a member. Can be done **in parts (tranches)** from different treasurers — all under one loan. |
+| **Record repayment** | IN | A member pays back loan principal (and optionally interest in the same entry). |
+| **Collect interest** | IN | A member pays interest earned on their loan. |
+| **Funds transfer** | neutral | One treasurer hands club cash to another — total club money unchanged. |
+
+### Vendors & chit funds
+
+| What happened | Direction | What it does |
+|---------------|:---------:|--------------|
+| **Vendor investment** | OUT | The club places money with a vendor (general/bank). |
+| **Vendor return** | IN | A vendor returns money (principal + profit; bank interest is all profit). |
+| **Chit installment** | OUT | The club pays a monthly chit amount (rises toward the margin). |
+| **Chit payout** | IN | The club receives a chit's lump payout (remaining installments stay owed). |
+
+### Member lifecycle
+
+| What happened | Direction | What it does |
+|---------------|:---------:|--------------|
+| **Member leaves (settle up)** | OUT | A member **fully exits** — capital + their profit share − any loan owed. This is the **only** kind of withdrawal (no partial, no profit-only). Account is then frozen/inactive, history kept. |
+| **Member rejoins** | IN | A returning member pays back in (one or two installments) + catch-up, and is reactivated to equal value. |
+
+### Admin corrections (kept honest, fully logged)
+
+| What happened | Direction | What it does |
+|---------------|:---------:|--------------|
+| **Adjustment** | IN/OUT | A manual correction to a member's balance (rare; admin only). |
+| **Vendor write-off** | neutral | Closing a vendor that returned less than invested — records the loss. |
+| **Correction / reversal** | — | Cancels a previous entry (for an edit or delete); the original stays on record. |
+
+> **What changed vs the earlier mockup (8 intents):** the mockup was missing **Catch-up**, **Chit
+> installment**, **Chit payout**, and the **Leave/Rejoin** lifecycle entries; and "Withdrawal —
+> member takes funds out" is renamed **"Member leaves (settle up)"** because withdrawal is always a
+> full exit in this club. Adjustment / write-off / reversal are admin corrections (group them under
+> an "advanced/corrections" area, not the main grid).
 
 ---
 

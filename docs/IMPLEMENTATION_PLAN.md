@@ -1002,6 +1002,10 @@ creates phantom debt.
 
 ### 17.3 Club / dashboard tiles
 
+> Layout (Summary view's 5 headline cards + trend + recent activity, and the detailed Club Passbook
+> sections) is specified in `PRODUCT.md` §14. The formulas below compute every figure those views
+> show.
+
 ```
 activeMembers           = COUNT(members WHERE status = ACTIVE)
 clubAgeMonths           = monthsSince(ClubConfig.startedAt, now)            # IST
@@ -1181,8 +1185,27 @@ src/
 prisma/  schema.prisma  seed.ts  migrate-from-v1.ts
 ```
 
-The admin picks an **intent**, the drawer builds the posting and **always asks which treasury**
-handles the cash:
+The admin picks an **intent** ("What happened?" in plain language — each tagged **IN / OUT /
+neutral**), the drawer builds the posting and **always asks which treasury** handles the cash. The
+full intent set (see `PRODUCT.md` §17 for the canonical list) maps to `TxnType` as:
+
+| Intent (UI label) | Dir | `TxnType` |
+|-------------------|:---:|-----------|
+| Member paid deposit | IN | `PERIODIC_DEPOSIT` |
+| Catch-up payment | IN | `CATCHUP` (+ `subtype`) |
+| Give a loan (tranche) | OUT | `LOAN_TAKEN` |
+| Record repayment | IN | `LOAN_REPAY` (+ optional `LOAN_INTEREST` leg) |
+| Collect interest | IN | `LOAN_INTEREST` |
+| Funds transfer | neutral | `FUNDS_TRANSFER` |
+| Vendor investment | OUT | `VENDOR_INVEST` |
+| Vendor return | IN | `VENDOR_RETURN` |
+| Chit installment | OUT | `CHIT_PAYMENT` |
+| Chit payout | IN | `CHIT_PAYOUT` |
+| Member leaves (settle up) | OUT | `WITHDRAW` (full exit only) |
+| Member rejoins | IN | `REJOIN` |
+| Adjustment (admin) | IN/OUT | `ADJUSTMENT` |
+| Vendor write-off (admin) | neutral | `VENDOR_WRITEOFF` |
+| Correction (admin) | — | `REVERSAL` |
 
 ```mermaid
 flowchart LR
@@ -1190,12 +1213,18 @@ flowchart LR
   B -->|Deposit / Catch-up| C["member, amount, treasury, date"]
   B -->|Internal transfer| D["from-treasury, to-treasury, amount, date"]
   B -->|Give loan / tranche| E["member/loan, amount, treasury, date"]
-  B -->|Repay loan| F["loan, principal (+interest), treasury, date"]
-  B -->|Bank invest/return| G["vendor, amount, (principal), treasury, date"]
+  B -->|Repay / collect interest| F["loan, principal (+interest), treasury, date"]
+  B -->|Vendor invest/return| G["vendor, amount, (principal), treasury, date"]
   B -->|Chit payment/payout| H["chit, amount, treasury, date"]
-  B -->|Withdraw / reactivate| I["member, amount, treasury, date"]
+  B -->|Leave / rejoin| I["member, amount, treasury, date"]
   C & D & E & F & G & H & I --> J["intent helper → balanced §8 lines"] --> K["postTransaction → optimistic UI + revalidateTag"]
 ```
+
+The first screen is a grid of plain-language cards (like the mockup): **Member paid deposit · Give
+a loan · Record repayment · Collect interest · Catch-up · Funds transfer · Vendor investment ·
+Vendor return · Chit installment · Chit payout · Member leaves · Member rejoins**, with admin
+corrections (adjustment / write-off / reversal) under a separate "advanced" area. Step 2 collects
+the few specifics for the chosen intent.
 
 ---
 
