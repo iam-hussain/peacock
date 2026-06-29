@@ -11,8 +11,9 @@
 > return); **chit funds** with **ramping installments**; **catch-up** (renamed from "offset",
 > auto-computed + admin-editable); **withdrawal = full exit only** (settle → freeze → reactivate); a
 > **comprehensive profit-per-member** on the dashboard (pending interest = profit, pending deposits =
-> capital); configurable **late-deposit penalty** (default 0) and **dividend** seam (off). The one
-> material open item is the **profit-share-at-exit formula** (§16.3). Undecided items marked **`‹TBD›`**.
+> capital); configurable **late-deposit penalty** (default 0) and **dividend** seam (off);
+> **profit-share-at-exit is proportional to deposit completeness** (`× paid/expected`, both values
+> shown); vendors carry an optional **`category`** label (e.g. "Bank"). Undecided items marked **`‹TBD›`**.
 >
 > **Audience:** the engineer(s) building this. Everything needed to start typing lives here.
 > **Out of scope:** visual styling (see `DESIGN_PROMPTS.md`). Functionally the UI mirrors v1.
@@ -212,7 +213,8 @@ PG gives that natively. The analytics are **grouped aggregates** (`GROUP BY mont
 10. **Vendors are typed:** `GENERAL` (generic placement: invest → return, profit = returns −
     invested; covers bank deposits/interest) and `CHIT` (monthly installments + payout, with a
     remaining-obligation if payout taken early, its own schedule §15). There is **no separate BANK
-    type** — a bank is just a GENERAL vendor (note the bank name in the vendor's description).
+    type** — a bank is a GENERAL vendor with `category = "Bank"` (a display label for grouping in
+    reports; it carries no special behavior).
 11. **Catch-up** replaces "offset": late-join + delayed-payment subtypes; equalizes member value.
 12. **Withdraw = settle (admin-entered amount) → freeze → INACTIVE**, keep history. **Reactivate**
     = repay (1–2 terms) + catch-up (profit-per-member + owed deposits).
@@ -413,7 +415,8 @@ model Member {
 model Vendor {
   id          String   @id @default(cuid())
   name        String
-  type        VendorType                        // GENERAL or CHIT
+  type        VendorType                        // GENERAL or CHIT (behavioral: how postings/profit work)
+  category    String?                           // display label only (e.g. "Bank", "Stocks"); no behavior
   status      VendorStatus @default(ACTIVE)     // ACTIVE / INACTIVE / CLOSED
   accounts    LedgerAccount[]                   // receivable + profit
   chit        ChitFund?                          // present iff type = CHIT
@@ -925,26 +928,25 @@ withdrawal, and no withdrawal-without-leaving. A member either stays fully in or
   ```
   memberSettlementGuide(m) =
         contributedCapital(m)            # paid periodic + catch-up deposits (their actual capital in)
-      + memberProfitShare(m)             # see the OPEN QUESTION below
+      + memberProfitShare(m)             # PROPORTIONAL to how fully they paid (locked, see below)
       − memberLoanOutstanding(m)         # loan principal netted out of the settlement
       − memberInterestPending(m)         # unpaid accrued loan interest netted out
   ```
 
-  Note **pending/unpaid deposits are NOT subtracted as a debt** — a leaver who underpaid simply
-  contributed less capital (and, per the owner's example, earns proportionally less profit). Their
-  unpaid deposits are not collected on exit. Posting: `TREASURY_CASH(t) −A`, `MEMBER_EQUITY(m) +A`;
-  member → `INACTIVE`, frozen; **all history retained**.
+  **Profit share is PROPORTIONAL to deposit completeness (LOCKED — owner G3/follow-up):**
+  ```
+  paidRatio(m)         = min(1, contributedCapital(m) / expectedDeposit(m))
+  memberProfitShare(m) = profitPerMember × paidRatio(m)
+  # e.g. expected ₹30,000, paid ₹20,000 → paidRatio = 2/3 → profit reduced by the unpaid 1/3.
+  ```
+  The reduction *is* the effective "penalty" for underpaying. **The UI shows BOTH numbers:** the
+  **full** share (`profitPerMember`, what they'd get if fully paid) and the **actual** reduced share
+  (`× paidRatio`), so the shortfall is explicit.
 
-  > **⚠ OPEN QUESTION — `memberProfitShare(m)` (needs owner confirm; do not assume).** The owner's
-  > example (expected cumulative deposit ₹20k, member paid ₹10k, loan ₹5k → "remaining ₹5,000 given
-  > + one-member-profit ÷ 2") reads as **profit proportional to how fully the member paid**:
-  > ```
-  > memberProfitShare(m) = profitPerMember × min(1, contributedCapital(m) / expectedDeposit(m))
-  >                      # ₹10k paid / ₹20k expected = ½ → half of one member's profit
-  > ```
-  > The alternative reading is a flat **equal** share (`profitPerMember`), where "÷ 2" only meant
-  > "÷ number of members (2)". These give different numbers whenever a member is behind on deposits.
-  > **Confirm which.** (Leaning: proportional-to-contribution, per the example.)
+  **Pending/unpaid deposits are NOT subtracted as a debt** — a leaver who underpaid simply
+  contributed less capital and earns proportionally less profit; their unpaid deposits are not
+  collected on exit. Posting: `TREASURY_CASH(t) −A`, `MEMBER_EQUITY(m) +A`; member → `INACTIVE`,
+  frozen; **all history retained**.
 
   > **⚠ Cash-flow caveat (still open):** part of `profitPerMember` is *unrealized* (uncollected loan
   > interest). Paying a leaver that share in cash pays out money the club hasn't collected yet.
@@ -996,7 +998,7 @@ creates phantom debt.
 | Expected deposit (to date) | expected | `getMemberTotalDeposit(m, now)` |
 | Pending contribution | derived | `expected − (periodic + delayed-catchup)` (contributions, not balance) |
 | Deposit status (G7) | derived | `OVERDUE` when pending contribution > 0 past the month due; UI shows a "pending/overdue" indicator. Late penalty = `ClubConfig.lateDepositPenaltyPaise` (default **0** → indicator only). |
-| Profit share | derived | `memberProfitShare(m)` (see §16.3 open question) |
+| Profit share (full / actual) | derived | full = `profitPerMember`; actual = `profitPerMember × min(1, paid/expected)` (§16.3). UI shows both. |
 
 ### 17.3 Club / dashboard tiles
 
@@ -1302,8 +1304,10 @@ not** (capital owed).
   leaves. `dividendEnabled` seam kept **off**.
 - **G3 Withdrawal = full exit only:** no partial withdrawal, no profit-only withdrawal, no
   withdrawal without leaving (§16.3). *(Profit-share formula at exit is the one open item below.)*
-- **G4 Vendor types:** **dropped `BANK`** — types are now **`GENERAL`** + `CHIT`; bank deposits/
-  interest are a GENERAL vendor (realized on receipt).
+- **G4 Vendor types:** **dropped `BANK`** — types are now **`GENERAL`** + `CHIT`; a bank is a
+  GENERAL vendor with `category = "Bank"` (display label only). Bank interest realized on receipt.
+- **★ Profit share at exit (LOCKED):** **proportional to deposit completeness** —
+  `profitPerMember × min(1, paid/expected)`; UI shows both the full and the reduced value (§16.3).
 - **G5 Borrower priority:** derived HIGH/LOW hint shown in the loan UI, **advisory**, admin's choice
   (§14.5).
 - **G6 Catch-up:** auto-computed guide = cumulative expected deposit (start→today) + profit-per-
@@ -1313,11 +1317,7 @@ not** (capital owed).
 
 Still open, non-blocking for P0 unless noted:
 
-1. **★ Profit share at exit (`memberProfitShare`)** — equal flat `profitPerMember`, or **proportional
-   to how fully the member paid** (`profitPerMember × paid/expected`)? The G3 example implies
-   proportional; **needs explicit confirm** (§16.3). This is the one open item that changes a core
-   number.
-2. **Settlement cash vs paper value** — pay a leaver their share of *unrealized* loan interest in
+1. **Settlement cash vs paper value** — pay a leaver their share of *unrealized* loan interest in
    cash, or display-only with cash settled from realized funds? (§16.3; affects cash sufficiency).
 3. **Pre-`dayInterestFrom` rounding** — partial month rounds up to a full month? (assumed; lock to
    v1 fixtures).
