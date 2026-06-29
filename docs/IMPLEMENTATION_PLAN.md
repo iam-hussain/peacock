@@ -142,9 +142,16 @@ writes, derive time-based values on read, one cache layer, server actions instea
 | Money | **`BigInt` paise** | Exact integer math; format to ₹ only at the display edge. |
 | Auth | **Better Auth** (Prisma adapter) | Lightweight; owns User/Session/Account/Verification. |
 | Validation | **Zod** | One validation source for actions and forms. |
-| Caching | **Next.js cache + `revalidateTag()`** | One predictable invalidation layer. |
+| UI components | **shadcn/ui** (Radix-based) | Accessible primitives we own and compose; not a heavy UI framework. |
+| Styling | **Tailwind CSS** + **CVA** + `cn()` (`clsx`+`tailwind-merge`) | Theme-token-driven; variants via class-variance-authority; **no hard-coded styles**. |
+| Theming | **CSS variables (shadcn HSL tokens)** + Tailwind theme scale | Light/dark from tokens; zero magic numbers/hex. |
+| Icons | **lucide-react** | Ships with shadcn; consistent, tree-shakeable. |
+| Forms | **react-hook-form** + `@hookform/resolvers` (Zod) | Don't hand-roll forms; shared Zod schemas. |
+| Tables | **@tanstack/react-table** (headless) | Ledger/member/loan tables without reinventing. |
+| Optimistic UI | React `useOptimistic` / `useActionState` (React Query optional) | RSC + actions usually remove the need for a client cache lib. |
+| Caching | **Next.js cache + `revalidateTag()`** | One predictable layer; invalidation clears local **and** Vercel/CDN. |
 | File storage | **Vercel Blob** | Avatars/files. |
-| Charts | lightweight lib (pick in P3) | Series come pre-computed from the ledger. |
+| Charts | a maintained chart lib (pick in P3) | Series come pre-computed from the ledger. |
 | Testing | **Vitest** (unit) + **Playwright** (e2e later) | Heavy unit testing on the ledger/interest. |
 | Hosting | **Vercel** + **Neon** | Serverless-friendly; no required background workers. |
 | Timezone | **Asia/Kolkata (IST)** | All month boundaries. |
@@ -1176,14 +1183,40 @@ export async function repayLoan(form: unknown) {
 
 ## 23. App structure, routes & the entry drawer
 
+**Feature-based (feature-sliced) architecture.** Group by feature/domain, not file type. Each
+feature owns its UI + co-located server actions/queries/schemas; the ledger engine and libs stay
+central (cross-cutting core). See `CLAUDE.md` → Engineering standards for the full rules.
+
 ```
 src/
-  app/  (auth)/login  dashboard/  members/[id]  loans/  transactions/  vendors/[id]  treasury/  analytics/  settings/  profile/
-  server/  ledger/  services/  actions/  queries/  auth/
-  lib/  money  date  zod  format
-  components/  db/
+  app/                          # App Router: thin route shells that compose feature UI
+    (auth)/login
+    dashboard/ members/[id] loans/ transactions/ vendors/[id] treasury/ analytics/ settings/ profile/
+  features/                     # ← the bulk of the app, one folder per domain
+    dashboard/  { components, hooks, queries }
+    members/    { components, hooks, actions, queries, schema, types }
+    loans/      { components, hooks, actions, queries, schema, types }
+    vendors/    { components, hooks, actions, queries, schema, types }   # incl. chit
+    treasury/   { components, hooks, actions, queries, schema }
+    transactions/ { components, hooks, queries }      # ledger view + entry drawer
+    analytics/  { components, hooks, queries }
+    settings/   { components, hooks, actions, schema } # ClubConfig
+  server/                       # cross-cutting core (not feature-specific)
+    ledger/                     # double-entry engine + interest engine + invariants (heavily tested)
+    services/                   # postTransaction wrappers + intent helpers shared across features
+    auth/                       # Better Auth + requireRole
+    db/                         # Prisma client singleton
+  components/
+    ui/                         # shadcn primitives (button, dialog, card, …)
+    shared/                     # cross-feature reusable composites (StatCard, MoneyText, EmptyState…)
+  lib/                          # money (paise↔₹), date (IST/anchoredMonths), zod helpers, cn(), format
 prisma/  schema.prisma  seed.ts  migrate-from-v1.ts
 ```
+
+- **Route files stay thin** — they import and compose feature components/queries; logic lives in
+  `features/*` and `server/*`.
+- A feature's `actions` are `'use server'` entry points → `server/services` → `server/ledger`.
+- Anything used by 2+ features graduates to `components/shared` or `lib`.
 
 The admin picks an **intent** ("What happened?" in plain language — each tagged **IN / OUT /
 neutral**), the drawer builds the posting and **always asks which treasury** handles the cash. The
