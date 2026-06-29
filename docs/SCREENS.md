@@ -20,7 +20,8 @@ field once a member is picked; a "forgot password?" action.
 
 **Does:**
 - Pick a member → enter password → sign in. (Default password = phone number.)
-- "Forgot password?" → submit a **reset request** to admins.
+- **First login forces a password change** before continuing.
+- "Forgot password?" → submit a **reset request** to admins (admin is notified in-app).
 - Clear error on wrong password; throttle on repeated failures (basic).
 
 **Access:** everyone (pre-auth).
@@ -74,8 +75,8 @@ deposits paid, catch-up, **pending deposits/overdue badge**, current loan + inte
 **profit share (full and reduced-by-paid-ratio)**; their **transaction history**.
 
 **Does:** open any of their transactions; **admin:** record an action for this member (deposit,
-loan, settle/leave, rejoin, catch-up), edit profile, reset password. If eligible, show **loan
-eligibility/priority** hint.
+loan, settle/leave, rejoin, catch-up, **delayed-payment penalty**), edit profile, reset password. If
+eligible, show **loan eligibility/priority** hint.
 
 **Access:** all (view); a member sees their own statement; actions = admin.
 
@@ -148,9 +149,10 @@ linked to their original.
 
 **Does:**
 - **Entry drawer ("What happened?"):** plain-language intent grid (deposit, give loan, repayment,
-  collect interest, catch-up, funds transfer, vendor invest/return, chit installment/payout, member
-  leaves, member rejoins; corrections under "advanced"). Pick intent → step 2 collects the fields
-  (`FORMS_AND_FIELDS.md`), **always including which treasury** → save. Optimistic confirmation.
+  collect interest, catch-up, delayed-payment penalty, funds transfer, vendor invest/return, chit
+  installment/payout, member leaves, member rejoins; corrections under "advanced"). Pick intent →
+  step 2 collects the fields (`FORMS_AND_FIELDS.md`), **always including which treasury** → save.
+  Optimistic confirmation.
 - Edit / reverse any entry (as a correction, history kept).
 
 **Access:** all (view); add/edit/reverse = admin.
@@ -193,7 +195,8 @@ cooldown; **overdue penalty** (default 0); **late-deposit penalty** (default 0);
 (off); timezone.
 
 **Shows / does — people:** add/edit members; **reset any member's password**; view & action
-**forgot-password requests**; grant/revoke admin; set/unset treasurer; deactivate/archive.
+**forgot-password requests** (a queue, each with a "reset" action); grant/revoke admin; set/unset
+treasurer; deactivate/archive.
 
 **Does — other:** lock/unlock a period (seam, off by default).
 
@@ -207,10 +210,25 @@ cooldown; **overdue penalty** (default 0); **late-deposit penalty** (default 0);
 
 **Shows:** own details + statement summary.
 
-**Does:** **change own password**; update avatar/contact (within allowed limits). Cannot grant
-themselves admin or edit club data.
+**Does:** **change own password**; **change own avatar**; update own contact (within allowed limits).
+Cannot grant themselves admin or edit club data.
 
 **Access:** the logged-in member.
+
+---
+
+## 14. Notifications (in-app)
+
+**Purpose:** keep members and admins informed of relevant events (see `PRODUCT.md` §18).
+
+**Shows:** a **bell with an unread count** (global, in the app shell) and a **notification list** —
+each item: short message, time, read/unread, and a link to the related item.
+
+**Does:** open an item → navigate to it and mark read; mark all read. **Members** see their relevant
+alerts (new joiner, their deposit/loan/interest/settlement, password reset); **admins** also see
+approvals (**forgot-password requests**), new entries, and lifecycle events.
+
+**Access:** everyone (their own notifications).
 
 ---
 

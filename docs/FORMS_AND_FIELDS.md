@@ -15,10 +15,12 @@ There is **no public sign-up**. The club's members already exist; people only **
 
 - **Login:** the screen shows a **list of existing members** (name + avatar). You **pick yourself**
   and **enter your password**. (No typing a username.)
-- **Default password = the member's phone number.** Set when the member is created; the member can
-  change it after first login.
-- **Forgot password:** the member **requests a reset**; an **admin resets it** (back to the phone
-  number by default). There is no self-serve email reset flow.
+- **Default password = the member's phone number.** Set when the member is created. **First login
+  forces a password change.**
+- **Forgot password:** the member **requests a reset**; the request **goes to the admin** (who is
+  notified in-app) and the **admin resets it** (back to the phone number by default). No self-serve
+  email reset.
+- **Phone numbers are unique** per member.
 - **Who can log in:** admins always; members optionally (read-only access). Vendors never log in.
 
 ### Member fields (the user record)
@@ -26,15 +28,15 @@ There is **no public sign-up**. The club's members already exist; people only **
 | Field | R/O/A | Notes |
 |-------|:-----:|-------|
 | Full name (first, last) | R | Last name optional; shown in lists. |
-| Phone number | R | Identity + **default password**; primary contact. |
+| Phone number | R | **Unique**; identity + **default password**; primary contact. |
 | Email | O | Optional contact; not required for login. |
 | Username | O→A | Optional handle; **auto-generated from the name if left blank** (unique). Not used to log in. |
-| Avatar | O | Photo; falls back to initials. |
+| Avatar | O | Photo; falls back to initials. **The member can change their own avatar** in Profile; admins can too. |
 | Joined date (club) | R | When they joined the club — drives expected deposits & catch-up. |
 | Role | A/admin-set | `MEMBER` by default; an admin can grant `ADMIN`. |
 | Treasurer | A/admin-set | Flag; a member becomes a treasurer when they hold club cash. |
 | Status | A | `ACTIVE` / `INACTIVE` (frozen) / `LEFT` — system-managed via lifecycle. |
-| Password | A | Managed by auth; default = phone number; admin-resettable. |
+| Password | A | Managed by auth; default = phone number; **forced change on first login**; admin-resettable. |
 
 ---
 
@@ -90,7 +92,8 @@ noted). Direction: **IN** = club gains cash, **OUT** = club pays cash, **neutral
 | Transaction | Dir | Fields collected |
 |-------------|:---:|------------------|
 | **Member paid deposit** | IN | Member (R); Amount (R); Treasury **receiving** (R); *(optional: which month)*. |
-| **Catch-up payment** | IN | Member (R); Subtype: late-join / delayed-payment (R); Amount (R, **guide auto-computed**, editable); Treasury receiving (R). |
+| **Catch-up payment** | IN | Member (R); Amount (R, **join-time guide auto-computed** = missed deposits + profit-per-member, editable); Treasury receiving (R). |
+| **Delayed-payment penalty** | IN | Member (R); Amount (R, **manual** — admin decides); Reason (O); Treasury receiving (R). Booked as club income. |
 | **Give a loan** | OUT | Member (R); Amount of this disbursement (R); Treasury **paying out** (R); Approved/requested amount (O — see auto-create below). **A loan record is created/linked automatically in the background.** |
 | **Record repayment** | IN | Loan/member (R); Principal amount (R); Interest amount in same entry (O); Treasury receiving (R). Closes the loan automatically when principal hits zero. |
 | **Collect interest** | IN | Loan/member (R); Amount (R, **pending interest shown as guide**); Treasury receiving (R). |
@@ -157,18 +160,27 @@ What an admin can do, in two buckets: **manage people** and **configure the club
 | Loan limit | Max a member may borrow. | ₹5,00,000. |
 | Loan term | Months before a loan is "overdue". | 5. |
 | Loan cooldown | Wait after closing before borrowing again. | 1 month. |
-| Overdue penalty | Extra rate on overdue loans (applies instantly to all). | 0 (off). |
-| Late-deposit penalty | Charge for paying a monthly deposit late. | 0 (off). |
+| Overdue penalty | **Automatic** extra rate on overdue loans (applies instantly to all). | 0 (off). |
 | Dividend | Periodic profit payout toggle. | Off. |
 | Timezone | Month-boundary timezone. | Asia/Kolkata. |
 
 ### 4.3 Other admin actions
 
 - Create / edit vendors and chits (§2).
-- Record / edit / reverse any transaction (§3).
+- Record / edit / reverse any transaction (§3), including the **manual delayed-payment penalty**.
 - Lock/unlock a period (seam built, off by default).
+- See the **notification centre** (incl. forgot-password requests and new entries).
 
-> Members (non-admin) can **view** everything but change nothing (see `PRODUCT.md` §15).
+> Members (non-admin) can **view** everything but change nothing (see `PRODUCT.md` §15). Members can
+> change their **own avatar and password** in Profile.
+
+### 4.4 Notifications (simple, in-app)
+
+A lightweight notification store; rows are created inline when events happen (no background jobs).
+See `PRODUCT.md` §18 for the behavior. Each notification: **recipient · type · short message · link ·
+read/unread · time.** Members get relevant alerts (new joiner, their deposit/loan/interest/
+settlement, password reset); admins get approvals (forgot-password requests), new entries, and
+lifecycle events.
 
 ---
 

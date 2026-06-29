@@ -34,7 +34,8 @@
 15. [Transparency & permissions](#15-transparency--permissions)
 16. [Corrections & history](#16-corrections--history)
 17. [Transaction types (the "What happened?" entry screen)](#17-transaction-types-the-what-happened-entry-screen)
-18. [End-to-end example](#18-end-to-end-example)
+18. [Notifications](#18-notifications)
+19. [End-to-end example](#19-end-to-end-example)
 
 ---
 
@@ -93,9 +94,12 @@ flowchart TD
 There is **no public registration** — the club's members already exist. To get in, you **pick your
 name from a list** of members and **enter your password**.
 
-- The **default password is your phone number** (set when you're added); you can change it after.
-- **Forgot your password?** Request a reset — an **admin resets it** for you (back to your phone
-  number by default). There's no email-link reset.
+- The **default password is your phone number** (set when you're added). **On your first login
+  you're required to change it.**
+- **Forgot your password?** Request a reset — the request **goes to the admin** (who sees it and
+  gets an **in-app notification**), and the **admin resets it** for you (back to your phone number by
+  default). There's no email-link reset.
+- Phone numbers are **unique** per member.
 - Admins can always log in; members optionally (to view). Vendors never log in.
 
 ```mermaid
@@ -216,15 +220,18 @@ value**. (This used to be called "offset.")
 
 There are two kinds of catch-up:
 
-- **Late-join catch-up** — for joining after the club started: pay the **profit per member** that
-  existing members have already built up, so the newcomer starts on equal footing.
-- **Delayed-payment catch-up** — for missed monthly deposits: pay the **deposits** that should
-  have been paid by now.
+Catch-up is the **equalisation payment for joining late** (or coming back): the newcomer pays the
+**deposits they missed** (from the club's start up to today) **plus their share of the profit** the
+club has already built up — so they start on **equal footing** with everyone else.
 
 **How the amount is decided:** Peacock **calculates a suggested catch-up** =
 (all the monthly deposits from the club's start up to today) **+** (the profit-per-member built up
 so far). The **admin can edit** that figure up or down before saving — the math is done for them,
 but the final number is the admin's call.
+
+> **Note — "delayed payment" is a *penalty*, not a catch-up.** Catching up for being *late on
+> monthly deposits* is handled as a **manual penalty** the admin enters (see §13), separate from the
+> join-time catch-up described here.
 
 ```mermaid
 flowchart TD
@@ -428,8 +435,9 @@ When a member leaves, Peacock **computes a suggested settlement** that brings to
 - **minus** any loan they still owe,
 - **minus** any unpaid interest on that loan.
 
-The **admin enters the final settlement amount** (it may be slightly less than the computed guide).
-After settling:
+The **admin enters the final settlement amount** (it may be slightly less than the computed guide),
+and the member is **paid out in cash at that time** (from a treasurer) — including their profit
+share. After settling:
 
 - the member's **profit becomes zero**,
 - their **account is frozen** and marked **inactive**,
@@ -459,16 +467,16 @@ flowchart LR
 
 ## 13. Penalties
 
-Both penalties exist in the product but are **turned off (set to zero) today**. They can be
-switched on anytime in admin settings.
+There are two kinds of penalty — one automatic (configurable, off today), one manual.
 
-| Penalty | What it would do | Today |
-|---------|------------------|-------|
-| **Overdue loan penalty** | Adds extra interest on loans kept past the **5-month** term. When switched on, it applies **immediately to all loans**. | **0** — overdue loans are only **flagged**. |
-| **Late-deposit penalty** | Charges a member for paying a monthly deposit late. | **0** — late deposits are only shown as **pending / overdue**. |
+| Penalty | How it works | Today |
+|---------|--------------|-------|
+| **Overdue loan penalty** | An **automatic** extra interest rate on loans kept past the **5-month** term. A config setting; when switched on it applies **immediately to all loans**. | **0** — overdue loans are only **flagged**. |
+| **Delayed-payment penalty** | A **manual** charge the admin records when a member has been **significantly late on monthly deposits**. The admin decides the amount and enters it as its own entry; the money the member pays is **club income** (adds to profit). | Applied **case-by-case** by the admin (no automatic charge). |
 
-So today, "overdue" and "late" are **warnings and indicators**, not charges. The UI should clearly
-show overdue loans and pending deposits (e.g. red badges) even though no money penalty applies yet.
+So **overdue loans** and **late deposits** are always **flagged** with clear indicators (red
+badges) regardless of penalties. The **overdue-loan penalty** is an automatic switch (off today),
+while the **delayed-payment penalty** is a judgement call the admin makes and enters by hand.
 
 ---
 
@@ -635,7 +643,8 @@ the way the entry screen should present them.
 | What happened | Direction | What it does |
 |---------------|:---------:|--------------|
 | **Member paid deposit** | IN | A member pays their monthly savings to a treasurer. |
-| **Catch-up payment** | IN | A new/returning member pays equalisation money — *late-join* (their share of past profit) and/or *delayed-payment* (missed monthly savings). |
+| **Catch-up payment** | IN | A new/returning member pays **join-time equalisation** = missed deposits (from club start) + their share of past profit. |
+| **Delayed-payment penalty** | IN | A **manual** penalty the admin charges a member for being significantly late on deposits; the amount is club income. |
 | **Give a loan** | OUT | The club hands a loan to a member. Can be done **in parts (tranches)** from different treasurers — all under one loan. |
 | **Record repayment** | IN | A member pays back loan principal (and optionally interest in the same entry). |
 | **Collect interest** | IN | A member pays interest earned on their loan. |
@@ -665,15 +674,47 @@ the way the entry screen should present them.
 | **Vendor write-off** | neutral | Closing a vendor that returned less than invested — records the loss. |
 | **Correction / reversal** | — | Cancels a previous entry (for an edit or delete); the original stays on record. |
 
-> **What changed vs the earlier mockup (8 intents):** the mockup was missing **Catch-up**, **Chit
-> installment**, **Chit payout**, and the **Leave/Rejoin** lifecycle entries; and "Withdrawal —
-> member takes funds out" is renamed **"Member leaves (settle up)"** because withdrawal is always a
-> full exit in this club. Adjustment / write-off / reversal are admin corrections (group them under
-> an "advanced/corrections" area, not the main grid).
+> **What changed vs the earlier mockup (8 intents):** the mockup was missing **Catch-up**,
+> **Delayed-payment penalty**, **Chit installment**, **Chit payout**, and the **Leave/Rejoin**
+> lifecycle entries; and "Withdrawal — member takes funds out" is renamed **"Member leaves (settle
+> up)"** because withdrawal is always a full exit in this club. Adjustment / write-off / reversal are
+> admin corrections (group them under an "advanced/corrections" area, not the main grid).
 
 ---
 
-## 18. End-to-end example
+## 18. Notifications
+
+A **simple, in-app** notification system keeps people informed — deliberately lightweight (no email/
+push for now). Notifications are **stored** and **created the moment a relevant event happens** (no
+background jobs); members and admins see them in an in-app **notification centre** (bell), with an
+unread count.
+
+**Members get notified about** things relevant to them, for example:
+- a **new member joined** the club,
+- their **deposit is recorded**, **loan disbursed/repaid**, **interest collected**, or **settlement**
+  done,
+- their **password was reset**.
+
+**Admins get notified about** things needing attention or awareness, for example:
+- a **forgot-password request** (needs action),
+- **new entries** recorded (deposits, loans, vendor moves, etc.),
+- **member lifecycle** events (someone left / rejoined),
+- anything else worth an approval/awareness ping.
+
+Each notification has a **recipient, a short message, a link** to the relevant item, a **read/unread**
+state, and a time. Keep it simple: one notifications store, a small set of event types, marked read
+when seen.
+
+```mermaid
+flowchart LR
+  EV["Something happens<br/>(entry saved, member joins, reset requested…)"] --> N["Create notification(s)<br/>for the right people"]
+  N --> BELL["Shown in the in-app bell<br/>(unread count)"]
+  BELL --> OPEN["Tap → go to the item; marked read"]
+```
+
+---
+
+## 19. End-to-end example
 
 A small story that touches most of the product:
 
