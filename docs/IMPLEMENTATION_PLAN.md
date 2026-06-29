@@ -4,11 +4,13 @@
 > building the new Peacock repository from scratch. Consolidates and supersedes (for build
 > purposes) the three source planning docs.
 >
-> **Revision 2** — folds in the owner's domain clarifications: the club holds **no cash**
-> (member-treasurers do), **multi-tranche loans** with a **time-versioned global interest rate**,
-> **chit-fund** vendors as a first-class mechanism, **catch-up** (renamed from "offset"), and a
-> **settle / freeze / reactivate** withdraw-rejoin flow. Items still genuinely undecided are
-> marked **`‹TBD›`**.
+> **Revision 3** — folds in the owner's domain clarifications: the club holds **no cash**
+> (member-treasurers do), **multi-tranche loans** with a **fixed-at-origination interest rate**
+> (rate changes apply to new loans only), **chit-fund** vendors (with **ramping installments**) plus
+> a third **`GENERAL`** vendor type, **catch-up** (renamed from "offset"), a **settle / freeze /
+> reactivate** withdraw-rejoin flow, and a **comprehensive profit-per-member** (pending interest =
+> profit, pending deposits = capital) shown on the dashboard and used as the settlement guide. Items
+> still genuinely undecided are marked **`‹TBD›`**.
 >
 > **Audience:** the engineer(s) building this. Everything needed to start typing lives here.
 > **Out of scope:** visual styling (see `DESIGN_PROMPTS.md`). Functionally the UI mirrors v1.
@@ -395,7 +397,7 @@ model ChitFund {
   vendor             Vendor  @relation(fields: [vendorId], references: [id])
   chitValue          BigInt                      // face value, e.g. ₹5,00,000
   durationMonths     Int                         // e.g. 20
-  monthlyInstallment BigInt                      // expected monthly payment (may vary; see §15)
+  marginInstallment  BigInt                      // the CAP = chitValue / durationMonths (e.g. ₹25,000); installments ramp up to this
   startedAt          DateTime
   payoutMonth        Int?                        // month index the payout was taken (10..20 or last)
   payoutAt           DateTime?
@@ -457,13 +459,13 @@ model Loan {
   member               Member   @relation(fields: [memberId], references: [id])
   requestedAmount      BigInt                     // what the member asked for (funded via tranches)
   principalOutstanding BigInt   @default(0)       // Σ disbursed − Σ repaid (kept current)
+  monthlyRateBps       Int                        // SNAPSHOT of rateAt(startedAt); fixed for the loan's life (§14.2)
   startedAt            DateTime                   // first tranche date; drives the 5-month term
   closedAt             DateTime?
   status               LoanStatus @default(ACTIVE) // ACTIVE / CLOSED  (overdue is derived)
   createdAt            DateTime @default(now())
   @@index([memberId])
   @@index([status])
-  // NOTE: no per-loan rate — interest uses the global time-versioned rate schedule (§14).
 }
 
 // ---------- Config & audit ----------
@@ -677,48 +679,55 @@ flowchart LR
 - **Repayment:** any amount (no minimum), to any treasury; may include an interest portion.
 - **Close:** when `principalOutstanding == 0` → `CLOSED`, `closedAt = occurredAt`.
 
-### 14.2 The global rate schedule
+### 14.2 The global rate schedule — applies to NEW loans only
 
 ```
 ClubConfig.rateSchedule = [{ rateBps, effectiveFrom }, ...]   # sorted
 rateAt(date) = rateBps of the latest entry with effectiveFrom <= date
 ```
-Seed: `[{ rateBps: 100, effectiveFrom: clubStart }]` (1%/month). Admin appends e.g.
-`{ rateBps: 200, effectiveFrom: <date> }` and all live loans accrue at 2% from that date.
+Seed: `[{ rateBps: 100, effectiveFrom: clubStart }]` (1%/month). The admin may append e.g.
+`{ rateBps: 200, effectiveFrom: <date> }`.
+
+**A rate change affects only loans that START on/after its effective date.** An existing loan
+**keeps the rate it was opened with for its entire life** — rate changes never apply mid-loan. So
+each `Loan` snapshots its rate at creation: `loan.monthlyRateBps = rateAt(loan.startedAt)`. This
+removes all mid-loan rate-splitting from the interest engine.
 
 ### 14.3 Interest engine (derive-on-read)
 
-The principal-over-time curve has **breakpoints** at: each tranche, each repayment, each
-rate-change date, and `dayInterestFrom`. **The month-anchor resets at each principal change**
-("from that day the interest is calculated for that ₹30,000").
+Each loan has a **single fixed rate** (§14.2). The principal-over-time curve has breakpoints only
+at **each tranche**, **each repayment**, and **`dayInterestFrom`**. **The month-anchor resets at
+each principal change** ("from that day the interest is calculated for that ₹30,000").
 
 ```
 interestToDate(loan, asOf = now):
+  rate     = loan.monthlyRateBps / 10000                  # fixed for the whole loan
   events   = sorted [(date, ±amount)] from LOAN_TAKEN(+) and LOAN_REPAY principal legs(−)
-  segments = principalTimeline(events, asOf)   # list of (balance B, segStart, segEnd) where B constant
+  segments = principalTimeline(events, asOf)              # (balance B, segStart, segEnd), B constant per segment
   total = 0
   for (B, s, e) in segments:
-      for (ss, ee, rateBps, daily) in splitByRateAndDailyBoundary(s, e):   # split at rate changes & dayInterestFrom
-          rate = rateBps / 10000
-          { months, extraDays } = anchoredMonths(ss, ee)        # anchored at ss (the segment's own start)
-          if daily:                                              # on/after dayInterestFrom
-              total += B*rate*months + (B*rate / daysInMonthIST(ee)) * extraDays
-          else:                                                  # before dayInterestFrom: whole-month, round partial up
+      for (ss, ee, daily) in splitAtDailyBoundary(s, e):  # split only at dayInterestFrom
+          { months, extraDays } = anchoredMonths(ss, ee)  # anchored at ss (the segment's own start)
+          if daily:                                       # on/after dayInterestFrom
+              dailyRate = (B*rate) / daysInIncompleteMonthIST(ss, months)   # monthlyRate ÷ days in the trailing incomplete month
+              total += B*rate*months + dailyRate*extraDays
+          else:                                           # before dayInterestFrom: whole-month, round partial up
               total += B*rate * (months + (extraDays > 0 ? 1 : 0))
   return roundToWholeRupee(total)
 
 interestPending(loan) = interestToDate(loan) − Σ loan's LOAN_INTEREST payments
 ```
 
-Worked example (owner's): ₹1L disbursed day 0; +₹1.5L on day 7 (→ ₹2.5L); single-shot repay at ~5
-months ⇒ interest = `accrue(₹1L, day0→day7)` + `accrue(₹2.5L, day7→repay)`. Partial path: repay
-₹2L mid-way, remaining ₹50k accrues from that day (anchor reset) until paid two weeks later at the
-daily rate.
+- **Daily denominator (owner-confirmed):** the trailing leftover days are pro-rated over the number
+  of days in **the incomplete (next, partial) anchored month** — i.e. `daysInIncompleteMonthIST(ss,
+  months)` = days between the last completed anchor (`ss + months`) and the following anchor
+  (`ss + months + 1 month`). Daily rate = `monthlyRate ÷ that day-count`.
+- **Worked example (owner's):** ₹1L day 0; +₹1.5L day 7 (→ ₹2.5L); single-shot repay at ~5 months
+  ⇒ `accrue(₹1L, day0→day7)` + `accrue(₹2.5L, day7→repay)`. Partial: repay ₹2L mid-way, remaining
+  ₹50k accrues from that day (anchor reset) until paid two weeks later at the daily rate.
 
-`‹TBD›` to lock by fixtures: (a) exact `daysInMonthIST` basis for the daily rate (month of `ee`
-vs fixed 30); (b) rate change landing *inside* an anchored month (current model splits and
-re-anchors at the boundary — confirm against a real example); (c) pre-`dayInterestFrom` partial
-month rounds up (assumed).
+`‹TBD›` only the migration edge remains: pre-`dayInterestFrom` partial month rounds **up** to a
+full month (assumed) — lock to v1 fixtures.
 
 ### 14.4 Loan figures
 
@@ -735,14 +744,20 @@ expectedTotalLoanInterest     = Σ active loans interestToDate(loan)   # club-le
 
 ## 15. Chit funds in depth
 
-A `CHIT` vendor models: pay a fixed monthly installment for `durationMonths`; receive a **payout**
-at some month (10..20 or last); **must keep paying to term even if payout taken early**.
+A `CHIT` vendor models: pay a **monthly installment that ramps up over time** for
+`durationMonths`; receive a **payout** at some month (10..20 or last); **must keep paying to term
+even if payout taken early**.
 
-### Mechanics (owner's example: ₹5,00,000 chit, 20 months, ~₹20,000/month max)
+**Installments vary (owner-confirmed):** they start lower and increase month to month, **capped at
+the margin** `marginInstallment = chitValue / durationMonths` (e.g. ₹5,00,000 / 20 = ₹25,000) —
+never beyond. Actual amounts are recorded per `CHIT_PAYMENT` entry; `marginInstallment` is the cap
+used for the **maximum** remaining-obligation estimate.
+
+### Mechanics (owner's example: ₹5,00,000 chit, 20 months, margin ₹25,000)
 
 ```mermaid
 flowchart LR
-  S["create CHIT vendor + ChitFund (value, duration, installment, start)"] --> P["monthly CHIT_PAYMENT (installment → VENDOR_RECEIVABLE)"]
+  S["create CHIT vendor + ChitFund (value, duration, margin, start)"] --> P["monthly CHIT_PAYMENT (actual amount → VENDOR_RECEIVABLE)"]
   P --> P
   P --> PO["CHIT_PAYOUT at month k (cash in; profit = payout − net paid so far)"]
   PO --> O["remaining (duration−k) installments stay as an OBLIGATION; payments continue"]
@@ -759,19 +774,18 @@ flowchart LR
 ### Derived figures
 
 ```
-chit.totalPaid          = Σ CHIT_PAYMENT to date
-chit.installmentsLeft    = max(0, durationMonths − installmentsPaid)
-chit.remainingObligation = installmentsLeft × monthlyInstallment      # liability still owed
-chit.netProfit           = (payoutAmount ?? 0) − totalPaid            # may be negative
+chit.totalPaid           = Σ CHIT_PAYMENT to date                     # actual amounts
+chit.installmentsLeft     = max(0, durationMonths − installmentsPaid)
+chit.remainingObligation  = installmentsLeft × marginInstallment      # MAX liability still owed (cap-based; actuals may be less)
+chit.netProfit            = (payoutAmount ?? 0) − totalPaid           # may be negative
    active : reported as max(netProfit, 0) until COMPLETED (rule §17)
    completed: full netProfit
 ```
 
-`‹TBD›` to confirm with owner: (a) whether the installment is fixed or varies month to month
-(chit dividends often reduce it) — schema allows a per-payment amount via the actual
-`CHIT_PAYMENT` entries, with `monthlyInstallment` as the planning default; (b) exact profit
-recognition timing for an early payout while obligations remain (recommend: realize profit at
-payout, carry `remainingObligation` as a disclosed liability reducing `currentValue`).
+Profit recognition (recommended, owner to confirm): realize profit at payout; carry
+`remainingObligation` as a disclosed liability that **reduces** `currentValue` / `profitPerMember`
+(§17.3). `remainingObligation` is a conservative **maximum** (installments ramp toward the margin
+but may be lower), so the obligation shown is the worst case.
 
 ---
 
@@ -923,15 +937,20 @@ totalPortfolioValue     = currentValue + interestBalance + totalMemberPending
 pendingAmounts          = totalMemberPending + interestBalance
 
 # Comprehensive profit-per-member (shown on dashboard; also the withdraw/rejoin guide, §16.3)
-# Includes ALL upcoming money in + obligations out, not just realized profit.
+# KEY RULE (owner): pending INTEREST is profit; pending DEPOSITS are NOT profit (they are capital owed).
 realizedProfit          = totalInterestCollected + vendorProfit                      # already in the books
-pendingProfitIn         = interestBalance                                            # loan interest accrued, not yet collected
-                          + Σ_active vendor pending P&L                              # bank/general accrued, chit netProfit-to-date
-obligationsOut          = chitRemainingObligation                                    # future chit installments the club still owes
-netDistributableProfit  = realizedProfit + pendingProfitIn − obligationsOut − profitWithdrawals
+pendingInterestProfit   = interestBalance                                            # loan interest accrued up to TODAY, not yet collected → PROFIT
+                          + Σ_active vendor pending P&L                              # bank/general accrued + chit netProfit-to-date → PROFIT
+obligationsOut          = chitRemainingObligation                                    # future chit installments still owed → reduces profit
+netDistributableProfit  = realizedProfit + pendingInterestProfit − obligationsOut − profitWithdrawals
 profitPerMember         = netDistributableProfit / activeMembers                     # ← DASHBOARD TILE
 returnPerMember         = profitPerMember                                            # alias (kept for parity)
 availableProfit         = realizedProfit − profitWithdrawals                         # cash-realizable subset
+
+# NOTE: totalMemberPending (unpaid deposits) is CAPITAL owed, NOT profit. It sits in
+# totalPortfolioValue / pendingAmounts but is deliberately EXCLUDED from netDistributableProfit.
+# In the withdraw guide (§16.3) a member's own pending deposits REDUCE their settlement (capital they
+# still owe), while their share of pendingInterestProfit INCREASES it.
 ```
 
 ---
@@ -1088,9 +1107,10 @@ flowchart TD
   S7 -->|yes| S9["8. cut over; keep v1 read-only"]
 ```
 
-- **Treasury assignment** is the new migration wrinkle: v1 may not record *which* member held cash
-  per transaction. `‹TBD›` — either backfill from v1 data if present, or assign to a default
-  "opening treasury" and let admins re-distribute via `FUNDS_TRANSFER`. Needs owner input.
+- **Treasury assignment (resolved):** v1 **does** record a treasurer on every transaction (and
+  maintains treasurer balances), so the importer maps each v1 transaction's recorded treasurer →
+  the corresponding `TREASURY_CASH` account and assigns the cash leg there. No default/opening
+  treasury needed; v2 per-treasurer balances should reconcile against v1's.
 - Importer is **idempotent**. **Blocker:** need v1 repo/data export + fixture numbers (different
   repo, no access yet).
 
@@ -1102,7 +1122,7 @@ flowchart TD
 |-------|------|------|
 | Ledger invariants | Vitest | `Σ lines = 0`; `balance == Σ entries`; reversal restores exactly; double-reverse rejected |
 | Every `TxnType` | Vitest | postings + balance deltas + loan/chit side-effects (treasury-aware) |
-| **Loan interest** | Vitest | multi-tranche + partial repay + rate-change + dayInterestFrom + anchored months/days vs hand-computed and v1 fixtures |
+| **Loan interest** | Vitest | multi-tranche + partial repay + fixed per-loan rate + dayInterestFrom + anchored months/days (daily = monthlyRate ÷ incomplete-month days) vs hand-computed and v1 fixtures |
 | Chit | Vitest | installments, early payout + remaining obligation, profit recognition |
 | Business rules §17.1 | Vitest | pending-from-contributions, profit split, vendor/chit active/closed, asset-side value |
 | Money / dates | Vitest | paise↔₹, no drift, IST boundaries, anchored months |
@@ -1128,7 +1148,7 @@ v1 fixtures are the source of truth for "correct."
 
 ### P1 — Core data + entry
 - [ ] ClubConfig settings (stages, rate-change append, loan limit).
-- [ ] Member CRUD (role, treasurer flag); Vendor CRUD (BANK/CHIT + ChitFund).
+- [ ] Member CRUD (role, treasurer flag); Vendor CRUD (BANK/GENERAL/CHIT + ChitFund).
 - [ ] Loan open/tranche/repay/interest/close; chit payment/payout.
 - [ ] Withdraw/settle + reactivate + catch-up flows.
 - [ ] Intent helpers + entry drawer (treasury-aware, optimistic UI); transactions view.
@@ -1163,19 +1183,23 @@ The "very fast website" goal holds because v1's expensive move
 
 ## 28. Open questions / TBDs
 
-Tracked, non-blocking for P0 unless noted:
+**Resolved (Rev 3):** daily denominator = `monthlyRate ÷ days in the incomplete trailing month`;
+rate changes apply to **new loans only** (each loan keeps its opening rate); chit installments
+**vary, ramping up to the margin** `chitValue/durationMonths`; migration assigns treasuries from
+**v1's recorded treasurer per transaction**; pending **interest is profit**, pending **deposits are
+not** (capital owed).
 
-1. **Interest daily basis** — daily rate denominator: days in the segment-end month vs fixed 30?
-   (lock by fixture).
-2. **Rate change inside an anchored month** — current model splits + re-anchors at the boundary;
-   confirm against a real club example.
-3. **Pre-`dayInterestFrom` rounding** — partial month rounds up to a full month? (assumed).
-4. **`getMemberTotalDeposit` month semantics** — join-month inclusive? first-month proration?
+Still open, non-blocking for P0 unless noted:
+
+1. **Pre-`dayInterestFrom` rounding** — partial month rounds up to a full month? (assumed; lock to
+   v1 fixtures).
+2. **`getMemberTotalDeposit` month semantics** — join-month inclusive? first-month proration?
    (lock to v1 fixtures).
-5. **Chit installment variability** — fixed monthly or varies (dividend)? Profit recognition
-   timing for early payout with remaining obligation.
-6. **Treasury assignment in migration** — does v1 record the cash-holder per txn, or do we seed a
-   default opening treasury? (needs owner input + v1 data).
-7. **`REVERSAL.occurredAt`** — date reversals to the target's date (recommended) vs now.
-8. **`SUPER_ADMIN` tier** — needed or not.
-9. **v1 access** — repo/export + fixtures required for P4 reconciliation (currently no access).
+3. **Chit early-payout profit timing** — realize profit at payout while carrying remaining
+   obligation as a liability (recommended) — confirm.
+4. **Settlement cash vs paper value** — should a leaver be paid their share of *unrealized* pending
+   interest in cash, or is it display-only while cash settlement uses realized funds? (§16.3
+   caveat; affects whether a settlement can leave the club short on cash).
+5. **`REVERSAL.occurredAt`** — date reversals to the target's date (recommended) vs now.
+6. **`SUPER_ADMIN` tier** — needed or not.
+7. **v1 access** — repo/export + fixtures required for P4 reconciliation (currently no access).
