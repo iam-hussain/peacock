@@ -1,4 +1,6 @@
-# Peacock — Product Guide
+# Peacock Investment Club — Product Guide
+
+> *Many feathers, one fortune.*
 
 > **This is the single source of truth for *what Peacock does* and *how it behaves*.**
 > It describes the product in plain language — the people, the money, the rules, and the
@@ -38,9 +40,9 @@
 
 ## 1. What Peacock is
 
-**Peacock is a money manager for a private investment club** ("Many feathers, one fortune").
-A group of friends/members pool money every month, lend it to each other for interest, and
-place it with outside vendors (like a bank or a chit fund) to grow it. Peacock keeps the
+**Peacock Investment Club is a money manager for a private investment club** ("Many feathers, one
+fortune"). A group of friends/members pool money every month, lend it to each other for interest,
+and place it with outside vendors (like a bank or a chit fund) to grow it. The app keeps the
 whole thing **accurate, transparent, and easy to run**.
 
 There are two everyday jobs the app supports:

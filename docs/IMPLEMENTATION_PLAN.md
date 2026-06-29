@@ -1,4 +1,4 @@
-# Peacock v2 — Implementation Plan (Build Bible)
+# Peacock Investment Club — Implementation Plan (Build Bible)
 
 > **Status:** Pre-build, design-in-progress. Single, expanded, line-by-line engineering plan for
 > building the new Peacock repository from scratch. Consolidates and supersedes (for build
