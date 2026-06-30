@@ -121,7 +121,9 @@ Withdrawal · Vendor investment · Vendor return · Funds transfer. This is the 
 > - **Vendors & chit:** Vendor investment (OUT) · Vendor return (IN) · **Chit installment (OUT)** ·
 >   **Chit payout (IN)**
 > - **Member lifecycle:** **Member leaves / settle up (OUT)** · **Member rejoins (IN)**
-> - **Advanced (admin corrections):** Adjustment · Vendor write-off · Correction/Reversal
+> - **No "corrections" group.** Fixing a specific entry = **Edit/Delete** on its ledger row (the app
+>   reverses it internally). **Vendor write-off** is reached from the vendor's close flow. There is
+>   **no Adjustment** and no manual "correction" card.
 >
 > *Pay catch-up / Pay penalty* pay down a member's **dues**; **raising** a catch-up/penalty charge is
 > a **member-page** action, not a drawer intent (see 1.3).

@@ -156,12 +156,14 @@ treasurer involved, note; filters by type, member/vendor, treasurer, date range;
 linked to their original.
 
 **Does:**
-- **Entry drawer ("What happened?"):** plain-language intent grid (deposit, give loan, repayment,
-  collect interest, pay catch-up, pay penalty, funds transfer, vendor invest/return, chit
-  installment/payout, member leaves, member rejoins; corrections under "advanced"). Pick intent →
-  step 2 collects the fields (`FORMS_AND_FIELDS.md`), **always including which treasury** → save.
-  Optimistic confirmation.
-- Edit / reverse any entry (as a correction, history kept).
+- **Entry drawer ("What happened?"):** plain-language intent grid (deposit, pay catch-up, pay
+  penalty, give loan, repayment, collect interest, funds transfer, vendor invest/return, chit
+  installment/payout, member leaves, member rejoins). **No "corrections" group.** Pick intent → step 2
+  collects the fields (`FORMS_AND_FIELDS.md`), **always including which treasury** → save. Optimistic
+  confirmation.
+- **Edit / Delete** any entry on its row → the app reverses the original (and re-posts the corrected
+  one on edit); **history kept**. This *is* the correction mechanism — there's no separate
+  adjustment/correction entry.
 
 **Access:** all (view); add/edit/reverse = admin.
 

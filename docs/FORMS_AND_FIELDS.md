@@ -147,13 +147,14 @@ transaction above.
 The member page shows **cumulative** catch-ups and penalties — each charge (reason, amount, date) and
 the running **paid vs remaining**.
 
-### Admin corrections (kept in an "advanced" area)
+### Fixing mistakes & losses (no free-form adjustment)
 
-| Transaction | Dir | Fields collected |
-|-------------|:---:|------------------|
-| **Adjustment** | IN/OUT | Member (R); Signed amount (R); Treasury (R); Reason (R). Rare. |
-| **Vendor write-off** | neutral | Vendor (R); Residual amount (A — the leftover receivable); Reason (O). On close with a shortfall. |
-| **Correction / reversal** | — | Target transaction (R); Reason (R). Cancels a prior entry; original stays on record. |
+There is **no "Adjustment"** entry and **no separate "Correction/reversal"** intent.
+
+| Situation | Action / fields |
+|-----------|-----------------|
+| **A specific posted transaction is wrong** | **Edit** or **Delete** it from the ledger row. The app reverses the original (and re-posts the corrected one on edit) behind the scenes; history kept. No fields beyond the corrected transaction itself. |
+| **Vendor money is truly gone** | **Vendor write-off** (admin, from the vendor's close flow): Vendor (R); Residual amount (A — the leftover receivable); Reason (O). Records the loss. |
 
 ### Loan auto-creation (decision)
 

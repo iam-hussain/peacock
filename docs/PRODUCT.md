@@ -682,12 +682,14 @@ do.
 
 Peacock is built to be **auditable**: nothing is ever silently deleted.
 
-- A mistake is fixed with a **reversing correction** that cancels the original, and (for an edit) a
-  new correct entry is added. The original stays visible for the record.
-- A correction is **dated to the original entry's month** so past months and charts stay accurate,
-  while separately recording **when** the correction was made (the audit trail).
+- You fix a mistake by **editing or deleting the specific transaction** in the ledger. Behind the
+  scenes the app **reverses** the original (and, for an edit, posts the corrected one) — so the
+  original always stays on record. There's **no separate "correction" entry to choose**; edit/delete
+  *is* the correction.
+- The reversal is **dated to the original entry's month** so past months and charts stay accurate,
+  while separately recording **when** the change was made (the audit trail).
 - Every change is **logged** (who did what, when).
-- Because corrections are real entries, **all the numbers and history update instantly and stay
+- Because these are real entries, **all the numbers and history update instantly and stay
   consistent** — including past months and charts.
 
 ---
@@ -740,13 +742,19 @@ These don't move cash; they record an amount the member **owes** (paid down late
 | **Add catch-up charge** | Raise an amount the member owes to reach equal value (reason: first-time join · rejoin · profit-gap top-up · mid-term equalisation · other). Auto-suggested, editable. Auto-added on rejoin. |
 | **Add penalty charge** | Raise a penalty the member owes (reason: delayed payment · loan repayment delay · holding club money too long · missed deposit · other). Auto-suggested, editable. |
 
-### Admin corrections (kept honest, fully logged)
+### Fixing mistakes & losses
 
-| What happened | Direction | What it does |
-|---------------|:---------:|--------------|
-| **Adjustment** | IN/OUT | A manual correction to a member's balance (rare; admin only). |
-| **Vendor write-off** | neutral | Closing a vendor that returned less than invested — records the loss. |
-| **Correction / reversal** | — | Cancels a previous entry (for an edit or delete); the original stays on record. |
+There is **no manual "adjustment"** that nudges a number, and no separate "correction" entry to pick
+— those would be untraceable. Instead:
+
+| Situation | What you do |
+|-----------|-------------|
+| **One specific posted transaction was wrong** | **Edit** or **Delete** that transaction from the ledger (§16). The system reverses it behind the scenes and keeps full history — no separate "correction" action to choose. |
+| **Money placed with a vendor is truly gone** | **Vendor write-off** (admin) — records the real loss when a vendor returns less than invested / defaults. Reached from the vendor's close flow. |
+
+> Money a member *owes* is never a manual balance edit — it's a **catch-up or penalty charge** (above).
+> Money genuinely *lost* is a **vendor write-off**. A *mistyped entry* is fixed by **editing that
+> entry**. Together these remove any need for a free-form "adjustment."
 
 > **Catch-up & penalty are *charges* (dues), not single payments.** Raising a charge (above) records
 > what's owed (with a reason; multiple over time accumulate); **paying it down** is the cash entry

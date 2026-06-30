@@ -350,8 +350,7 @@ portion. Every row **sums to zero**.
 | `PERIODIC_DEPOSIT` | `TREASURY_CASH(t) +A`, `MEMBER_EQUITY(m) −A` | — |
 | `CATCHUP` (pay down a catch-up charge) | `TREASURY_CASH(t) +A`, `MEMBER_EQUITY(m) −A` | reduces member's outstanding catch-up due; builds their capital |
 | `PENALTY` (pay down a penalty charge) | `TREASURY_CASH(t) +A`, `OTHER_INCOME −A` | reduces member's outstanding penalty due; club income (shared profit) |
-| `ADJUSTMENT` | `TREASURY_CASH(t) +A`, `MEMBER_EQUITY(m) −A` (or signed for corrections) | — |
-| `WITHDRAW` | `TREASURY_CASH(t) −A`, `MEMBER_EQUITY(m) +A` | on full settlement: member → INACTIVE, frozen |
+| `WITHDRAW` | `TREASURY_CASH(t) −A`, `MEMBER_EQUITY(m) +A` | on full settlement: membership → CLOSED |
 | `REJOIN` | `TREASURY_CASH(t) +A`, `MEMBER_EQUITY(m) −A` | member → ACTIVE |
 | `FUNDS_TRANSFER` | `TREASURY_CASH(t1) −A`, `TREASURY_CASH(t2) +A` | net-zero on total club cash |
 | `LOAN_TAKEN` (tranche) | `TREASURY_CASH(t) −A`, `LOAN_RECEIVABLE(m) +A` | `loan.principalOutstanding += A` |
@@ -369,7 +368,9 @@ Notes:
   as a `LOAN_INTEREST` leg in the same transaction (admin allocates principal vs interest).
 - `WITHDRAW` amount is **admin-entered** (the system shows the computed settlement value as a
   guide; the entered figure may be slightly less — see §16).
-- `ADJUSTMENT` is the generic signed correction; catch-up and deposits are the common positives.
+- **No `ADJUSTMENT` type.** Fixing a specific entry = **edit/delete** (which posts a `REVERSAL`
+  internally, §13). There is no free-form manual balance nudge — money owed = a `Charge`, money lost
+  = `VENDOR_WRITEOFF`, a mistyped entry = edit/delete.
 
 ### Worked examples
 
@@ -604,7 +605,7 @@ model AuditLog {
 enum LedgerAccountKind { TREASURY_CASH MEMBER_EQUITY LOAN_RECEIVABLE VENDOR_RECEIVABLE INTEREST_INCOME OTHER_INCOME VENDOR_PROFIT }
 // CATCHUP / PENALTY here are the PAY-DOWN cash transactions (paying off a Charge). Raising a charge
 // is a Charge row, not a TxnType.
-enum TxnType { PERIODIC_DEPOSIT CATCHUP PENALTY ADJUSTMENT WITHDRAW REJOIN FUNDS_TRANSFER LOAN_TAKEN LOAN_REPAY LOAN_INTEREST VENDOR_INVEST VENDOR_RETURN VENDOR_WRITEOFF CHIT_PAYMENT CHIT_PAYOUT REVERSAL }
+enum TxnType { PERIODIC_DEPOSIT CATCHUP PENALTY WITHDRAW REJOIN FUNDS_TRANSFER LOAN_TAKEN LOAN_REPAY LOAN_INTEREST VENDOR_INVEST VENDOR_RETURN VENDOR_WRITEOFF CHIT_PAYMENT CHIT_PAYOUT REVERSAL }
 enum ChargeKind { CATCHUP PENALTY }
 // Reason values (stored as string on Charge.reason):
 //   catch-up: FIRST_TIME_JOIN | REJOIN | PROFIT_GAP_TOPUP | MID_TERM_EQUALISATION | OTHER
@@ -1339,10 +1340,12 @@ full intent set (see `PRODUCT.md` §17 for the canonical list) maps to `TxnType`
 | Chit payout | IN | `CHIT_PAYOUT` |
 | Member leaves (settle up) | OUT | `WITHDRAW` (full exit only) |
 | Member rejoins | IN | `REJOIN` |
-| Adjustment (admin) | IN/OUT | `ADJUSTMENT` |
-| Vendor write-off (admin) | neutral | `VENDOR_WRITEOFF` |
-| Correction (admin) | — | `REVERSAL` |
+| Vendor write-off (admin, from vendor close) | neutral | `VENDOR_WRITEOFF` |
 
+> **No `ADJUSTMENT`, no manual "correction" intent.** Fixing a specific transaction = **Edit/Delete**
+> on its ledger row (posts a `REVERSAL` internally, §13). `REVERSAL` is engine-only, never a drawer
+> card. There is no free-form balance-nudge.
+>
 > **Raising a charge is NOT in this drawer.** *Add catch-up charge* and *Add penalty charge* (and the
 > auto catch-up on rejoin) create a `Charge` row from the **member page** — no cash leg. The drawer's
 > *Pay catch-up* / *Pay penalty* are the cash pay-downs. Pay-down form: **remaining balance** (shown),
@@ -1362,11 +1365,12 @@ flowchart LR
   C & D & E & F & G & H & I --> J["intent helper → balanced §8 lines"] --> K["postTransaction → optimistic UI + revalidateTag"]
 ```
 
-The first screen is a grid of plain-language cards (like the mockup): **Member paid deposit · Give
-a loan · Record repayment · Collect interest · Catch-up · Funds transfer · Vendor investment ·
-Vendor return · Chit installment · Chit payout · Member leaves · Member rejoins**, with admin
-corrections (adjustment / write-off / reversal) under a separate "advanced" area. Step 2 collects
-the few specifics for the chosen intent.
+The first screen is a grid of plain-language cards (like the mockup): **Member paid deposit · Pay
+catch-up · Pay penalty · Give a loan · Record repayment · Collect interest · Funds transfer · Vendor
+investment · Vendor return · Chit installment · Chit payout · Member leaves · Member rejoins**. Step 2
+collects the few specifics for the chosen intent. **There is no "corrections" group** — fixing a
+specific entry is **Edit/Delete** on the ledger row, and **Vendor write-off** is reached from the
+vendor's close flow.
 
 ---
 
