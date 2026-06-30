@@ -82,6 +82,19 @@ Everyone in Peacock is a **member**. Some members also wear extra hats:
 - **Vendors are not people in the club** — they're outside places money goes (see §10). They
   never log in.
 
+### A member is a *person*; each stint is a *membership* (the bank model)
+
+A person can **leave and rejoin** over the years. To keep each period's money clean, Peacock works
+like a bank: **the person is one stable customer (one login, one phone), but each time in the club is
+a separate "membership" — like an account that opens when they join and closes when they leave.**
+
+- **Member = the person/customer** — never duplicated; one login, one identity.
+- **Membership = one stint/"account"** — opens on join, **closes on leave (settled)**, and a **new
+  membership opens on rejoin**. Each membership has its **own** deposits, catch-ups, penalties, loans
+  and profit, so old stints never get mixed into the new one.
+- Their **member page shows the current membership**; closed ones appear as **previous memberships
+  (history)**, linked to the same person. (See §12.)
+
 ```mermaid
 flowchart TD
   P["Person in the club = MEMBER"] --> R1["can also be an ADMIN<br/>(enters/edits data)"]
@@ -118,6 +131,8 @@ flowchart LR
 
 | Term | Plain meaning |
 |------|---------------|
+| **Member (person)** | A person in the club — one stable identity/login, never duplicated. |
+| **Membership** | One stint in the club ("account"): opens on join, closes on leave, a new one opens on rejoin. Holds that period's deposits, charges, loans and profit. |
 | **Deposit** | The monthly money each member must pay into the club. |
 | **Treasurer / treasury** | A member holding club cash / the pot of cash they hold. |
 | **Loan** | Money the club lends to a member, with interest. |
@@ -434,9 +449,12 @@ a flat equal slice. If a member is behind on deposits, they earn proportionally 
 
 ---
 
-## 12. Leaving, freezing & rejoining
+## 12. Leaving & rejoining (closing and opening memberships)
 
-### Leaving (settlement)
+Peacock follows the **bank model** (§2): leaving **closes** the person's current **membership**;
+rejoining **opens a new membership**. The person stays one customer; old memberships become history.
+
+### Leaving (settle & close the membership)
 
 A member leaves by **settling** — taking their money out of the club. **There is no partial exit
 and no "take just the profit" option** — it's all or nothing.
@@ -453,19 +471,20 @@ and the member is **paid out in cash at that time** (from a treasurer) — inclu
 share. After settling:
 
 - the member's **profit becomes zero**,
-- their **account is frozen** and marked **inactive**,
-- **all their history is kept** — nothing is deleted.
+- their **current membership is closed** (marked Closed, with the leave date and settled amount),
+- **all their history is kept** — nothing is deleted; it becomes a **previous membership**.
 
 ```mermaid
 flowchart LR
-  ACT["Active member"] -->|decides to leave| CALC["Peacock computes settlement guide:<br/>capital + profit share − loan − unpaid interest"]
-  CALC --> ENTER["Admin enters final amount paid out"]
-  ENTER --> FROZEN["Profit → 0 · account frozen · INACTIVE<br/>(history kept)"]
+  ACT["Membership #N · Active"] -->|decides to leave| CALC["Peacock computes settlement guide:<br/>capital + profit share − loan − unpaid interest"]
+  CALC --> ENTER["Admin enters final cash paid out"]
+  ENTER --> CLOSED["Membership #N → CLOSED<br/>(history kept under the person)"]
 ```
 
-### Rejoining (reactivation)
+### Rejoining (open a new membership)
 
-A frozen member can come back. The **Rejoin** flow shows what it takes to return to **equal value**:
+A person whose membership is closed can come back — this **opens a fresh membership (#N+1)**. The
+**Rejoin** flow shows what it takes to return to **equal value**:
 
 - **Back deposits** — the monthly deposits they'd owe since the club's start.
 - **Catch-up** — **auto-added** (suggested from per-member profit), and **admin-editable**. It's
@@ -473,16 +492,24 @@ A frozen member can come back. The **Rejoin** flow shows what it takes to return
   own value).
 - **Total to rejoin** = back deposits + catch-up.
 
-On confirm, the catch-up charge is added and the account **reactivates to Active**. The member then
-**pays the dues down over time** (any number of instalments).
+On confirm, a **new membership opens (Active)** with the catch-up charge on it; the member then
+**pays the dues down over time** (any number of instalments). The old membership stays in history.
 
 ```mermaid
 flowchart LR
-  FROZEN["Inactive member"] -->|Rejoin| FORM["Show: back deposits + auto-added catch-up (editable) = total to rejoin"]
-  FORM --> CONFIRM["Confirm → catch-up charge added (tagged Rejoin), account → Active"]
+  CLOSED["Person · last membership Closed"] -->|Rejoin| FORM["Show: back deposits + auto-added catch-up (editable) = total to rejoin"]
+  FORM --> CONFIRM["Confirm → open Membership #N+1 (Active) with catch-up charge"]
   CONFIRM --> PAYDOWN["Member pays the dues down over time"]
   PAYDOWN --> EQ["Back to equal value ✓"]
 ```
+
+### The member page (one person, current + history)
+
+The member detail page is the **person**. It shows an **identity header** ("Customer since …"), a
+**membership bar** ("Membership #N · Active since …", with a switcher if there's more than one), the
+**current membership's** full breakdown, and — only if they've rejoined — a **"Previous memberships"**
+section listing each closed stint (dates, settled amount) as **read-only history**. For a member who
+never left, it looks exactly as before (no history section).
 
 ---
 

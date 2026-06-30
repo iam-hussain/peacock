@@ -41,16 +41,30 @@ the club (see `PRODUCT.md` §10).
 > entry intents: **Chit installment (OUT)** and **Chit payout (IN)**. General vendors keep the
 > current invest/return design, plus an optional **category label** ("Bank", "Stocks").
 
-### 1.2 Member leave (settle up) & rejoin — missing
-A member can be set Inactive/Left, but there's no **settlement** or **rejoin** flow. These are core
-(`PRODUCT.md` §12).
+### 1.2 Member leave & rejoin — the **bank model** (membership/account epochs)
+A member can be set Inactive/Left, but there's no **settlement**, **rejoin**, or **membership
+history**. This must follow the bank model (`PRODUCT.md` §2/§12): **the person is one stable customer
+(one login), but each stint is a separate "membership/account" that closes on leave and a new one
+opens on rejoin** — so old deposits/profit/catch-ups/penalties never mix into the new stint.
 
-> **Prompt:** Design a **"Member leaves (settle up)"** flow: show a **computed settlement guide** =
-> their capital (deposits + catch-up) **+ profit share − loan owed − unpaid interest**, with the
-> **admin entering the final cash amount** (may differ slightly). On confirm: member is **paid in
-> cash** (pick the treasury), profit resets to zero, account **freezes → Inactive**, history kept.
-> Then a **"Member rejoins"** flow: member repays (one or two installments) **+ a catch-up** (guide
-> auto-computed) to return to equal value; account reactivates.
+> **Prompt — member detail page (banker layout):**
+> - **Identity header (person):** avatar, name, phone, role/treasurer, **"Customer since <first
+>   join>"** — constant across stints.
+> - **Membership bar:** **"Membership #N · Active since <date>"** with a **switcher** shown *only* if
+>   there's more than one stint. (For the common single-stint member, the page looks like today.)
+> - **Body = the active membership** — all current figures scoped to this stint.
+> - **"Previous memberships" card** (only if any closed stints): list **"Membership #1 · Sep 2020 →
+>   Aug 2023 · settled ₹X · Closed"**, each expandable to a **read-only** summary + transactions,
+>   tagged **Legacy**.
+>
+> **Prompt — leave flow ("Member leaves / settle up"):** show a **computed settlement guide** = capital
+> (deposits + catch-up) **+ profit share − loan owed − unpaid interest**; **admin enters final cash**
+> (pick the treasury). On confirm: member **paid in cash**, profit → 0, the **current membership
+> closes** (Closed, with leave date + settled amount); history kept.
+>
+> **Prompt — rejoin flow ("Member rejoins"):** opens a **new membership (#N+1)**. Show **back deposits
+> + an auto-added, editable catch-up = total to rejoin** (your Rejoin modal already nails this). On
+> confirm the new membership is Active with the catch-up charge; the old one moves to history.
 
 ### 1.3 Catch-up & penalty — model them as *charges (dues) paid down over time*
 **Update (now confirmed):** catch-up and penalty are **charges the member owes**, raised **multiple
@@ -214,7 +228,7 @@ The designer added features that **contradict or extend** the locked spec. Decid
 ## 7. Quick checklist for the designer
 
 - [ ] Chit fund: type, setup, detail (installments/payout/obligation/profit), 2 intents (1.1)
-- [ ] Member leave (settle-up guide → cash → freeze) + rejoin (repay + catch-up) flows (1.2)
+- [ ] Bank model: member page = person (identity + membership bar + current stint + **previous memberships** history); leave closes the membership, rejoin opens a new one (1.2)
 - [ ] Catch-up & penalty as **charges (dues)**: raise (member page, reason + suggested/editable) + pay-down (remaining/amount/treasurer) + cumulative display; catch-up→value, penalty→income (1.3)
 - [ ] Notification bell + centre (1.4)
 - [ ] Loan tranches in Give-a-loan + loan detail (1.5)

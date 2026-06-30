@@ -4,14 +4,15 @@
 > building the new Peacock repository from scratch. Consolidates and supersedes (for build
 > purposes) the three source planning docs.
 >
-> **Revision 5** — current model: the club holds **no cash** (member-treasurers do); **multi-tranche
-> loans** with a **fixed-at-origination rate** (changes apply to new loans only) + a configurable
-> **overdue penalty** (default 0); **`GENERAL`** + `CHIT` vendors (no BANK; bank = GENERAL with a
-> `category` label) and **ramping chit installments**; **catch-up = join-time equalisation only**,
-> while **catch-up & penalty are `Charge` dues** (multiple over time, reasons, paid down in
-> instalments; catch-up → `MEMBER_EQUITY`, penalty → `OTHER_INCOME`); **withdrawal = full exit**,
-> **settled in cash**, → freeze → reactivate; **profit-per-member** on the dashboard with exit share
-> **proportional to deposits paid** (both values shown); **login** = pick member + password (default =
+> **Revision 8** — current model: **banker identity** — `Member` = the **person/customer** (one login,
+> stable), `Membership` = a **stint/account** (opens on join, **closes on leave**, a new one opens on
+> rejoin); per-stint `MEMBER_EQUITY`/`LOAN_RECEIVABLE`/loans/charges, `TREASURY_CASH` on the person.
+> The club holds **no cash** (treasurers do); **multi-tranche loans** with a **fixed-at-origination
+> rate** + configurable **overdue penalty** (default 0); **`GENERAL`** + `CHIT` vendors (no BANK; bank
+> = GENERAL `category`) and **ramping chit installments**; **catch-up & penalty are `Charge` dues**
+> (multiple over time, reasons, paid down in instalments; catch-up → `MEMBER_EQUITY`, penalty →
+> `OTHER_INCOME`); **withdrawal = full exit, settled in cash → membership closes**; **profit-per-member**
+> with exit share **proportional to deposits paid**; **login** = pick member + password (default =
 > phone, unique, **forced change on first login**, **admin reset**); simple **in-app notifications**.
 > Undecided items marked **`‹TBD›`**.
 >
@@ -322,17 +323,17 @@ No passbook. Nothing that can drift.
 
 | Kind (`LedgerAccountKind`) | Cardinality | Normal sign | Meaning |
 |----------------------------|-------------|-------------|---------|
-| `TREASURY_CASH` | 1 per treasurer-member (on demand) | + | Club cash physically held by that member |
-| `MEMBER_EQUITY` | 1 per member | − | The member's stake/contributions |
-| `LOAN_RECEIVABLE` | 1 per member | + | Principal the member currently owes |
+| `TREASURY_CASH` | 1 per treasurer-**person** (on demand) | + | Club cash physically held by that person |
+| `MEMBER_EQUITY` | 1 per **membership (stint)** | − | The stint's stake/contributions |
+| `LOAN_RECEIVABLE` | 1 per **membership (stint)** | + | Principal owed in that stint |
 | `VENDOR_RECEIVABLE` | 1 per vendor (general / chit) | + | Principal/installments currently placed with the vendor |
 | `INTEREST_INCOME` | exactly 1 | − | Club income from loan interest |
-| `OTHER_INCOME` | exactly 1 | − | Club income not from loans/vendors — e.g. **delayed-payment penalties** |
+| `OTHER_INCOME` | exactly 1 | − | Club income not from loans/vendors — e.g. **penalty pay-downs** |
 | `VENDOR_PROFIT` | 1 per vendor | − | Realized profit (or loss) from that vendor |
 
-Creation rules: `INTEREST_INCOME` + `OTHER_INCOME` once at seed; `MEMBER_EQUITY` (+ `LOAN_RECEIVABLE` lazily) when a
-member is created; `VENDOR_RECEIVABLE` + `VENDOR_PROFIT` when a vendor is created; `TREASURY_CASH`
-the first time a member holds cash (or when flagged treasurer).
+Creation rules: `INTEREST_INCOME` + `OTHER_INCOME` once at seed; `MEMBER_EQUITY` (+ `LOAN_RECEIVABLE`
+lazily) **when a membership/stint opens** (first join, and again on each rejoin); `VENDOR_RECEIVABLE`
++ `VENDOR_PROFIT` when a vendor is created; `TREASURY_CASH` the first time a **person** holds cash.
 
 > There is **no single club-cash account**. "Available cash" is always `Σ TREASURY_CASH`. This is
 > the central structural difference from v1 and from Revision 1 of this plan.
@@ -404,8 +405,8 @@ TREASURY_CASH(t) +2200000 ; VENDOR_RECEIVABLE(v) -2000000 ; VENDOR_PROFIT(v) -20
 generator client { provider = "prisma-client-js" }
 datasource db { provider = "postgresql"; url = env("DATABASE_URL") }
 
-// ---------- Identity ----------
-model Member {
+// ---------- Identity (banker model: Member = the person/customer; Membership = an account/stint) ----------
+model Member {                                 // THE PERSON — stable identity, never duplicated
   id          String   @id @default(cuid())
   firstName   String
   lastName    String?
@@ -414,18 +415,32 @@ model Member {
   username    String?  @unique              // optional handle; auto-generated from name if blank
   avatarUrl   String?
   role        MemberRole   @default(MEMBER)   // ADMIN or MEMBER (admin = write access)
-  isTreasurer Boolean      @default(false)    // convenience flag; treasury cash lives in LedgerAccount
-  status      MemberStatus @default(ACTIVE)   // ACTIVE / INACTIVE (frozen) / LEFT
-  joinedAt    DateTime                         // admission date (drives catch-up)
+  isTreasurer Boolean      @default(false)    // person-level: they physically hold club cash
   userId      String?  @unique                 // optional Better Auth user link
   mustChangePassword Boolean @default(true)    // first login forces a change (default pw = phone)
-  accounts    LedgerAccount[]                  // equity, loan-receivable, and treasury (if any)
-  loans       Loan[]
-  charges     Charge[]                         // catch-up & penalty dues (multiple over time)
+  customerSince DateTime                        // first-ever join date (display)
+  memberships Membership[]                     // one per stint (join → leave → rejoin opens a new one)
+  treasury    LedgerAccount? @relation("MemberTreasury")  // TREASURY_CASH lives on the PERSON
   archivedAt  DateTime?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
-  @@index([status])
+}
+
+model Membership {                             // ONE STINT / "account" — opens on join, closes on leave
+  id          String   @id @default(cuid())
+  memberId    String                           // the person
+  member      Member   @relation(fields: [memberId], references: [id])
+  seq         Int                              // 1, 2, 3… ("Membership #N") per member
+  status      MembershipStatus @default(ACTIVE) // ACTIVE / CLOSED  (a person is "active" iff they have an ACTIVE membership)
+  joinedAt    DateTime                          // start of this stint (drives expected deposits for it)
+  leftAt      DateTime?                         // settlement/close date
+  settledAmount BigInt?                         // cash paid out at close (admin-entered)
+  accounts    LedgerAccount[]                  // THIS stint's MEMBER_EQUITY (+ LOAN_RECEIVABLE)
+  loans       Loan[]
+  charges     Charge[]                         // catch-up & penalty dues for THIS stint
+  createdAt   DateTime @default(now())
+  @@unique([memberId, seq])
+  @@index([memberId, status])
 }
 
 model Vendor {
@@ -460,16 +475,18 @@ model ChitFund {
 
 // ---------- Ledger ----------
 model LedgerAccount {
-  id        String   @id @default(cuid())
-  kind      LedgerAccountKind
-  balance   BigInt   @default(0)               // cached running balance (paise)
-  memberId  String?                             // for TREASURY_CASH / MEMBER_EQUITY / LOAN_RECEIVABLE
-  member    Member?  @relation(fields: [memberId], references: [id])
-  vendorId  String?                             // for VENDOR_RECEIVABLE / VENDOR_PROFIT
-  vendor    Vendor?  @relation(fields: [vendorId], references: [id])
-  entries   Entry[]
-  createdAt DateTime @default(now())
-  @@unique([memberId, kind])                    // one equity / one loan-acct / one treasury per member, per kind
+  id           String   @id @default(cuid())
+  kind         LedgerAccountKind
+  balance      BigInt   @default(0)            // cached running balance (paise)
+  membershipId String?                          // for MEMBER_EQUITY / LOAN_RECEIVABLE — scoped to a STINT
+  membership   Membership? @relation(fields: [membershipId], references: [id])
+  memberId     String?  @unique                 // for TREASURY_CASH — the PERSON holds cash (one per person)
+  member       Member?  @relation("MemberTreasury", fields: [memberId], references: [id])
+  vendorId     String?                          // for VENDOR_RECEIVABLE / VENDOR_PROFIT
+  vendor       Vendor?  @relation(fields: [vendorId], references: [id])
+  entries      Entry[]
+  createdAt    DateTime @default(now())
+  @@unique([membershipId, kind])                // one equity / one loan-acct per stint, per kind
   @@unique([vendorId, kind])
   @@index([kind])
 }
@@ -481,6 +498,7 @@ model Transaction {
   description String?
   reference   String?
   reversesId  String?  @unique                   // set when this reverses another txn
+  membershipId String?                           // member-scoped txns belong to a STINT (deposits, pay-downs, loans, settle, rejoin)
   loanId      String?                            // link for loan-related txns (tranches, repay, interest)
   vendorId    String?                            // link for vendor/chit txns
   entries     Entry[]
@@ -489,6 +507,7 @@ model Transaction {
   updatedAt   DateTime @updatedAt
   @@index([occurredAt])
   @@index([type, occurredAt])
+  @@index([membershipId])
   @@index([loanId])
   @@index([vendorId])
 }
@@ -506,8 +525,8 @@ model Entry {
 
 model Loan {
   id                   String   @id @default(cuid())
-  memberId             String
-  member               Member   @relation(fields: [memberId], references: [id])
+  membershipId         String                     // belongs to a STINT (a member must clear loans before leaving)
+  membership           Membership @relation(fields: [membershipId], references: [id])
   requestedAmount      BigInt                     // what the member asked for (funded via tranches)
   principalOutstanding BigInt   @default(0)       // Σ disbursed − Σ repaid (kept current)
   monthlyRateBps       Int                        // SNAPSHOT of rateAt(startedAt); fixed for the loan's life (§14.2)
@@ -515,7 +534,7 @@ model Loan {
   closedAt             DateTime?
   status               LoanStatus @default(ACTIVE) // ACTIVE / CLOSED  (overdue is derived)
   createdAt            DateTime @default(now())
-  @@index([memberId])
+  @@index([membershipId])
   @@index([status])
 }
 
@@ -551,9 +570,9 @@ model Notification {
 }
 
 model Charge {                                   // a due the member OWES (catch-up or penalty), paid down over time
-  id          String   @id @default(cuid())
-  memberId    String
-  member      Member   @relation(fields: [memberId], references: [id])
+  id           String   @id @default(cuid())
+  membershipId String                             // belongs to a STINT
+  membership   Membership @relation(fields: [membershipId], references: [id])
   kind        ChargeKind                          // CATCHUP or PENALTY
   reason      String                              // see ChargeReason enums (stored as string for flexibility)
   amount      BigInt                              // paise owed (admin-editable; suggestion computed)
@@ -561,7 +580,7 @@ model Charge {                                   // a due the member OWES (catch
   note        String?
   createdById String?
   createdAt   DateTime @default(now())
-  @@index([memberId, kind])
+  @@index([membershipId, kind])
 }
 // Charges do NOT post to the cash ledger; they are tracked dues. Cash moves only when paid down via
 // CATCHUP (→ MEMBER_EQUITY) / PENALTY (→ OTHER_INCOME) transactions. Outstanding due per kind =
@@ -591,7 +610,7 @@ enum ChargeKind { CATCHUP PENALTY }
 //   catch-up: FIRST_TIME_JOIN | REJOIN | PROFIT_GAP_TOPUP | MID_TERM_EQUALISATION | OTHER
 //   penalty:  DELAYED_PAYMENT | LOAN_REPAYMENT_DELAY | HOLDING_TOO_LONG | MISSED_DEPOSIT | OTHER
 enum MemberRole { ADMIN MEMBER }
-enum MemberStatus { ACTIVE INACTIVE LEFT }
+enum MembershipStatus { ACTIVE CLOSED }        // a person is "active" iff they have an ACTIVE membership
 enum VendorType { GENERAL CHIT }
 enum VendorStatus { ACTIVE INACTIVE CLOSED }
 enum ChitStatus { RUNNING PAID_OUT COMPLETED }
@@ -600,8 +619,14 @@ enum LoanStatus { ACTIVE CLOSED }
 
 ### Commentary
 
-- **`@@unique([memberId, kind])`** resolves Revision 1's bug: a member can now hold up to three
-  accounts (equity, loan-receivable, treasury), at most one of each kind.
+- **Banker model:** `Member` = the **person/customer** (one login, one phone, stable). `Membership` =
+  one **stint/account** (opens on join, **closes on leave**, a **new** one opens on rejoin). Per-stint
+  ledger accounts (`MEMBER_EQUITY`, `LOAN_RECEIVABLE`), loans, and charges hang off the **membership**;
+  `TREASURY_CASH` and identity/role hang off the **person**. This keeps each stint's numbers clean and
+  old stints as history (see §16.3).
+- **Scoping rule:** every member-scoped figure (§16, §17.2) is computed for the member's **ACTIVE
+  membership**; past memberships are read-only history. Club aggregates (§17.3) sum across **active
+  memberships** (active-member count = active memberships; profit-per-member divides by them).
 - **Loan principal timeline is reconstructed from `LOAN_TAKEN`/`LOAN_REPAY` entries** (by
   `loanId` + `occurredAt`); no separate tranche table. `principalOutstanding` is the cached stock.
 - **No per-loan rate**: interest uses the global `rateSchedule` (a rate bump applies to all live
@@ -969,19 +994,24 @@ penaltyOwed(m)  = Σ Charge(PENALTY, m).amount  − Σ PENALTY pay-downs(m)
   → a `Charge(PENALTY, DELAYED_PAYMENT)`. If v1 recorded these as already-settled, also emit the
   matching pay-down so the outstanding nets to v1's state.
 
-### 16.3 Withdraw → freeze → reactivate
+### 16.3 Leave (close membership) → rejoin (open new membership) — the banker model
+
+A person is one stable **Member**; each stint is a **Membership** ("account"). Leaving **closes**
+the current membership; rejoining **opens a new one**. Old memberships stay as read-only **history**
+linked to the person.
 
 ```mermaid
 flowchart LR
-  AC["ACTIVE"] -->|leaving| W["WITHDRAW (admin-entered settlement amount)"]
-  W --> Z["profit → 0 ; equity settled out ; status = INACTIVE (frozen) ; history kept"]
-  Z -->|returns| RA["REACTIVATE"]
-  RA --> PAY["repay in 1–2 terms (REJOIN) + CATCHUP (profit-per-member + owed deposits)"]
-  PAY --> AC2["ACTIVE again, equal value"]
+  AC["Membership #N · ACTIVE"] -->|leave / settle up| W["WITHDRAW (admin-entered cash, full exit)"]
+  W --> CL["Membership #N → CLOSED (leftAt, settledAmount); accounts settle to ~0; history kept"]
+  CL -->|person returns| NEW["Open Membership #N+1 (fresh equity account, seq+1)"]
+  NEW --> CU["Auto catch-up charge (REJOIN) + back deposits shown"]
+  CU --> PAY["Member pays the dues down over time → equal value"]
 ```
 
-**Withdrawal is a FULL EXIT only (G3).** There is **no** partial withdrawal, no profit-only
-withdrawal, and no withdrawal-without-leaving. A member either stays fully in or leaves and settles.
+**Withdrawal is a FULL EXIT only (G3)** — no partial / profit-only / stay-and-withdraw. On leave the
+**membership closes**; on rejoin a **brand-new membership opens** (so old deposits, profit,
+catch-ups and penalties never mix into the new stint).
 
 - **Withdraw / leave:** the system **computes a guide value** and shows it; the **admin enters the
   actual settlement** (may be slightly less). The guide nets the member's capital, their loan, and
@@ -1007,18 +1037,19 @@ withdrawal, and no withdrawal-without-leaving. A member either stays fully in or
 
   **Pending/unpaid deposits are NOT subtracted as a debt** — a leaver who underpaid simply
   contributed less capital and earns proportionally less profit; their unpaid deposits are not
-  collected on exit. Posting: `TREASURY_CASH(t) −A`, `MEMBER_EQUITY(m) +A`; member → `INACTIVE`,
-  frozen; **all history retained**.
+  collected on exit. Posting: `TREASURY_CASH(t) −A`, `MEMBER_EQUITY(stint) +A`; the **membership →
+  `CLOSED`** (`leftAt`, `settledAmount`); **all history retained** under the person.
 
   > **⚠ Cash-flow caveat (still open):** part of `profitPerMember` is *unrealized* (uncollected loan
   > interest). Paying a leaver that share in cash pays out money the club hasn't collected yet.
   > Confirm whether settled **cash** includes unrealized profit or only displays it.
-- **Reactivate (rejoin):** admin reactivates; member repays over **one or two terms** (`REJOIN`
-  postings) and pays **catch-up** (§16.2 guide: profit-per-member + owed deposits), restoring equal
-  value. Member → `ACTIVE`.
+- **Rejoin (open new membership):** admin opens **Membership #N+1** (fresh `MEMBER_EQUITY` account).
+  The rejoin screen shows **back deposits** + an **auto-added catch-up charge** (reason `REJOIN`,
+  editable) = **total to rejoin**; on confirm the new membership is `ACTIVE` and the member **pays the
+  dues down over time**. The old membership stays `CLOSED` in history.
 
-Pending uses **contributions, not balance** (rule §17.1), so a settled/negative equity never
-creates phantom debt.
+Pending uses **contributions, not balance** (rule §17.1), so a settled/zero equity never creates
+phantom debt. **All member figures are scoped to the active membership** (§ schema commentary).
 
 ---
 
@@ -1070,7 +1101,7 @@ creates phantom debt.
 > show.
 
 ```
-activeMembers           = COUNT(members WHERE status = ACTIVE)
+activeMembers           = COUNT(memberships WHERE status = ACTIVE)   # one active membership per active person
 clubAgeMonths           = monthsSince(ClubConfig.startedAt, now)            # IST
 
 # Cash (no single club account)
@@ -1214,7 +1245,9 @@ configTags() = ["config","dashboard","members","loans","vendors","analytics"]   
 ## 22. Validation (Zod) & the service contract
 
 **Mutations** (`actions/*` → `services/*` → `ledger`): `postTransaction`, `reverseTransaction`,
-`editTransaction`; member CRUD + `withdrawMember` / `reactivateMember`; treasurer
+`editTransaction`; **person** CRUD (`createMember`, edit identity/role/treasurer);
+**membership lifecycle** `settleMembership` (full-exit cash → membership `CLOSED`) /
+`openMembership` (rejoin → new `Membership` seq+1 + auto catch-up charge); treasurer
 designate/transfer; vendor CRUD (`GENERAL`/`CHIT`); chit `payInstallment` / `recordPayout`;
 loan `addLoanDisbursement` (auto-creates the loan on first call) / `repayLoan` / `payInterest` /
 `closeLoan`; `updateClubConfig` (incl. `appendRateChange`, `setLoanLimit`, `editStages`);
@@ -1228,8 +1261,8 @@ intent helpers `payCatchup` / `payPenalty` (cash ≤ outstanding, with a treasur
 
 **Intent helpers** that build §8 lines: `depositForMember`, `payCatchup`, `payPenalty`,
 `transferCash`, `giveLoanTranche` (auto-creates/links the loan), `repayLoan`, `payLoanInterest`,
-`vendorInvest`, `vendorReturn`, `chitPayment`, `chitPayout`, `settleMember`,
-`rejoinMember` (auto-adds the rejoin catch-up charge).
+`vendorInvest`, `vendorReturn`, `chitPayment`, `chitPayout`, `settleMembership` (closes the stint),
+`openMembership` (rejoin → new stint, auto-adds the rejoin catch-up charge).
 
 **Notifications:** `notify(recipientId, type, {title, body, link})` — called **inline** inside the
 relevant services (no jobs), e.g. on entry create, member join, leave/rejoin, and password-reset
@@ -1354,7 +1387,7 @@ correct `TREASURY_CASH` is recorded for every entry.
 
 | v1 | v2 |
 |----|----|
-| `account.type=MEMBER` | `Member` (+ `MEMBER_EQUITY`, lazy `LOAN_RECEIVABLE`) |
+| `account.type=MEMBER` | `Member` (person) **+ one `Membership` (seq 1)** carrying `MEMBER_EQUITY` (+ lazy `LOAN_RECEIVABLE`). v1 `INACTIVE`/`LEFT` → that membership is `CLOSED`. (v1 has no rejoin stints, so one membership each.) |
 | `account.type=VENDOR`, passbook `isChit=false` | `Vendor(GENERAL)` (bank → `category="Bank"`) |
 | `account.type=VENDOR`, passbook `isChit=true` | `Vendor(CHIT)` + `ChitFund` |
 | `passbook.kind=CLUB` | not an entity in v2 — its `payload` is the **reconciliation target** |
@@ -1371,7 +1404,7 @@ correct `TREASURY_CASH` is recorded for every entry.
 ```mermaid
 flowchart TD
   S1["1. Neon + v2 schema"] --> S2["2. Seed ClubConfig: stages (alpha/bravo), rateSchedule [1%], dayInterestFrom=01Jun2024, maxLoanPaise=₹5L"]
-  S2 --> S3["3. Create accounts: 1× INTEREST_INCOME + 1× OTHER_INCOME; per member EQUITY(+LOAN); per vendor RECEIVABLE+PROFIT; TREASURY_CASH per cash-holder (from txn from/to ids)"]
+  S2 --> S3["3. Per person: Member + one Membership (seq 1; CLOSED if v1 inactive/left) with EQUITY(+LOAN); 1× INTEREST_INCOME + 1× OTHER_INCOME; per vendor RECEIVABLE+PROFIT; TREASURY_CASH per cash-holder person (from txn from/to ids)"]
   S3 --> S4["4. Replay each v1 txn (by occurredAt) → balanced v2 postings (§8), rupees×100, treasury from from/to id"]
   S4 --> S5["5. Per-member joiningOffset → Charge(CATCHUP); delayOffset → Charge(PENALTY) (+ pay-downs if settled)"]
   S5 --> S6["6. Rebuild Loans from LOAN_TAKEN/REPAY (per member); import recorded LOAN_INTEREST as-is (no historical recompute)"]

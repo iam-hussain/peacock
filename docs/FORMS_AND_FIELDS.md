@@ -32,11 +32,17 @@ There is **no public sign-up**. The club's members already exist; people only **
 | Email | O | Optional contact; not required for login. |
 | Username | O→A | Optional handle; **auto-generated from the name if left blank** (unique). Not used to log in. |
 | Avatar | O | Photo; falls back to initials. **The member can change their own avatar** in Profile; admins can too. |
-| Joined date (club) | R | When they joined the club — drives expected deposits & catch-up. |
+| Joined date | R | When they joined — starts their **first membership** (the join date lives on the membership, see below). |
 | Role | A/admin-set | `MEMBER` by default; an admin can grant `ADMIN`. |
-| Treasurer | A/admin-set | Flag; a member becomes a treasurer when they hold club cash. |
-| Status | A | `ACTIVE` / `INACTIVE` (frozen) / `LEFT` — system-managed via lifecycle. |
+| Treasurer | A/admin-set | Person-level flag; set when they hold club cash. |
 | Password | A | Managed by auth; default = phone number; **forced change on first login**; admin-resettable. |
+
+> **Banker model (see `PRODUCT.md` §2/§12).** The fields above belong to the **person** (`Member`) —
+> stable, one login. A person's time in the club is one or more **`Membership` (stint/account)**
+> records, each with its **own** `joinedAt` / `leftAt` / status (`ACTIVE`/`CLOSED`) / settled amount,
+> and its own deposits, catch-up & penalty charges, loans and profit. Creating a member opens their
+> **first** membership; **leaving closes** it; **rejoining opens a new one**. The member page shows
+> the **active** membership and lists closed ones as history.
 
 ---
 

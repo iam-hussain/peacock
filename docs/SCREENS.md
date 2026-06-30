@@ -68,13 +68,18 @@ edit, reset password, make admin, mark treasurer.
 
 ## 4. Member — detail / statement
 
-**Purpose:** one member's full picture.
+**Purpose:** one **person's** full picture (banker model — see `PRODUCT.md` §2/§12).
 
-**Shows:** profile (name, avatar, phone/email, joined date, role/treasurer, status); their numbers —
-deposits paid, **pending deposits/overdue badge**, current loan + interest pending, **profit share
-(full and reduced-by-paid-ratio)**; a **Catch-up** section and a **Penalty** section each listing the
-member's **charges cumulatively** (each: reason, amount, date, **paid vs remaining**) with the total
-outstanding; their **transaction history**.
+**Shows:**
+- **Identity header (person):** name, avatar, phone/email, role/treasurer, **"Customer since …"**.
+- **Membership bar:** **"Membership #N · Active since …"** with a **switcher** (only if >1 stint).
+- **Current membership body:** deposits paid, **pending deposits/overdue badge**, current loan +
+  interest pending, **profit share (full and reduced-by-paid-ratio)**; a **Catch-up** section and a
+  **Penalty** section each listing that membership's **charges cumulatively** (each: reason, amount,
+  date, **paid vs remaining**) with total outstanding; this membership's **transaction history**.
+- **Previous memberships (history)** — only if any: a list of **closed** stints ("Membership #1 ·
+  Sep 2020 → Aug 2023 · settled ₹X · Closed"), each expandable to a **read-only** summary + its
+  transactions, tagged **Legacy**. (Hidden entirely for members who never left.)
 
 **Does:** open any of their transactions; **admin:** record an action for this member (deposit,
 give loan, settle/leave, rejoin, **add catch-up charge**, **add penalty charge**, **pay catch-up /
