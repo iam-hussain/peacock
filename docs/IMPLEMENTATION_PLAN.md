@@ -8,7 +8,8 @@
 > loans** with a **fixed-at-origination rate** (changes apply to new loans only) + a configurable
 > **overdue penalty** (default 0); **`GENERAL`** + `CHIT` vendors (no BANK; bank = GENERAL with a
 > `category` label) and **ramping chit installments**; **catch-up = join-time equalisation only**,
-> while **delayed payment is a manual `DELAY_PENALTY`** (→ `OTHER_INCOME`); **withdrawal = full exit**,
+> while **catch-up & penalty are `Charge` dues** (multiple over time, reasons, paid down in
+> instalments; catch-up → `MEMBER_EQUITY`, penalty → `OTHER_INCOME`); **withdrawal = full exit**,
 > **settled in cash**, → freeze → reactivate; **profit-per-member** on the dashboard with exit share
 > **proportional to deposits paid** (both values shown); **login** = pick member + password (default =
 > phone, unique, **forced change on first login**, **admin reset**); simple **in-app notifications**.
@@ -84,9 +85,10 @@ So there are really only two kinds of people — **members**, some of whom are *
 4. **Vendors.** The club places cash with a **general vendor** (e.g. a bank that earns interest, or
    any other placement) or pays into a **chit fund**
    monthly (gets a payout later, with profit/loss). Money out with vendors is club value too.
-5. **Catch-up (equalization).** A new or returning member must pay, on top of the prevailing
-   deposit, a **catch-up** equal to existing members' accumulated profit-per-member, so everyone
-   holds equal value. Two kinds: **late-join** and **delayed-payment**.
+5. **Catch-up & penalty (charges/dues).** Amounts a member **owes**, raised as **multiple charges
+   over time** (each with a reason) and **paid down in instalments**. **Catch-up** equalises a
+   new/returning member's value (builds their own capital); **penalty** is a manual charge that
+   becomes club income. Both auto-suggested + admin-editable.
 6. **Withdraw / rejoin.** A member leaving **settles out** their value (admin enters the amount);
    their account is **frozen → INACTIVE** but history is kept. They can later **reactivate** by
    repaying (in one or two terms) plus catch-up.
@@ -118,7 +120,7 @@ writes, derive time-based values on read, one cache layer, server actions instea
 | **Stock / Flow** | A "right now" balance vs a lifetime running total. |
 | **Derived-on-read** | Computed at read time, never stored (e.g. loan interest-to-date). |
 | **Stage** | A period with a fixed expected monthly deposit (alpha ₹1,000, bravo ₹2,000). |
-| **Catch-up** | Equalization payment by a new/returning member (was v1 "offset"). Subtypes: **late-join**, **delayed-payment**. |
+| **Charge** | A due a member **owes** — **catch-up** (equalisation, builds their own value) or **penalty** (club income). Raised multiple times over time, each with a reason; paid down in instalments. (Replaces v1 "offset".) |
 | **Tranche** | One disbursement installment of a single loan (loans may be funded by several). |
 | **Rate schedule** | Time-versioned global monthly interest rate `[{ rateBps, effectiveFrom }]`. |
 | **`dayInterestFrom`** | Date from which interest is pro-rated daily; before it, whole-month only. |
@@ -222,7 +224,8 @@ PG gives that natively. The analytics are **grouped aggregates** (`GROUP BY mont
     type** — a bank is a GENERAL vendor with `category = "Bank"` (a display label for grouping in
     reports; it carries no special behavior).
 11. **Catch-up** replaces "offset": **join-time equalisation** (missed deposits + profit-per-member).
-    A separate **manual `DELAY_PENALTY`** handles chronic late payers (booked to `OTHER_INCOME`).
+    Both are **`Charge` dues** (multiple over time, reasons, paid down in instalments); catch-up →
+    `MEMBER_EQUITY` on pay-down, penalty → `OTHER_INCOME`.
 12. **Withdraw = settle (admin-entered amount) → freeze → INACTIVE**, keep history. **Reactivate**
     = repay (1–2 terms) + catch-up (profit-per-member + owed deposits).
 13. **Roles = `ADMIN` / `MEMBER`** only; **treasurer is a flag**, not a role. (`SUPER_ADMIN`
@@ -344,8 +347,8 @@ portion. Every row **sums to zero**.
 | `TxnType` | Postings (signed paise) | Side-effect |
 |-----------|-------------------------|-------------|
 | `PERIODIC_DEPOSIT` | `TREASURY_CASH(t) +A`, `MEMBER_EQUITY(m) −A` | — |
-| `CATCHUP` (join-time equalisation) | `TREASURY_CASH(t) +A`, `MEMBER_EQUITY(m) −A` | — |
-| `DELAY_PENALTY` (manual) | `TREASURY_CASH(t) +A`, `OTHER_INCOME −A` | club income (counts as profit) |
+| `CATCHUP` (pay down a catch-up charge) | `TREASURY_CASH(t) +A`, `MEMBER_EQUITY(m) −A` | reduces member's outstanding catch-up due; builds their capital |
+| `PENALTY` (pay down a penalty charge) | `TREASURY_CASH(t) +A`, `OTHER_INCOME −A` | reduces member's outstanding penalty due; club income (shared profit) |
 | `ADJUSTMENT` | `TREASURY_CASH(t) +A`, `MEMBER_EQUITY(m) −A` (or signed for corrections) | — |
 | `WITHDRAW` | `TREASURY_CASH(t) −A`, `MEMBER_EQUITY(m) +A` | on full settlement: member → INACTIVE, frozen |
 | `REJOIN` | `TREASURY_CASH(t) +A`, `MEMBER_EQUITY(m) −A` | member → ACTIVE |
@@ -418,6 +421,7 @@ model Member {
   mustChangePassword Boolean @default(true)    // first login forces a change (default pw = phone)
   accounts    LedgerAccount[]                  // equity, loan-receivable, and treasury (if any)
   loans       Loan[]
+  charges     Charge[]                         // catch-up & penalty dues (multiple over time)
   archivedAt  DateTime?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -472,7 +476,7 @@ model LedgerAccount {
 
 model Transaction {
   id          String   @id @default(cuid())
-  type        TxnType                            // catch-up is single; delayed-payment is its own DELAY_PENALTY type
+  type        TxnType                            // CATCHUP/PENALTY here = cash pay-downs of a Charge (§ Charge model)
   occurredAt  DateTime                           // drives month bucketing (UTC stored, IST bucketed)
   description String?
   reference   String?
@@ -531,8 +535,8 @@ model ClubConfig {
   timezone         String   @default("Asia/Kolkata")
   updatedAt        DateTime @updatedAt
 }
-// NOTE: late/delayed-deposit penalty is NOT an auto config — it's the MANUAL DELAY_PENALTY txn
-// (admin-entered, booked to OTHER_INCOME). See §8.
+// NOTE: late/delayed-deposit penalty is NOT an auto config — it's a manual penalty CHARGE the admin
+// raises (Charge model), paid down via PENALTY transactions → OTHER_INCOME. See §16.2.
 
 model Notification {
   id          String   @id @default(cuid())
@@ -545,6 +549,24 @@ model Notification {
   createdAt   DateTime @default(now())
   @@index([recipientId, isRead])
 }
+
+model Charge {                                   // a due the member OWES (catch-up or penalty), paid down over time
+  id          String   @id @default(cuid())
+  memberId    String
+  member      Member   @relation(fields: [memberId], references: [id])
+  kind        ChargeKind                          // CATCHUP or PENALTY
+  reason      String                              // see ChargeReason enums (stored as string for flexibility)
+  amount      BigInt                              // paise owed (admin-editable; suggestion computed)
+  occurredAt  DateTime
+  note        String?
+  createdById String?
+  createdAt   DateTime @default(now())
+  @@index([memberId, kind])
+}
+// Charges do NOT post to the cash ledger; they are tracked dues. Cash moves only when paid down via
+// CATCHUP (→ MEMBER_EQUITY) / PENALTY (→ OTHER_INCOME) transactions. Outstanding due per kind =
+// Σ Charge.amount − Σ matching pay-down transactions (derive-on-read). Shown cumulatively on the
+// member page. A member may have many charges of each kind over time (e.g. one catch-up per rejoin).
 
 model AuditLog {
   id         String   @id @default(cuid())
@@ -561,7 +583,13 @@ model AuditLog {
 // model MonthlyRollup { month DateTime @id; data Json; builtAt DateTime }
 
 enum LedgerAccountKind { TREASURY_CASH MEMBER_EQUITY LOAN_RECEIVABLE VENDOR_RECEIVABLE INTEREST_INCOME OTHER_INCOME VENDOR_PROFIT }
-enum TxnType { PERIODIC_DEPOSIT CATCHUP DELAY_PENALTY ADJUSTMENT WITHDRAW REJOIN FUNDS_TRANSFER LOAN_TAKEN LOAN_REPAY LOAN_INTEREST VENDOR_INVEST VENDOR_RETURN VENDOR_WRITEOFF CHIT_PAYMENT CHIT_PAYOUT REVERSAL }
+// CATCHUP / PENALTY here are the PAY-DOWN cash transactions (paying off a Charge). Raising a charge
+// is a Charge row, not a TxnType.
+enum TxnType { PERIODIC_DEPOSIT CATCHUP PENALTY ADJUSTMENT WITHDRAW REJOIN FUNDS_TRANSFER LOAN_TAKEN LOAN_REPAY LOAN_INTEREST VENDOR_INVEST VENDOR_RETURN VENDOR_WRITEOFF CHIT_PAYMENT CHIT_PAYOUT REVERSAL }
+enum ChargeKind { CATCHUP PENALTY }
+// Reason values (stored as string on Charge.reason):
+//   catch-up: FIRST_TIME_JOIN | REJOIN | PROFIT_GAP_TOPUP | MID_TERM_EQUALISATION | OTHER
+//   penalty:  DELAYED_PAYMENT | LOAN_REPAYMENT_DELAY | HOLDING_TOO_LONG | MISSED_DEPOSIT | OTHER
 enum MemberRole { ADMIN MEMBER }
 enum MemberStatus { ACTIVE INACTIVE LEFT }
 enum VendorType { GENERAL CHIT }
@@ -909,26 +937,37 @@ getMemberTotalDeposit(member, asOf):           # expected cumulative deposit, pa
 `‹TBD›` exact month-count semantics (join-month inclusive? first-month proration?) — lock to v1
 fixtures during migration.
 
-### 16.2 Catch-up (join-time equalisation) & the delayed-payment penalty
+### 16.2 Catch-up & penalty — *charges* (dues) paid down over time
 
-**Catch-up** is the **single** join-time equalisation a new/returning member pays so they hold equal
-value. The system **auto-computes a guide and the admin can edit it** (same pattern as settlements):
+Both catch-up and penalty are **`Charge` records** — amounts the member **owes** — raised
+**multiple times over time**, each with a **reason** (§9), and **paid down later in any number of
+instalments**. A charge is **not** a cash-ledger transaction; cash moves only on pay-down.
 
 ```
-catchUpGuide(member, asOf = today) =
-      getMemberTotalDeposit(member, clubStart..asOf)   # the deposits they'd have paid from club start to today
-    + profitPerMember(asOf)                            # their share of the profit built up so far
-# shown to admin as the guide; admin edits the final figure; the math is done by the system.
+# Raising a charge (admin action / auto on rejoin) — creates a Charge row, no cash leg:
+Charge { memberId, kind: CATCHUP|PENALTY, reason, amount, occurredAt }
+
+# Suggested amounts (admin-editable):
+catchUpSuggestion(m) = max(0, profitPerMember(now) − memberProfit(m))   # the profit gap → equal value
+penaltySuggestion(m) = m.pendingDuesSoFar                               # from the member's pending dues
+
+# Paying a charge down — a cash transaction (any number of instalments):
+CATCHUP pay-down:  TREASURY_CASH(t) +A, MEMBER_EQUITY(m) −A     # builds the member's OWN capital
+PENALTY pay-down:  TREASURY_CASH(t) +A, OTHER_INCOME    −A     # club income → shared profit
+
+# Outstanding dues (derive-on-read), shown cumulatively on the member page:
+catchUpOwed(m)  = Σ Charge(CATCHUP, m).amount  − Σ CATCHUP pay-downs(m)
+penaltyOwed(m)  = Σ Charge(PENALTY, m).amount  − Σ PENALTY pay-downs(m)
 ```
 
-Posted as `CATCHUP` (deposit-shaped: `TREASURY_CASH +A`, `MEMBER_EQUITY −A`), reported separately
-from periodic deposits. (No subtype — it's one combined equalisation.)
-
-**Delayed-payment penalty (separate, manual).** Chronic lateness on monthly deposits is *not* a
-catch-up — it's a **manual penalty** the admin charges (`DELAY_PENALTY`): `TREASURY_CASH +A`,
-`OTHER_INCOME −A`. The admin decides the amount; it counts as club income/profit.
-
-Migration mapping: v1 `joiningOffset` → `CATCHUP`; v1 `delayOffset` → `DELAY_PENALTY`.
+- **Rejoin auto-creates a catch-up charge** (reason `REJOIN`), suggested + admin-editable; the
+  rejoin screen also shows **back deposits** (missed monthly since club start). See §16.3.
+- **Income recognition (decision):** penalty is profit **when paid** (`OTHER_INCOME`); an unpaid
+  penalty charge is a **due** (receivable), shown as owed but **not yet profit**. `‹CONFIRM›` —
+  alternative is to accrue owed penalties as pending profit (like pending loan interest).
+- **Migration mapping:** v1 `joiningOffset` → a `Charge(CATCHUP, FIRST_TIME_JOIN)`; v1 `delayOffset`
+  → a `Charge(PENALTY, DELAYED_PAYMENT)`. If v1 recorded these as already-settled, also emit the
+  matching pay-down so the outstanding nets to v1's state.
 
 ### 16.3 Withdraw → freeze → reactivate
 
@@ -1012,8 +1051,8 @@ creates phantom debt.
 | Figure | Kind | Derivation |
 |--------|------|-----------|
 | Periodic deposits | flow | `flow(PERIODIC_DEPOSIT, m)` |
-| Catch-up (join-time) | flow | `flow(CATCHUP, m)` |
-| Delayed-payment penalty paid | flow | `flow(DELAY_PENALTY, m)` |
+| Catch-up charged / paid / owed | charges/flow/derived | `Σ Charge(CATCHUP,m)` / `flow(CATCHUP, m)` / `catchUpOwed(m)` |
+| Penalty charged / paid / owed | charges/flow/derived | `Σ Charge(PENALTY,m)` / `flow(PENALTY, m)` / `penaltyOwed(m)` |
 | Total deposits / balance | stock | `−MEMBER_EQUITY(m).balance` |
 | Withdrawals / settled | flow | `flow(WITHDRAW, m)` |
 | Profit withdrawn | derived | settlement beyond contributed principal (rule §17.1.2) |
@@ -1021,7 +1060,7 @@ creates phantom debt.
 | Interest paid / pending | flow / derived | `flow(LOAN_INTEREST, m)` / `interestToDate − paid` |
 | Expected deposit (to date) | expected | `getMemberTotalDeposit(m, now)` |
 | Pending contribution | derived | `expected − periodic` (contributions, not balance) |
-| Deposit status | derived | `OVERDUE` when pending contribution > 0 past the month due; UI shows a "pending/overdue" indicator. The penalty for chronic lateness is the **manual** `DELAY_PENALTY` (admin-entered), not an auto charge. |
+| Deposit status | derived | `OVERDUE` when pending contribution > 0 past the month due; UI shows a "pending/overdue" indicator. The penalty for chronic lateness is a **manual penalty charge** (admin-raised), not an auto charge. |
 | Profit share (full / actual) | derived | full = `profitPerMember`; actual = `profitPerMember × min(1, paid/expected)` (§16.3). UI shows both. |
 
 ### 17.3 Club / dashboard tiles
@@ -1182,10 +1221,15 @@ loan `addLoanDisbursement` (auto-creates the loan on first call) / `repayLoan` /
 `lockPeriod`. **Auth/account:** `resetMemberPassword` (admin → default = phone), `requestPasswordReset`
 (member → notifies admins), `changeOwnPassword` (clears `mustChangePassword`), `updateOwnAvatar`.
 
-**Intent helpers** that build §8 lines: `depositForMember`, `catchUpForMember`,
-`recordDelayPenalty`, `transferCash`, `giveLoanTranche` (auto-creates/links the loan),
-`repayLoan`, `payLoanInterest`, `vendorInvest`, `vendorReturn`, `chitPayment`, `chitPayout`,
-`settleMember`, `rejoinMember`.
+**Charges (dues):** `addCatchupCharge(memberId, {amount, reason, occurredAt})`,
+`addPenaltyCharge(memberId, {amount, reason, occurredAt})` — create a `Charge` row (no cash leg);
+`catchUpSuggestion(m)` / `penaltySuggestion(m)` compute the editable defaults. Pay-downs are the
+intent helpers `payCatchup` / `payPenalty` (cash ≤ outstanding, with a treasury).
+
+**Intent helpers** that build §8 lines: `depositForMember`, `payCatchup`, `payPenalty`,
+`transferCash`, `giveLoanTranche` (auto-creates/links the loan), `repayLoan`, `payLoanInterest`,
+`vendorInvest`, `vendorReturn`, `chitPayment`, `chitPayout`, `settleMember`,
+`rejoinMember` (auto-adds the rejoin catch-up charge).
 
 **Notifications:** `notify(recipientId, type, {title, body, link})` — called **inline** inside the
 relevant services (no jobs), e.g. on entry create, member join, leave/rejoin, and password-reset
@@ -1250,8 +1294,8 @@ full intent set (see `PRODUCT.md` §17 for the canonical list) maps to `TxnType`
 | Intent (UI label) | Dir | `TxnType` |
 |-------------------|:---:|-----------|
 | Member paid deposit | IN | `PERIODIC_DEPOSIT` |
-| Catch-up payment | IN | `CATCHUP` (join-time equalisation) |
-| Delayed-payment penalty | IN | `DELAY_PENALTY` (manual; → `OTHER_INCOME`) |
+| Pay catch-up | IN | `CATCHUP` pay-down (→ `MEMBER_EQUITY`; reduces `catchUpOwed`) |
+| Pay penalty | IN | `PENALTY` pay-down (→ `OTHER_INCOME`; reduces `penaltyOwed`) |
 | Give a loan (tranche) | OUT | `LOAN_TAKEN` |
 | Record repayment | IN | `LOAN_REPAY` (+ optional `LOAN_INTEREST` leg) |
 | Collect interest | IN | `LOAN_INTEREST` |
@@ -1265,6 +1309,12 @@ full intent set (see `PRODUCT.md` §17 for the canonical list) maps to `TxnType`
 | Adjustment (admin) | IN/OUT | `ADJUSTMENT` |
 | Vendor write-off (admin) | neutral | `VENDOR_WRITEOFF` |
 | Correction (admin) | — | `REVERSAL` |
+
+> **Raising a charge is NOT in this drawer.** *Add catch-up charge* and *Add penalty charge* (and the
+> auto catch-up on rejoin) create a `Charge` row from the **member page** — no cash leg. The drawer's
+> *Pay catch-up* / *Pay penalty* are the cash pay-downs. Pay-down form: **remaining balance** (shown),
+> **pay amount** (≤ remaining, with Full / ½ / ⅓ presets), **received-by treasurer** — recorded as
+> cash held by that treasurer; split across any number of instalments.
 
 ```mermaid
 flowchart LR
@@ -1315,15 +1365,15 @@ correct `TREASURY_CASH` is recorded for every entry.
 | txn `VENDOR_INVEST` | `VENDOR_INVEST` |
 | txn `VENDOR_RETURNS` | `VENDOR_RETURN` |
 | txn `FUNDS_TRANSFER` | `FUNDS_TRANSFER` (treasury→treasury) |
-| passbook `joiningOffset` (>0) | one `CATCHUP` posting |
-| passbook `delayOffset` (>0) | one `DELAY_PENALTY` posting |
+| passbook `joiningOffset` (>0) | a `Charge(CATCHUP, FIRST_TIME_JOIN)` (+ matching `CATCHUP` pay-down if v1 shows it settled) |
+| passbook `delayOffset` (>0) | a `Charge(PENALTY, DELAYED_PAYMENT)` (+ matching `PENALTY` pay-down if settled) |
 
 ```mermaid
 flowchart TD
   S1["1. Neon + v2 schema"] --> S2["2. Seed ClubConfig: stages (alpha/bravo), rateSchedule [1%], dayInterestFrom=01Jun2024, maxLoanPaise=₹5L"]
   S2 --> S3["3. Create accounts: 1× INTEREST_INCOME + 1× OTHER_INCOME; per member EQUITY(+LOAN); per vendor RECEIVABLE+PROFIT; TREASURY_CASH per cash-holder (from txn from/to ids)"]
   S3 --> S4["4. Replay each v1 txn (by occurredAt) → balanced v2 postings (§8), rupees×100, treasury from from/to id"]
-  S4 --> S5["5. Per-member joiningOffset → CATCHUP; delayOffset → DELAY_PENALTY"]
+  S4 --> S5["5. Per-member joiningOffset → Charge(CATCHUP); delayOffset → Charge(PENALTY) (+ pay-downs if settled)"]
   S5 --> S6["6. Rebuild Loans from LOAN_TAKEN/REPAY (per member); import recorded LOAN_INTEREST as-is (no historical recompute)"]
   S6 --> S7{"7. RECONCILE v2 == v1 CLUB payload fixtures?"}
   S7 -->|no| S8["fix mapping; re-run (idempotent)"] --> S4
@@ -1437,16 +1487,17 @@ not** (capital owed).
   (§14.5).
 - **G6 Catch-up:** auto-computed guide = cumulative expected deposit (start→today) + profit-per-
   member; **admin-editable** (§16.2).
-- **G7 Late deposit:** handled as a **manual `DELAY_PENALTY`** (admin-entered → `OTHER_INCOME`), not
-  an auto config. Overdue/pending deposits still flagged in the UI (§17.2). *(The auto
-  `lateDepositPenaltyPaise` config has been removed.)*
+- **G7 Late deposit:** a **manual penalty** (not an auto config); overdue/pending deposits still
+  flagged in the UI (§17.2). *(Auto `lateDepositPenaltyPaise` removed. **Superseded by Rev 7:** the
+  penalty is now a `Charge`, paid down via `PENALTY` transactions.)*
 
 **Resolved (Rev 5 — latest owner answers):**
 - **Login/accounts:** phone is **unique & required**; default password = phone; **first login forces
   a change**; **forgot-password → admin** (admin notified in-app, admin resets); members can edit
   **their own avatar + password**, admins edit the rest.
-- **Catch-up vs penalty:** **catch-up = join-time equalisation only**; **delayed-payment is a
-  manual penalty** (`DELAY_PENALTY` → `OTHER_INCOME`, counts as profit). `TxnSubtype` removed.
+- **Catch-up vs penalty:** catch-up = equalisation; delayed-payment = manual penalty (→
+  `OTHER_INCOME`, counts as profit). `TxnSubtype` removed. *(**Superseded by Rev 7:** both are now
+  `Charge` dues paid down over time — see below.)*
 - **Settlement:** the leaver is **paid out in cash at the time** (admin-entered amount, incl. their
   profit share) — the earlier cash-vs-paper question is **closed: it's cash**.
 - **Notifications:** simple DB-backed, inline-triggered, in-app (members: relevant events; admins:
@@ -1467,9 +1518,21 @@ not** (capital owed).
 - **B2 Expected deposit:** **full club life for everyone, current month counted** — validated by v1's
   `memberTotalDepositExpected = ₹1,00,000` (₹1,000×36 + ₹2,000×32). `paid = periodic + catch-up`.
 
+**Resolved (Rev 7 — catch-up & penalty become *charges/dues*):**
+- Catch-up and penalty are now **`Charge` records** (amounts owed), raised **multiple times over
+  time**, each with a **reason**, **paid down in any number of instalments** (pay-down form: remaining
+  balance + amount ≤ remaining with Full/½/⅓ presets + received-by treasurer). Member page shows them
+  **cumulatively** (charged/paid/owed).
+- **Catch-up** pay-down → `MEMBER_EQUITY` (member's own value); **penalty** pay-down → `OTHER_INCOME`
+  (shared profit). Suggestions: catch-up = profit gap (`profitPerMember − memberProfit`); penalty =
+  from pending dues. Both **admin-editable**.
+- **Rejoin auto-adds a catch-up charge** (reason `REJOIN`, editable); the rejoin screen shows **back
+  deposits + catch-up = total to rejoin**.
+- `‹CONFIRM›` penalty income recognised **on pay-down** (unpaid penalty = a due, not yet profit) —
+  vs accruing owed penalties as pending profit.
+
 Still open (truly minor, non-blocking):
 
-1. **Chit installment exact ramp** — actual amounts come from each `CHIT_PAYMENT` entry; the margin
+1. **Penalty income timing** — realize on pay-down (current) vs accrue when charged (`‹CONFIRM›`).
+2. **Chit installment exact ramp** — actual amounts come from each `CHIT_PAYMENT` entry; the margin
    is the cap. (No decision needed unless you want a fixed schedule.)
-2. **(none blocking)** — all prior items resolved. Remaining nuances lock automatically against the
-   v1 fixtures during P4 reconciliation.

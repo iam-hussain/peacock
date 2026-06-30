@@ -52,20 +52,29 @@ A member can be set Inactive/Left, but there's no **settlement** or **rejoin** f
 > Then a **"Member rejoins"** flow: member repays (one or two installments) **+ a catch-up** (guide
 > auto-computed) to return to equal value; account reactivates.
 
-### 1.3 Catch-up & delayed-payment penalty are modelled the OLD way
-The prototype treats **late-join** and **delayed-payment** as editable "owed adjustment amounts" (a
-"Member Adjustments" modal) and labels the member-card penalty figure as "Catch-up." Our model
-changed: **catch-up** and **delayed-payment** are **two different things**, both recorded as
-**entries**, not as editable owed fields.
+### 1.3 Catch-up & penalty — model them as *charges (dues) paid down over time*
+**Update (now confirmed):** catch-up and penalty are **charges the member owes**, raised **multiple
+times over time**, each with a **reason**, and **paid down in any number of instalments**. The
+designer's newer modals — **Add catch-up charge**, **Add penalty charge**, **Record catch-up/penalty
+payment**, and the **Rejoin** modal — are **on the right track**. The thing to fix is the *old*
+single "Member Adjustments / owed amount" pattern and the member-card label that reuses one
+"Catch-up" figure for the penalty.
 
-> **Prompt:** Split these cleanly:
-> - **Catch-up payment (IN)** — a join-time **equalisation** a new/returning member *pays* (guide =
->   missed deposits from club start + their share of profit; admin-editable). It's a contribution.
-> - **Delayed-payment penalty (IN)** — a **manual penalty** the admin charges a chronically-late
->   member; the money is **club income shared as profit** (not the member's capital).
-> Remove the "edit owed adjustment amounts" pattern as the primary mechanism; both become
-> intents in the entry drawer. On the member card/detail, show **Catch-up paid** and **Penalty
-> paid** as *separate* lines (don't reuse one "Catch-up" figure for the penalty).
+> **Prompt:** Build the charge model end-to-end (see `PRODUCT.md` §7/§13, `FORMS_AND_FIELDS.md` §3.1):
+> - **Add catch-up charge** & **Add penalty charge** (member page): amount **auto-suggested +
+>   editable** (catch-up = profit gap; penalty = from pending dues), a **reason** chip set
+>   (catch-up: First-time join · Rejoin · Profit-gap top-up · Mid-term equalisation · Other; penalty:
+>   Delayed payment · Loan repayment delay · Holding club money too long · Missed deposit · Other),
+>   and a date. These **raise a due**, they don't move cash.
+> - **Record catch-up/penalty payment** (pay-down): **remaining balance** shown, **pay amount ≤
+>   remaining** with **Full / ½ / ⅓** presets, **received-by treasurer**; allow many instalments.
+> - **Member page:** show **cumulative** catch-ups and penalties — each charge (reason, amount, date)
+>   with **paid vs remaining** — and keep **catch-up** and **penalty** as *separate* sections (don't
+>   reuse one figure). Catch-up builds the member's own value; penalty is club income.
+> - **Rejoin** auto-adds a catch-up charge (editable) and shows **back deposits + catch-up = total to
+>   rejoin** (your Rejoin modal already does this — keep it).
+> - In the entry drawer, the cash intents are **Pay catch-up (IN)** and **Pay penalty (IN)** (not a
+>   one-shot "catch-up payment"); *raising* a charge lives on the member page, not the drawer.
 
 ### 1.4 Notifications — missing
 There's an Approvals inbox but no general **in-app notification centre** (`PRODUCT.md` §18).
@@ -93,13 +102,15 @@ Withdrawal · Vendor investment · Vendor return · Funds transfer. This is the 
 **incomplete and one label is wrong**.
 
 > **Prompt:** Update the intent grid to the full set, grouped:
-> - **Everyday:** Member paid deposit (IN) · **Catch-up payment (IN)** · **Delayed-payment penalty
->   (IN)** · Give a loan (OUT) · Record repayment (IN) · Collect interest (IN) · Funds transfer
->   (neutral)
+> - **Everyday:** Member paid deposit (IN) · **Pay catch-up (IN)** · **Pay penalty (IN)** · Give a
+>   loan (OUT) · Record repayment (IN) · Collect interest (IN) · Funds transfer (neutral)
 > - **Vendors & chit:** Vendor investment (OUT) · Vendor return (IN) · **Chit installment (OUT)** ·
 >   **Chit payout (IN)**
 > - **Member lifecycle:** **Member leaves / settle up (OUT)** · **Member rejoins (IN)**
 > - **Advanced (admin corrections):** Adjustment · Vendor write-off · Correction/Reversal
+>
+> *Pay catch-up / Pay penalty* pay down a member's **dues**; **raising** a catch-up/penalty charge is
+> a **member-page** action, not a drawer intent (see 1.3).
 >
 > **Rename** "Withdrawal — Member takes funds out" → **"Member leaves (settle up)"** (withdrawal is
 > always a **full exit** — there is no partial/profit-only withdrawal). "Funds transfer — Move money
@@ -204,7 +215,7 @@ The designer added features that **contradict or extend** the locked spec. Decid
 
 - [ ] Chit fund: type, setup, detail (installments/payout/obligation/profit), 2 intents (1.1)
 - [ ] Member leave (settle-up guide → cash → freeze) + rejoin (repay + catch-up) flows (1.2)
-- [ ] Catch-up vs delayed-payment penalty as **two separate entries**, not "owed adjustments" (1.3)
+- [ ] Catch-up & penalty as **charges (dues)**: raise (member page, reason + suggested/editable) + pay-down (remaining/amount/treasurer) + cumulative display; catch-up→value, penalty→income (1.3)
 - [ ] Notification bell + centre (1.4)
 - [ ] Loan tranches in Give-a-loan + loan detail (1.5)
 - [ ] Entry drawer: full grouped intent set; rename Withdrawal → "Member leaves (settle up)" (2)

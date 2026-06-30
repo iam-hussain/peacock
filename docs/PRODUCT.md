@@ -221,30 +221,37 @@ flowchart LR
 ## 7. Joining & catch-up
 
 The club has been running for years and has built up value. So when **a new member joins late**,
-or an existing member **fell behind**, they must pay a **catch-up** so that **everyone holds equal
-value**. (This used to be called "offset.")
+or a member **rejoins**, they must catch up so that **everyone holds equal value**. (This used to be
+called "offset.")
 
-There are two kinds of catch-up:
+### Catch-up is a *charge the member owes*, paid down over time
 
-Catch-up is the **equalisation payment for joining late** (or coming back): the newcomer pays the
-**deposits they missed** (from the club's start up to today) **plus their share of the profit** the
-club has already built up — so they start on **equal footing** with everyone else.
+A catch-up is **not a single payment** — it's a **charge** (an amount the member **owes**) that they
+**pay down later in any number of instalments**. A member can have **several catch-up charges over
+time** (e.g. one each time they rejoin); they all **accumulate** and are shown on the member's page.
 
-**How the amount is decided:** Peacock **calculates a suggested catch-up** =
-(all the monthly deposits from the club's start up to today) **+** (the profit-per-member built up
-so far). The **admin can edit** that figure up or down before saving — the math is done for them,
-but the final number is the admin's call.
+Each catch-up charge has:
+- an **amount** — **auto-suggested but admin-editable** (suggestion = *average per-member profit −
+  this member's profit*, i.e. the profit gap that brings them to equal value),
+- a **reason** — *First-time join · Rejoin · Profit-gap top-up · Mid-term equalisation · Other*,
+- a **date**.
 
-> **Note — "delayed payment" is a *penalty*, not a catch-up.** Catching up for being *late on
-> monthly deposits* is handled as a **manual penalty** the admin enters (see §13), separate from the
-> join-time catch-up described here.
+Catch-up money **counts as the member's own** (it builds their capital/value in the club). It is
+**auto-added** at first join and at each rejoin (see §12), and the admin can edit the amount.
 
 ```mermaid
 flowchart TD
-  J["New / returning member"] --> CALC["Peacock suggests catch-up:<br/>missed deposits + profit-per-member"]
-  CALC --> EDIT["Admin reviews & can adjust the amount"]
-  EDIT --> PAY["Member pays catch-up"]
-  PAY --> EQ["Member now holds equal value ✓"]
+  J["New / returning member"] --> RAISE["A catch-up CHARGE is raised<br/>(auto-suggested amount, reason, date — admin can edit)"]
+  RAISE --> OWE["Added to what the member owes (their dues)"]
+  OWE --> PAY["Member pays it down over any number of instalments"]
+  PAY --> EQ["Once paid, it counts as their own value → equal footing ✓"]
+  J --> AGAIN["Leaves & rejoins later → another catch-up charge stacks on"]
+```
+
+> **Note — "delayed payment" is a *penalty*, not a catch-up** (§13). Both catch-ups and penalties
+> are *charges the member owes* and work the same way (multiple over time, each with a reason, paid
+> down in instalments) — but catch-up builds the member's **own value**, while a penalty is **club
+> income**.
 ```
 
 ---
@@ -458,15 +465,23 @@ flowchart LR
 
 ### Rejoining (reactivation)
 
-A frozen member can come back. To rejoin, they **repay** to re-enter (often in **one or two
-installments**) **plus** a **catch-up** (the profit-per-member they missed and any deposits owed),
-which restores them to **equal value** with everyone else. The admin reactivates the account.
+A frozen member can come back. The **Rejoin** flow shows what it takes to return to **equal value**:
+
+- **Back deposits** — the monthly deposits they'd owe since the club's start.
+- **Catch-up** — **auto-added** (suggested from per-member profit), and **admin-editable**. It's
+  posted to the member's ledger as a **charge tagged "Rejoin"** that they pay down (counts as their
+  own value).
+- **Total to rejoin** = back deposits + catch-up.
+
+On confirm, the catch-up charge is added and the account **reactivates to Active**. The member then
+**pays the dues down over time** (any number of instalments).
 
 ```mermaid
 flowchart LR
-  FROZEN["Inactive member"] -->|wants back| REPAY["Repay re-entry amount<br/>(1–2 installments)"]
-  REPAY --> CU["Pay catch-up<br/>(profit-per-member + owed deposits)"]
-  CU --> ACTIVE["Active again, equal value ✓"]
+  FROZEN["Inactive member"] -->|Rejoin| FORM["Show: back deposits + auto-added catch-up (editable) = total to rejoin"]
+  FORM --> CONFIRM["Confirm → catch-up charge added (tagged Rejoin), account → Active"]
+  CONFIRM --> PAYDOWN["Member pays the dues down over time"]
+  PAYDOWN --> EQ["Back to equal value ✓"]
 ```
 
 ---
@@ -478,7 +493,21 @@ There are two kinds of penalty — one automatic (configurable, off today), one 
 | Penalty | How it works | Today |
 |---------|--------------|-------|
 | **Overdue loan penalty** | An **automatic** extra interest rate on loans kept past the **5-month** term. A config setting; when switched on it applies **immediately to all loans**. | **0** — overdue loans are only **flagged**. |
-| **Delayed-payment penalty** | A **manual** charge the admin records when a member has been **significantly late on monthly deposits**. The admin decides the amount and enters it as its own entry; the money the member pays is **club income** that is **shared as profit among all members** (including the member who paid it). | Applied **case-by-case** by the admin (no automatic charge). |
+| **Penalty charge** | A **manual charge** the admin raises against a member. Like catch-up, it's an amount the member **owes** and **pays down over time in any number of instalments**, and a member can have **several** over time (e.g. ₹100 today, another ₹100 next week — they accumulate). | Applied **case-by-case** by the admin. |
+
+### Penalty charges (manual, multiple, paid down)
+
+Each penalty charge has:
+- an **amount** — **auto-suggested but admin-editable** (suggestion = *from this member's pending
+  dues*),
+- a **reason** — *Delayed payment · Loan repayment delay · Holding club money too long · Missed
+  deposit · Other*,
+- a **date**.
+
+Unlike catch-up (which builds the member's own value), penalty money the member pays down is **club
+income — shared as profit among all members** (including the member who paid it). All of a member's
+penalty charges are shown **cumulatively** on their page (each with reason / amount / date / paid /
+remaining). Overdue loans and late deposits are still **flagged** regardless of any penalty.
 
 So **overdue loans** and **late deposits** are always **flagged** with clear indicators (red
 badges) regardless of penalties. The **overdue-loan penalty** is an automatic switch (off today),
@@ -651,8 +680,8 @@ the way the entry screen should present them.
 | What happened | Direction | What it does |
 |---------------|:---------:|--------------|
 | **Member paid deposit** | IN | A member pays their monthly savings to a treasurer. |
-| **Catch-up payment** | IN | A new/returning member pays **join-time equalisation** = missed deposits (from club start) + their share of past profit. |
-| **Delayed-payment penalty** | IN | A **manual** penalty the admin charges a member for being significantly late on deposits; the amount is club income. |
+| **Pay catch-up** | IN | A member pays down a **catch-up charge** they owe (builds their own value → counts as their capital). |
+| **Pay penalty** | IN | A member pays down a **penalty charge** they owe (becomes club income, shared as profit). |
 | **Give a loan** | OUT | The club hands a loan to a member. Can be done **in parts (tranches)** from different treasurers — all under one loan. |
 | **Record repayment** | IN | A member pays back loan principal (and optionally interest in the same entry). |
 | **Collect interest** | IN | A member pays interest earned on their loan. |
@@ -674,6 +703,16 @@ the way the entry screen should present them.
 | **Member leaves (settle up)** | OUT | A member **fully exits** — capital + their profit share − any loan owed. This is the **only** kind of withdrawal (no partial, no profit-only). Account is then frozen/inactive, history kept. |
 | **Member rejoins** | IN | A returning member pays back in (one or two installments) + catch-up, and is reactivated to equal value. |
 
+### Raising charges (admin, on the member page — *not* cash entries)
+
+These don't move cash; they record an amount the member **owes** (paid down later via "Pay catch-up"
+/ "Pay penalty"). They can be raised **multiple times** and each carries a **reason**.
+
+| What happened | What it does |
+|---------------|--------------|
+| **Add catch-up charge** | Raise an amount the member owes to reach equal value (reason: first-time join · rejoin · profit-gap top-up · mid-term equalisation · other). Auto-suggested, editable. Auto-added on rejoin. |
+| **Add penalty charge** | Raise a penalty the member owes (reason: delayed payment · loan repayment delay · holding club money too long · missed deposit · other). Auto-suggested, editable. |
+
 ### Admin corrections (kept honest, fully logged)
 
 | What happened | Direction | What it does |
@@ -682,11 +721,10 @@ the way the entry screen should present them.
 | **Vendor write-off** | neutral | Closing a vendor that returned less than invested — records the loss. |
 | **Correction / reversal** | — | Cancels a previous entry (for an edit or delete); the original stays on record. |
 
-> **What changed vs the earlier mockup (8 intents):** the mockup was missing **Catch-up**,
-> **Delayed-payment penalty**, **Chit installment**, **Chit payout**, and the **Leave/Rejoin**
-> lifecycle entries; and "Withdrawal — member takes funds out" is renamed **"Member leaves (settle
-> up)"** because withdrawal is always a full exit in this club. Adjustment / write-off / reversal are
-> admin corrections (group them under an "advanced/corrections" area, not the main grid).
+> **Catch-up & penalty are *charges* (dues), not single payments.** Raising a charge (above) records
+> what's owed (with a reason; multiple over time accumulate); **paying it down** is the cash entry
+> ("Pay catch-up" / "Pay penalty"), in any number of instalments. The member page shows the
+> **cumulative** charges and how much is paid vs remaining.
 
 ---
 

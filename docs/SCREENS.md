@@ -71,12 +71,15 @@ edit, reset password, make admin, mark treasurer.
 **Purpose:** one member's full picture.
 
 **Shows:** profile (name, avatar, phone/email, joined date, role/treasurer, status); their numbers —
-deposits paid, catch-up, **pending deposits/overdue badge**, current loan + interest pending,
-**profit share (full and reduced-by-paid-ratio)**; their **transaction history**.
+deposits paid, **pending deposits/overdue badge**, current loan + interest pending, **profit share
+(full and reduced-by-paid-ratio)**; a **Catch-up** section and a **Penalty** section each listing the
+member's **charges cumulatively** (each: reason, amount, date, **paid vs remaining**) with the total
+outstanding; their **transaction history**.
 
 **Does:** open any of their transactions; **admin:** record an action for this member (deposit,
-loan, settle/leave, rejoin, catch-up, **delayed-payment penalty**), edit profile, reset password. If
-eligible, show **loan eligibility/priority** hint.
+give loan, settle/leave, rejoin, **add catch-up charge**, **add penalty charge**, **pay catch-up /
+pay penalty** down), edit profile, reset password. If eligible, show **loan eligibility/priority**
+hint.
 
 **Access:** all (view); a member sees their own statement; actions = admin.
 
@@ -149,7 +152,7 @@ linked to their original.
 
 **Does:**
 - **Entry drawer ("What happened?"):** plain-language intent grid (deposit, give loan, repayment,
-  collect interest, catch-up, delayed-payment penalty, funds transfer, vendor invest/return, chit
+  collect interest, pay catch-up, pay penalty, funds transfer, vendor invest/return, chit
   installment/payout, member leaves, member rejoins; corrections under "advanced"). Pick intent →
   step 2 collects the fields (`FORMS_AND_FIELDS.md`), **always including which treasury** → save.
   Optimistic confirmation.
@@ -191,8 +194,8 @@ interest/month; **member-vs-club-average**. Range selectors; export.
 
 **Shows / does — configuration:** club name & start date; deposit **stages**; **interest-rate
 schedule** (add dated change for new loans); daily-interest-from date; loan limit; loan term;
-cooldown; **overdue penalty** (default 0); **late-deposit penalty** (default 0); **dividend** toggle
-(off); timezone.
+cooldown; **overdue penalty** (default 0, auto); **dividend** toggle (off); timezone. *(Late/delayed
+payment is handled as a manual penalty **charge** on the member page, not an auto setting.)*
 
 **Shows / does — people:** add/edit members; **reset any member's password**; view & action
 **forgot-password requests** (a queue, each with a "reset" action); grant/revoke admin; set/unset
