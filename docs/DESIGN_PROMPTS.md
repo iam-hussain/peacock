@@ -93,8 +93,9 @@ Withdrawal · Vendor investment · Vendor return · Funds transfer. This is the 
 **incomplete and one label is wrong**.
 
 > **Prompt:** Update the intent grid to the full set, grouped:
-> - **Everyday:** Member paid deposit (IN) · **Catch-up payment (IN)** · Give a loan (OUT) · Record
->   repayment (IN) · Collect interest (IN) · Funds transfer (neutral)
+> - **Everyday:** Member paid deposit (IN) · **Catch-up payment (IN)** · **Delayed-payment penalty
+>   (IN)** · Give a loan (OUT) · Record repayment (IN) · Collect interest (IN) · Funds transfer
+>   (neutral)
 > - **Vendors & chit:** Vendor investment (OUT) · Vendor return (IN) · **Chit installment (OUT)** ·
 >   **Chit payout (IN)**
 > - **Member lifecycle:** **Member leaves / settle up (OUT)** · **Member rejoins (IN)**
