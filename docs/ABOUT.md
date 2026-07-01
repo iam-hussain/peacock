@@ -161,11 +161,14 @@ your savings, **plus your fair share of profit**, **minus** anything you still o
 
 - It's **all or nothing** — you can't take out just a part or just the profit while staying in.
 - The app calculates a suggested settlement, and the manager confirms the final amount.
-- Once you leave, your share resets to zero and your account is **paused** — but **your full
+- Once you leave, your share resets to zero and your **membership is closed** — but **your full
   history is kept**, nothing is erased.
 
-If you want to **come back later**, you simply pay back in (you can do it in one or two parts) plus
-a **catch-up** so you're equal with everyone again. Your account is reactivated.
+**It works like a bank.** You're always the same person (one login), but **each time you're in the
+club is a separate "membership," like a bank account that opens when you join and closes when you
+leave.** If you **come back later**, the club **opens a fresh membership** for you — you pay your back
+deposits plus a **catch-up** to be equal again — and your old membership stays on file as history. So
+your new chapter starts clean, with the old one still there to look back on.
 
 ### 9. Late monthly savings
 

@@ -32,11 +32,17 @@ There is **no public sign-up**. The club's members already exist; people only **
 | Email | O | Optional contact; not required for login. |
 | Username | O→A | Optional handle; **auto-generated from the name if left blank** (unique). Not used to log in. |
 | Avatar | O | Photo; falls back to initials. **The member can change their own avatar** in Profile; admins can too. |
-| Joined date (club) | R | When they joined the club — drives expected deposits & catch-up. |
+| Joined date | R | When they joined — starts their **first membership** (the join date lives on the membership, see below). |
 | Role | A/admin-set | `MEMBER` by default; an admin can grant `ADMIN`. |
-| Treasurer | A/admin-set | Flag; a member becomes a treasurer when they hold club cash. |
-| Status | A | `ACTIVE` / `INACTIVE` (frozen) / `LEFT` — system-managed via lifecycle. |
+| Treasurer | A/admin-set | Person-level flag; set when they hold club cash. |
 | Password | A | Managed by auth; default = phone number; **forced change on first login**; admin-resettable. |
+
+> **Banker model (see `PRODUCT.md` §2/§12).** The fields above belong to the **person** (`Member`) —
+> stable, one login. A person's time in the club is one or more **`Membership` (stint/account)**
+> records, each with its **own** `joinedAt` / `leftAt` / status (`ACTIVE`/`CLOSED`) / settled amount,
+> and its own deposits, catch-up & penalty charges, loans and profit. Creating a member opens their
+> **first** membership; **leaving closes** it; **rejoining opens a new one**. The member page shows
+> the **active** membership and lists closed ones as history.
 
 ---
 
@@ -92,8 +98,8 @@ noted). Direction: **IN** = club gains cash, **OUT** = club pays cash, **neutral
 | Transaction | Dir | Fields collected |
 |-------------|:---:|------------------|
 | **Member paid deposit** | IN | Member (R); Amount (R); Treasury **receiving** (R); *(optional: which month)*. |
-| **Catch-up payment** | IN | Member (R); Amount (R, **join-time guide auto-computed** = missed deposits + profit-per-member, editable); Treasury receiving (R). |
-| **Delayed-payment penalty** | IN | Member (R); Amount (R, **manual** — admin decides); Reason (O); Treasury receiving (R). Booked as club income. |
+| **Pay catch-up** | IN | Member (R); Pay amount (R, **≤ remaining catch-up balance**, with Full/½/⅓ presets); Treasury **receiving** (R). Pays down catch-up dues → member's capital. (See §3.1 charges.) |
+| **Pay penalty** | IN | Member (R); Pay amount (R, **≤ remaining penalty balance**, with Full/½/⅓ presets); Treasury **receiving** (R). Pays down penalty dues → club income. (See §3.1 charges.) |
 | **Give a loan** | OUT | Member (R); Amount of this disbursement (R); Treasury **paying out** (R); Approved/requested amount (O — see auto-create below). **A loan record is created/linked automatically in the background.** |
 | **Record repayment** | IN | Loan/member (R); Principal amount (R); Interest amount in same entry (O); Treasury receiving (R). Closes the loan automatically when principal hits zero. |
 | **Collect interest** | IN | Loan/member (R); Amount (R, **pending interest shown as guide**); Treasury receiving (R). |
@@ -113,15 +119,42 @@ noted). Direction: **IN** = club gains cash, **OUT** = club pays cash, **neutral
 | Transaction | Dir | Fields collected |
 |-------------|:---:|------------------|
 | **Member leaves (settle up)** | OUT | Member (R); Settlement amount (R, **guide auto-computed**: capital + profit share − loan − unpaid interest; admin enters final); Treasury paying (R). Freezes the member afterward. |
-| **Member rejoins** | IN | Member (R); Repayment amount(s) — one or two installments (R); Catch-up amount (R, **guide auto-computed**); Treasury receiving (R). Reactivates the member. |
+| **Member rejoins** | — | Shows **back deposits** (missed monthly since club start) + a **catch-up charge** that is **auto-added** (suggested from per-member profit, **admin-editable**) = **total to rejoin**. On confirm, the catch-up charge (reason `REJOIN`) is recorded and the account → Active; the member then **pays the dues down** over time via *Pay catch-up*. |
 
-### Admin corrections (kept in an "advanced" area)
+### 3.1 Catch-up & penalty charges (dues)
 
-| Transaction | Dir | Fields collected |
-|-------------|:---:|------------------|
-| **Adjustment** | IN/OUT | Member (R); Signed amount (R); Treasury (R); Reason (R). Rare. |
-| **Vendor write-off** | neutral | Vendor (R); Residual amount (A — the leftover receivable); Reason (O). On close with a shortfall. |
-| **Correction / reversal** | — | Target transaction (R); Reason (R). Cancels a prior entry; original stays on record. |
+Catch-up and penalty are **charges the member owes**, raised **multiple times over time** and **paid
+down in any number of instalments** (see `PRODUCT.md` §7/§13). Raising a charge is an **admin action
+on the member page** (not a cash entry); paying it down is the *Pay catch-up* / *Pay penalty* cash
+transaction above.
+
+**Add catch-up charge / Add penalty charge** (member page):
+| Field | R/O/A | Notes |
+|-------|:-----:|-------|
+| Member | A | The member the charge is for (from their page). |
+| Amount | R | Auto-**suggested**, **editable**. Catch-up suggestion = *avg per-member profit − this member's profit*; penalty suggestion = *from this member's pending dues*. |
+| Reason | R | Catch-up: **First-time join · Rejoin · Profit-gap top-up · Mid-term equalisation · Other**. Penalty: **Delayed payment · Loan repayment delay · Holding club money too long · Missed deposit · Other**. |
+| Date | R | When the charge applies. |
+| Note | O | Free text. |
+
+**Pay-down form** (*Pay catch-up* / *Pay penalty*):
+| Field | R/O/A | Notes |
+|-------|:-----:|-------|
+| Remaining balance | A | Shown — the outstanding dues for that kind. |
+| Pay amount | R | **≤ remaining**, with **Full / ½ / ⅓** quick presets. Any number of instalments allowed. |
+| Received by (treasurer) | R | The treasurer who holds the cash. |
+
+The member page shows **cumulative** catch-ups and penalties — each charge (reason, amount, date) and
+the running **paid vs remaining**.
+
+### Fixing mistakes & losses (no free-form adjustment)
+
+There is **no "Adjustment"** entry and **no separate "Correction/reversal"** intent.
+
+| Situation | Action / fields |
+|-----------|-----------------|
+| **A specific posted transaction is wrong** | **Edit** or **Delete** it from the ledger row. The app reverses the original (and re-posts the corrected one on edit) behind the scenes; history kept. No fields beyond the corrected transaction itself. |
+| **Vendor money is truly gone** | **Vendor write-off** (admin, from the vendor's close flow): Vendor (R); Residual amount (A — the leftover receivable); Reason (O). Records the loss. |
 
 ### Loan auto-creation (decision)
 
@@ -162,25 +195,30 @@ What an admin can do, in two buckets: **manage people** and **configure the club
 | Loan cooldown | Wait after closing before borrowing again. | 1 month. |
 | Overdue penalty | **Automatic** extra rate on overdue loans (applies instantly to all). | 0 (off). |
 | Dividend | Periodic profit payout toggle. | Off. |
+| **Who can submit entries** | `Admins only` or `All members` (members' entries need admin approval). | All members. |
+| **Alert thresholds** | Amounts that trigger proactive alerts: large amount, heavy pending deposit, heavy pending interest. | Set by club. |
+| **Fiscal year start** | Month the financial year starts — drives quarter boundaries for Close quarter. | April. |
 | Timezone | Month-boundary timezone. | Asia/Kolkata. |
 
 ### 4.3 Other admin actions
 
 - Create / edit vendors and chits (§2).
-- Record / edit / reverse any transaction (§3), including the **manual delayed-payment penalty**.
-- Lock/unlock a period (seam built, off by default).
-- See the **notification centre** (incl. forgot-password requests and new entries).
+- Raise **catch-up / penalty charges** and record their pay-downs (§3.1); record / edit / reverse any
+  transaction (§3); **approve/reject** members' pending submissions (from notifications).
+- **Close quarter** — locks the quarter's entries + stores a snapshot (can't be undone).
+- Browse the **audit log** (who did what, when).
 
-> Members (non-admin) can **view** everything but change nothing (see `PRODUCT.md` §15). Members can
-> change their **own avatar and password** in Profile.
+> Members (non-admin) **view** everything; if the club allows, they can **submit** entries (which need
+> admin approval). They can change their **own avatar and password** in Profile. There is **no
+> permissions matrix** — just the "who can submit entries" toggle above.
 
-### 4.4 Notifications (simple, in-app)
+### 4.4 Notifications & approvals (one in-app inbox)
 
-A lightweight notification store; rows are created inline when events happen (no background jobs).
-See `PRODUCT.md` §18 for the behavior. Each notification: **recipient · type · short message · link ·
-read/unread · time.** Members get relevant alerts (new joiner, their deposit/loan/interest/
-settlement, password reset); admins get approvals (forgot-password requests), new entries, and
-lifecycle events.
+See `PRODUCT.md` §18. The bell carries three kinds: **events** (stored when they happen), **alerts**
+(computed live vs the thresholds above — overdue loan, large amount, heavy pending), and **approvals**
+(a member's **pending submission** with Approve/Reject inline). Each item: **recipient · kind · short
+message · link · read/unread · time.** A **submission** holds the proposed entry (intent + fields +
+who submitted) until an admin approves (it posts) or rejects (it's discarded).
 
 ---
 

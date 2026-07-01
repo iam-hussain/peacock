@@ -68,15 +68,23 @@ edit, reset password, make admin, mark treasurer.
 
 ## 4. Member — detail / statement
 
-**Purpose:** one member's full picture.
+**Purpose:** one **person's** full picture (banker model — see `PRODUCT.md` §2/§12).
 
-**Shows:** profile (name, avatar, phone/email, joined date, role/treasurer, status); their numbers —
-deposits paid, catch-up, **pending deposits/overdue badge**, current loan + interest pending,
-**profit share (full and reduced-by-paid-ratio)**; their **transaction history**.
+**Shows:**
+- **Identity header (person):** name, avatar, phone/email, role/treasurer, **"Customer since …"**.
+- **Membership bar:** **"Membership #N · Active since …"** with a **switcher** (only if >1 stint).
+- **Current membership body:** deposits paid, **pending deposits/overdue badge**, current loan +
+  interest pending, **profit share (full and reduced-by-paid-ratio)**; a **Catch-up** section and a
+  **Penalty** section each listing that membership's **charges cumulatively** (each: reason, amount,
+  date, **paid vs remaining**) with total outstanding; this membership's **transaction history**.
+- **Previous memberships (history)** — only if any: a list of **closed** stints ("Membership #1 ·
+  Sep 2020 → Aug 2023 · settled ₹X · Closed"), each expandable to a **read-only** summary + its
+  transactions, tagged **Legacy**. (Hidden entirely for members who never left.)
 
 **Does:** open any of their transactions; **admin:** record an action for this member (deposit,
-loan, settle/leave, rejoin, catch-up, **delayed-payment penalty**), edit profile, reset password. If
-eligible, show **loan eligibility/priority** hint.
+give loan, settle/leave, rejoin, **add catch-up charge**, **add penalty charge**, **pay catch-up /
+pay penalty** down), edit profile, reset password. If eligible, show **loan eligibility/priority**
+hint.
 
 **Access:** all (view); a member sees their own statement; actions = admin.
 
@@ -148,14 +156,19 @@ treasurer involved, note; filters by type, member/vendor, treasurer, date range;
 linked to their original.
 
 **Does:**
-- **Entry drawer ("What happened?"):** plain-language intent grid (deposit, give loan, repayment,
-  collect interest, catch-up, delayed-payment penalty, funds transfer, vendor invest/return, chit
-  installment/payout, member leaves, member rejoins; corrections under "advanced"). Pick intent →
-  step 2 collects the fields (`FORMS_AND_FIELDS.md`), **always including which treasury** → save.
-  Optimistic confirmation.
-- Edit / reverse any entry (as a correction, history kept).
+- **Entry drawer ("What happened?"):** plain-language intent grid (deposit, pay catch-up, pay
+  penalty, give loan, repayment, collect interest, funds transfer, vendor invest/return, chit
+  installment/payout, member leaves, member rejoins). **No "corrections" group.** Pick intent → step 2
+  collects the fields (`FORMS_AND_FIELDS.md`), **always including which treasury** → save.
+  - **Admin** save → posts directly (optimistic confirmation).
+  - **Member** save (if allowed) → creates a **pending submission**; the drawer shows "goes to an
+    admin for approval." It appears in admins' notifications with **Approve / Reject** and only posts
+    on approval.
+- **Edit / Delete** any entry on its row → the app reverses the original (and re-posts the corrected
+  one on edit); **history kept**. This *is* the correction mechanism — no separate adjustment entry.
 
-**Access:** all (view); add/edit/reverse = admin.
+**Access:** view = all; **submit** = admins (direct) or members (pending, if the club allows);
+**approve / edit / reverse** = admin.
 
 ---
 
@@ -174,12 +187,22 @@ treasurer.
 
 ## 11. Analytics
 
-**Purpose:** trends over time, straight from the records.
+**Purpose:** trend **any club metric over time**, straight from the records (a metric explorer).
 
-**Shows:** portfolio value, available cash, outstanding loans (as-of each month); deposits/month;
-interest/month; **member-vs-club-average**. Range selectors; export.
+**Shows:**
+- A **metric picker** — choose which figure to chart. Full catalogue:
+  Active Members · Club Age · Member Deposits · Catch-up (Member Adjustments) · Member Pending ·
+  Catch-up Pending (Adjustments Pending) · Total Loan Given · Total Interest Collected · Current
+  Loan Taken · Interest Pending · Vendor Investment · Vendor Profit · Current Profit · Profit
+  Withdrawals · Total Invested · Total Pending · Available Cash · Current Value · Total Portfolio
+  Value. *(Optionally: Penalty Income, Profit per Member.)*
+- A **time-range** control: **1M · 3M · 6M · 1Y · ALL** (spacing adapts: 1M daily, 3M/6M weekly,
+  1Y/ALL monthly).
+- The selected metric as a **line/area chart** with the current value + change over the range; a
+  compact **latest-value strip** for context.
 
-**Does:** switch series/range; export CSV/image. Historical edits reflect instantly.
+**Does:** switch metric + range; **export** (CSV / image). Historical edits reflect **instantly**
+(every point is computed from the ledger, not a snapshot).
 
 **Access:** all (view).
 
@@ -191,14 +214,17 @@ interest/month; **member-vs-club-average**. Range selectors; export.
 
 **Shows / does — configuration:** club name & start date; deposit **stages**; **interest-rate
 schedule** (add dated change for new loans); daily-interest-from date; loan limit; loan term;
-cooldown; **overdue penalty** (default 0); **late-deposit penalty** (default 0); **dividend** toggle
-(off); timezone.
+cooldown; **overdue penalty** (default 0, auto); **dividend** toggle (off); **who can submit entries**
+(admins only / all members); **alert thresholds** (large amount, heavy pending deposit/interest);
+timezone. *(Late/delayed payment is a manual penalty **charge** on the member page, not an auto
+setting. There is **no permissions matrix**.)*
 
-**Shows / does — people:** add/edit members; **reset any member's password**; view & action
-**forgot-password requests** (a queue, each with a "reset" action); grant/revoke admin; set/unset
-treasurer; deactivate/archive.
+**Shows / does — people:** add/edit members; **reset any member's password**; grant/revoke admin;
+set/unset treasurer; deactivate/archive. *(Forgot-password requests arrive as **notifications**, not a
+separate queue.)*
 
-**Does — other:** lock/unlock a period (seam, off by default).
+**Does — other:** **Audit log** (who did what, when — browsable); **Close quarter** (locks the quarter
++ snapshot, with an "can't be undone" warning). *(Backup/restore export too.)*
 
 **Access:** **admin only.**
 
@@ -217,18 +243,23 @@ Cannot grant themselves admin or edit club data.
 
 ---
 
-## 14. Notifications (in-app)
+## 14. Notifications — the one inbox (events · alerts · approvals)
 
-**Purpose:** keep members and admins informed of relevant events (see `PRODUCT.md` §18).
+**Purpose:** a single in-app centre for everything that needs attention (see `PRODUCT.md` §18). **This
+replaces a separate Approvals screen and the Permissions screen.**
 
-**Shows:** a **bell with an unread count** (global, in the app shell) and a **notification list** —
-each item: short message, time, read/unread, and a link to the related item.
+**Shows:** a **bell with an unread count** (app shell) and a **list** carrying three kinds:
+- **Events** — "recorded a ₹5,000 deposit", "loan disbursed", "vendor return", "member settled/
+  rejoined", "password reset requested".
+- **Alerts** (computed live) — "loan overdue (6 months)", "large amount", "heavy pending deposit/
+  interest" — against the thresholds in Settings.
+- **Approvals** — a **pending submitted entry** with **Approve / Reject** buttons inline (admins).
 
-**Does:** open an item → navigate to it and mark read; mark all read. **Members** see their relevant
-alerts (new joiner, their deposit/loan/interest/settlement, password reset); **admins** also see
-approvals (**forgot-password requests**), new entries, and lifecycle events.
+**Does:** open an item → jump to it / mark read; **Approve / Reject** a pending entry inline (on
+approve it posts to the ledger); **Mark all read**. Members see their relevant events; admins also
+see approvals + forgot-password requests + alerts.
 
-**Access:** everyone (their own notifications).
+**Access:** everyone (their own notifications; approvals shown to admins).
 
 ---
 

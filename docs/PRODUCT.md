@@ -82,6 +82,19 @@ Everyone in Peacock is a **member**. Some members also wear extra hats:
 - **Vendors are not people in the club** — they're outside places money goes (see §10). They
   never log in.
 
+### A member is a *person*; each stint is a *membership* (the bank model)
+
+A person can **leave and rejoin** over the years. To keep each period's money clean, Peacock works
+like a bank: **the person is one stable customer (one login, one phone), but each time in the club is
+a separate "membership" — like an account that opens when they join and closes when they leave.**
+
+- **Member = the person/customer** — never duplicated; one login, one identity.
+- **Membership = one stint/"account"** — opens on join, **closes on leave (settled)**, and a **new
+  membership opens on rejoin**. Each membership has its **own** deposits, catch-ups, penalties, loans
+  and profit, so old stints never get mixed into the new one.
+- Their **member page shows the current membership**; closed ones appear as **previous memberships
+  (history)**, linked to the same person. (See §12.)
+
 ```mermaid
 flowchart TD
   P["Person in the club = MEMBER"] --> R1["can also be an ADMIN<br/>(enters/edits data)"]
@@ -118,6 +131,8 @@ flowchart LR
 
 | Term | Plain meaning |
 |------|---------------|
+| **Member (person)** | A person in the club — one stable identity/login, never duplicated. |
+| **Membership** | One stint in the club ("account"): opens on join, closes on leave, a new one opens on rejoin. Holds that period's deposits, charges, loans and profit. |
 | **Deposit** | The monthly money each member must pay into the club. |
 | **Treasurer / treasury** | A member holding club cash / the pot of cash they hold. |
 | **Loan** | Money the club lends to a member, with interest. |
@@ -221,30 +236,37 @@ flowchart LR
 ## 7. Joining & catch-up
 
 The club has been running for years and has built up value. So when **a new member joins late**,
-or an existing member **fell behind**, they must pay a **catch-up** so that **everyone holds equal
-value**. (This used to be called "offset.")
+or a member **rejoins**, they must catch up so that **everyone holds equal value**. (This used to be
+called "offset.")
 
-There are two kinds of catch-up:
+### Catch-up is a *charge the member owes*, paid down over time
 
-Catch-up is the **equalisation payment for joining late** (or coming back): the newcomer pays the
-**deposits they missed** (from the club's start up to today) **plus their share of the profit** the
-club has already built up — so they start on **equal footing** with everyone else.
+A catch-up is **not a single payment** — it's a **charge** (an amount the member **owes**) that they
+**pay down later in any number of instalments**. A member can have **several catch-up charges over
+time** (e.g. one each time they rejoin); they all **accumulate** and are shown on the member's page.
 
-**How the amount is decided:** Peacock **calculates a suggested catch-up** =
-(all the monthly deposits from the club's start up to today) **+** (the profit-per-member built up
-so far). The **admin can edit** that figure up or down before saving — the math is done for them,
-but the final number is the admin's call.
+Each catch-up charge has:
+- an **amount** — **auto-suggested but admin-editable** (suggestion = *average per-member profit −
+  this member's profit*, i.e. the profit gap that brings them to equal value),
+- a **reason** — *First-time join · Rejoin · Profit-gap top-up · Mid-term equalisation · Other*,
+- a **date**.
 
-> **Note — "delayed payment" is a *penalty*, not a catch-up.** Catching up for being *late on
-> monthly deposits* is handled as a **manual penalty** the admin enters (see §13), separate from the
-> join-time catch-up described here.
+Catch-up money **counts as the member's own** (it builds their capital/value in the club). It is
+**auto-added** at first join and at each rejoin (see §12), and the admin can edit the amount.
 
 ```mermaid
 flowchart TD
-  J["New / returning member"] --> CALC["Peacock suggests catch-up:<br/>missed deposits + profit-per-member"]
-  CALC --> EDIT["Admin reviews & can adjust the amount"]
-  EDIT --> PAY["Member pays catch-up"]
-  PAY --> EQ["Member now holds equal value ✓"]
+  J["New / returning member"] --> RAISE["A catch-up CHARGE is raised<br/>(auto-suggested amount, reason, date — admin can edit)"]
+  RAISE --> OWE["Added to what the member owes (their dues)"]
+  OWE --> PAY["Member pays it down over any number of instalments"]
+  PAY --> EQ["Once paid, it counts as their own value → equal footing ✓"]
+  J --> AGAIN["Leaves & rejoins later → another catch-up charge stacks on"]
+```
+
+> **Note — "delayed payment" is a *penalty*, not a catch-up** (§13). Both catch-ups and penalties
+> are *charges the member owes* and work the same way (multiple over time, each with a reason, paid
+> down in instalments) — but catch-up builds the member's **own value**, while a penalty is **club
+> income**.
 ```
 
 ---
@@ -427,9 +449,12 @@ a flat equal slice. If a member is behind on deposits, they earn proportionally 
 
 ---
 
-## 12. Leaving, freezing & rejoining
+## 12. Leaving & rejoining (closing and opening memberships)
 
-### Leaving (settlement)
+Peacock follows the **bank model** (§2): leaving **closes** the person's current **membership**;
+rejoining **opens a new membership**. The person stays one customer; old memberships become history.
+
+### Leaving (settle & close the membership)
 
 A member leaves by **settling** — taking their money out of the club. **There is no partial exit
 and no "take just the profit" option** — it's all or nothing.
@@ -446,28 +471,45 @@ and the member is **paid out in cash at that time** (from a treasurer) — inclu
 share. After settling:
 
 - the member's **profit becomes zero**,
-- their **account is frozen** and marked **inactive**,
-- **all their history is kept** — nothing is deleted.
+- their **current membership is closed** (marked Closed, with the leave date and settled amount),
+- **all their history is kept** — nothing is deleted; it becomes a **previous membership**.
 
 ```mermaid
 flowchart LR
-  ACT["Active member"] -->|decides to leave| CALC["Peacock computes settlement guide:<br/>capital + profit share − loan − unpaid interest"]
-  CALC --> ENTER["Admin enters final amount paid out"]
-  ENTER --> FROZEN["Profit → 0 · account frozen · INACTIVE<br/>(history kept)"]
+  ACT["Membership #N · Active"] -->|decides to leave| CALC["Peacock computes settlement guide:<br/>capital + profit share − loan − unpaid interest"]
+  CALC --> ENTER["Admin enters final cash paid out"]
+  ENTER --> CLOSED["Membership #N → CLOSED<br/>(history kept under the person)"]
 ```
 
-### Rejoining (reactivation)
+### Rejoining (open a new membership)
 
-A frozen member can come back. To rejoin, they **repay** to re-enter (often in **one or two
-installments**) **plus** a **catch-up** (the profit-per-member they missed and any deposits owed),
-which restores them to **equal value** with everyone else. The admin reactivates the account.
+A person whose membership is closed can come back — this **opens a fresh membership (#N+1)**. The
+**Rejoin** flow shows what it takes to return to **equal value**:
+
+- **Back deposits** — the monthly deposits they'd owe since the club's start.
+- **Catch-up** — **auto-added** (suggested from per-member profit), and **admin-editable**. It's
+  posted to the member's ledger as a **charge tagged "Rejoin"** that they pay down (counts as their
+  own value).
+- **Total to rejoin** = back deposits + catch-up.
+
+On confirm, a **new membership opens (Active)** with the catch-up charge on it; the member then
+**pays the dues down over time** (any number of instalments). The old membership stays in history.
 
 ```mermaid
 flowchart LR
-  FROZEN["Inactive member"] -->|wants back| REPAY["Repay re-entry amount<br/>(1–2 installments)"]
-  REPAY --> CU["Pay catch-up<br/>(profit-per-member + owed deposits)"]
-  CU --> ACTIVE["Active again, equal value ✓"]
+  CLOSED["Person · last membership Closed"] -->|Rejoin| FORM["Show: back deposits + auto-added catch-up (editable) = total to rejoin"]
+  FORM --> CONFIRM["Confirm → open Membership #N+1 (Active) with catch-up charge"]
+  CONFIRM --> PAYDOWN["Member pays the dues down over time"]
+  PAYDOWN --> EQ["Back to equal value ✓"]
 ```
+
+### The member page (one person, current + history)
+
+The member detail page is the **person**. It shows an **identity header** ("Customer since …"), a
+**membership bar** ("Membership #N · Active since …", with a switcher if there's more than one), the
+**current membership's** full breakdown, and — only if they've rejoined — a **"Previous memberships"**
+section listing each closed stint (dates, settled amount) as **read-only history**. For a member who
+never left, it looks exactly as before (no history section).
 
 ---
 
@@ -478,7 +520,21 @@ There are two kinds of penalty — one automatic (configurable, off today), one 
 | Penalty | How it works | Today |
 |---------|--------------|-------|
 | **Overdue loan penalty** | An **automatic** extra interest rate on loans kept past the **5-month** term. A config setting; when switched on it applies **immediately to all loans**. | **0** — overdue loans are only **flagged**. |
-| **Delayed-payment penalty** | A **manual** charge the admin records when a member has been **significantly late on monthly deposits**. The admin decides the amount and enters it as its own entry; the money the member pays is **club income** that is **shared as profit among all members** (including the member who paid it). | Applied **case-by-case** by the admin (no automatic charge). |
+| **Penalty charge** | A **manual charge** the admin raises against a member. Like catch-up, it's an amount the member **owes** and **pays down over time in any number of instalments**, and a member can have **several** over time (e.g. ₹100 today, another ₹100 next week — they accumulate). | Applied **case-by-case** by the admin. |
+
+### Penalty charges (manual, multiple, paid down)
+
+Each penalty charge has:
+- an **amount** — **auto-suggested but admin-editable** (suggestion = *from this member's pending
+  dues*),
+- a **reason** — *Delayed payment · Loan repayment delay · Holding club money too long · Missed
+  deposit · Other*,
+- a **date**.
+
+Unlike catch-up (which builds the member's own value), penalty money the member pays down is **club
+income — shared as profit among all members** (including the member who paid it). All of a member's
+penalty charges are shown **cumulatively** on their page (each with reason / amount / date / paid /
+remaining). Overdue loans and late deposits are still **flagged** regardless of any penalty.
 
 So **overdue loans** and **late deposits** are always **flagged** with clear indicators (red
 badges) regardless of penalties. The **overdue-loan penalty** is an automatic switch (off today),
@@ -604,21 +660,36 @@ flowchart TD
 
 ---
 
-## 15. Transparency & permissions
+## 15. Transparency, submitting entries & approvals
 
 Transparency is a core value. **Every member can see everything** about the club's finances — all
-members, all loans, all vendors, all transactions, and their own statement — **read-only**.
+members, all loans, all vendors, all transactions, and their own statement.
+
+### Members submit, admins approve
+
+Recording money uses a simple **submit → approve** flow:
+
+- **A member submits an entry** (e.g. "I paid my ₹2,000 deposit"). It becomes a **pending request** —
+  it does **not** change the club's books yet.
+- **An admin approves (or rejects)** it. Only on **approval** does it actually post to the records.
+- **An admin's own entry** posts directly (no self-approval).
+
+Pending requests reach admins as **actionable notifications** (Approve / Reject) — there's **no
+separate "approvals" screen** (§18).
+
+There is **no complicated permissions matrix** — just **one setting**: *who may submit entries —
+**admins only**, or **all members** (with admin approval).* Everything else (approving, managing
+members/vendors/loans, changing settings, closing a quarter) is **admin-only**.
 
 | Action | Admin | Member |
 |--------|:-----:|:------:|
-| See the dashboard, members, loans, vendors, transactions, own statement | ✓ | ✓ (view) |
-| Enter / edit / correct any money event | ✓ | — |
-| Manage members, vendors, loans, chits | ✓ | — |
-| Change admin settings (rates, limits, stages, penalties) | ✓ | — |
+| See everything (dashboard, members, loans, vendors, transactions, own statement) | ✓ | ✓ (view) |
+| **Submit** an entry (pending until approved) | ✓ (posts directly) | ✓ *if the club allows member submissions* |
+| **Approve / reject** submitted entries | ✓ | — |
+| Manage members/vendors/loans/chits; change settings; close a quarter | ✓ | — |
 | Hold club cash (be a treasurer) | ✓ (any member) | ✓ (any member) |
 
-Vendors are not users and never log in. Members can optionally have a login to view; admins always
-do.
+Vendors are not users and never log in. Members can optionally have a login to view; admins always do.
 
 ---
 
@@ -626,13 +697,31 @@ do.
 
 Peacock is built to be **auditable**: nothing is ever silently deleted.
 
-- A mistake is fixed with a **reversing correction** that cancels the original, and (for an edit) a
-  new correct entry is added. The original stays visible for the record.
-- A correction is **dated to the original entry's month** so past months and charts stay accurate,
-  while separately recording **when** the correction was made (the audit trail).
-- Every change is **logged** (who did what, when).
-- Because corrections are real entries, **all the numbers and history update instantly and stay
+- You fix a mistake by **editing or deleting the specific transaction** in the ledger. Behind the
+  scenes the app **reverses** the original (and, for an edit, posts the corrected one) — so the
+  original always stays on record. There's **no separate "correction" entry to choose**; edit/delete
+  *is* the correction.
+- The reversal is **dated to the original entry's month** so past months and charts stay accurate,
+  while separately recording **when** the change was made (the audit trail).
+- Because these are real entries, **all the numbers and history update instantly and stay
   consistent** — including past months and charts.
+
+### Audit log
+
+Every action is recorded in an **audit log** — *who did what, and when* ("Approved loan disbursal to
+Rahul", "Changed default loan interest to 2%/month", "System posted monthly interest to 41 accounts",
+"Priya updated her phone number"). Admins can browse it; it's the club's tamper-evident history.
+
+### Closing a quarter
+
+At the end of each quarter (the club's financial quarters), an admin can **close the quarter**. This:
+
+- **Locks** that quarter's entries so no one can edit the past by accident, and
+- **Takes a snapshot** of the club's figures at that point (a clean quarter-end statement).
+
+It **doesn't move any money** — the club's profit simply **keeps accumulating** (there's no payout);
+closing is **housekeeping**: a lock plus a snapshot. It **can't be undone**, so the app warns before
+confirming.
 
 ---
 
@@ -651,8 +740,8 @@ the way the entry screen should present them.
 | What happened | Direction | What it does |
 |---------------|:---------:|--------------|
 | **Member paid deposit** | IN | A member pays their monthly savings to a treasurer. |
-| **Catch-up payment** | IN | A new/returning member pays **join-time equalisation** = missed deposits (from club start) + their share of past profit. |
-| **Delayed-payment penalty** | IN | A **manual** penalty the admin charges a member for being significantly late on deposits; the amount is club income. |
+| **Pay catch-up** | IN | A member pays down a **catch-up charge** they owe (builds their own value → counts as their capital). |
+| **Pay penalty** | IN | A member pays down a **penalty charge** they owe (becomes club income, shared as profit). |
 | **Give a loan** | OUT | The club hands a loan to a member. Can be done **in parts (tranches)** from different treasurers — all under one loan. |
 | **Record repayment** | IN | A member pays back loan principal (and optionally interest in the same entry). |
 | **Collect interest** | IN | A member pays interest earned on their loan. |
@@ -674,51 +763,69 @@ the way the entry screen should present them.
 | **Member leaves (settle up)** | OUT | A member **fully exits** — capital + their profit share − any loan owed. This is the **only** kind of withdrawal (no partial, no profit-only). Account is then frozen/inactive, history kept. |
 | **Member rejoins** | IN | A returning member pays back in (one or two installments) + catch-up, and is reactivated to equal value. |
 
-### Admin corrections (kept honest, fully logged)
+### Raising charges (admin, on the member page — *not* cash entries)
 
-| What happened | Direction | What it does |
-|---------------|:---------:|--------------|
-| **Adjustment** | IN/OUT | A manual correction to a member's balance (rare; admin only). |
-| **Vendor write-off** | neutral | Closing a vendor that returned less than invested — records the loss. |
-| **Correction / reversal** | — | Cancels a previous entry (for an edit or delete); the original stays on record. |
+These don't move cash; they record an amount the member **owes** (paid down later via "Pay catch-up"
+/ "Pay penalty"). They can be raised **multiple times** and each carries a **reason**.
 
-> **What changed vs the earlier mockup (8 intents):** the mockup was missing **Catch-up**,
-> **Delayed-payment penalty**, **Chit installment**, **Chit payout**, and the **Leave/Rejoin**
-> lifecycle entries; and "Withdrawal — member takes funds out" is renamed **"Member leaves (settle
-> up)"** because withdrawal is always a full exit in this club. Adjustment / write-off / reversal are
-> admin corrections (group them under an "advanced/corrections" area, not the main grid).
+| What happened | What it does |
+|---------------|--------------|
+| **Add catch-up charge** | Raise an amount the member owes to reach equal value (reason: first-time join · rejoin · profit-gap top-up · mid-term equalisation · other). Auto-suggested, editable. Auto-added on rejoin. |
+| **Add penalty charge** | Raise a penalty the member owes (reason: delayed payment · loan repayment delay · holding club money too long · missed deposit · other). Auto-suggested, editable. |
+
+### Fixing mistakes & losses
+
+There is **no manual "adjustment"** that nudges a number, and no separate "correction" entry to pick
+— those would be untraceable. Instead:
+
+| Situation | What you do |
+|-----------|-------------|
+| **One specific posted transaction was wrong** | **Edit** or **Delete** that transaction from the ledger (§16). The system reverses it behind the scenes and keeps full history — no separate "correction" action to choose. |
+| **Money placed with a vendor is truly gone** | **Vendor write-off** (admin) — records the real loss when a vendor returns less than invested / defaults. Reached from the vendor's close flow. |
+
+> Money a member *owes* is never a manual balance edit — it's a **catch-up or penalty charge** (above).
+> Money genuinely *lost* is a **vendor write-off**. A *mistyped entry* is fixed by **editing that
+> entry**. Together these remove any need for a free-form "adjustment."
+
+> **Catch-up & penalty are *charges* (dues), not single payments.** Raising a charge (above) records
+> what's owed (with a reason; multiple over time accumulate); **paying it down** is the cash entry
+> ("Pay catch-up" / "Pay penalty"), in any number of instalments. The member page shows the
+> **cumulative** charges and how much is paid vs remaining.
 
 ---
 
-## 18. Notifications
+## 18. Notifications (one inbox for everything)
 
-A **simple, in-app** notification system keeps people informed — deliberately lightweight (no email/
-push for now). Notifications are **stored** and **created the moment a relevant event happens** (no
-background jobs); members and admins see them in an in-app **notification centre** (bell), with an
-unread count.
+A **simple, in-app** notification centre (the **bell**, with an unread count) is the single place for
+everything that needs attention — deliberately lightweight (no email/push for now). It carries
+**three kinds** of item:
 
-**Members get notified about** things relevant to them, for example:
-- a **new member joined** the club,
-- their **deposit is recorded**, **loan disbursed/repaid**, **interest collected**, or **settlement**
-  done,
-- their **password was reset**.
+1. **Events** — things that happened: "Anita recorded a ₹5,000 deposit", "loan disbursed to Rahul",
+   "vendor return from Surya Traders", "member settled / rejoined", "password reset requested".
+   *(Stored the moment they happen — no background jobs.)*
+2. **Alerts** — proactive warnings computed from the club's current state: **a loan is overdue**, a
+   **large amount** was involved (over a set threshold), or **pending deposits / pending interest are
+   heavy**. *(Worked out live when you open the bell, against thresholds set in Settings.)*
+3. **Approvals** — a **pending entry** waiting on an admin, shown with **Approve / Reject** right
+   there. This **replaces a separate approvals screen** — approvals live in the notification list.
 
-**Admins get notified about** things needing attention or awareness, for example:
-- a **forgot-password request** (needs action),
-- **new entries** recorded (deposits, loans, vendor moves, etc.),
-- **member lifecycle** events (someone left / rejoined),
-- anything else worth an approval/awareness ping.
+**Members** mostly get events relevant to them (their deposit/loan/interest/settlement, a new joiner,
+their password reset). **Admins** additionally get **approvals** (pending entries, forgot-password
+requests) and **alerts** (overdue loans, big amounts, heavy pending).
 
-Each notification has a **recipient, a short message, a link** to the relevant item, a **read/unread**
-state, and a time. Keep it simple: one notifications store, a small set of event types, marked read
-when seen.
+Each item has a **short message, a link** to the thing, a **read/unread** state, and a time. Approval
+items also carry **Approve/Reject**. "Mark all read" clears the count.
 
 ```mermaid
 flowchart LR
-  EV["Something happens<br/>(entry saved, member joins, reset requested…)"] --> N["Create notification(s)<br/>for the right people"]
-  N --> BELL["Shown in the in-app bell<br/>(unread count)"]
-  BELL --> OPEN["Tap → go to the item; marked read"]
+  E["Event (entry saved, member joins…)"] --> BELL["Notification bell (unread count)"]
+  A["Approval (member submitted an entry)"] --> BELL
+  AL["Alert (overdue / over threshold) — computed live"] --> BELL
+  BELL --> OPEN["Open → read event · Approve/Reject · or jump to the item"]
 ```
+
+> **Thresholds** for alerts (what counts as a "large amount", heavy pending deposit / interest) are
+> set in **admin Settings**, so the club decides when it wants to be nudged.
 
 ---
 
