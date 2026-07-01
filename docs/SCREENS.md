@@ -187,12 +187,22 @@ treasurer.
 
 ## 11. Analytics
 
-**Purpose:** trends over time, straight from the records.
+**Purpose:** trend **any club metric over time**, straight from the records (a metric explorer).
 
-**Shows:** portfolio value, available cash, outstanding loans (as-of each month); deposits/month;
-interest/month; **member-vs-club-average**. Range selectors; export.
+**Shows:**
+- A **metric picker** — choose which figure to chart. Full catalogue:
+  Active Members · Club Age · Member Deposits · Catch-up (Member Adjustments) · Member Pending ·
+  Catch-up Pending (Adjustments Pending) · Total Loan Given · Total Interest Collected · Current
+  Loan Taken · Interest Pending · Vendor Investment · Vendor Profit · Current Profit · Profit
+  Withdrawals · Total Invested · Total Pending · Available Cash · Current Value · Total Portfolio
+  Value. *(Optionally: Penalty Income, Profit per Member.)*
+- A **time-range** control: **1M · 3M · 6M · 1Y · ALL** (spacing adapts: 1M daily, 3M/6M weekly,
+  1Y/ALL monthly).
+- The selected metric as a **line/area chart** with the current value + change over the range; a
+  compact **latest-value strip** for context.
 
-**Does:** switch series/range; export CSV/image. Historical edits reflect instantly.
+**Does:** switch metric + range; **export** (CSV / image). Historical edits reflect **instantly**
+(every point is computed from the ledger, not a snapshot).
 
 **Access:** all (view).
 

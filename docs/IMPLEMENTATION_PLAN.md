@@ -1223,20 +1223,60 @@ availableProfit         = realizedProfit − profitWithdrawals                  
 
 ---
 
-## 19. Analytics & graphs
+## 19. Analytics — metric explorer
 
-Both kinds straight from the ledger; historical edits reflect instantly.
+The analytics page is a **metric picker × time range**: choose **any** club figure and trend it. All
+figures derive from the ledger, so each is computable **as of any past point** — historical edits
+reflect instantly (no snapshots).
+
+### Time range → point spacing
+
+`1M` daily · `3M`/`6M` weekly · `1Y`/`ALL` monthly. Each series returns `[{ t, value }]` at that
+spacing over the window.
+
+### Every metric is one of three shapes (all computable at a past `asOf`)
 
 ```
-balanceAsOf(account, monthEnd) = Σ entry.amount WHERE account=a AND occurredAt <= monthEnd
-flow(type, month)              = Σ entry.amount WHERE type=t AND occurredAt IN month  GROUP BY month
-interestThroughMonth(M)        = Σ active loans interestToDate(loan, monthEndIST(M))
+# STOCK — balance as of a date:
+balanceAsOf(account, asOf) = Σ entry.amount WHERE account=a AND occurredAt <= asOf
+# FLOW — cumulative (or per-bucket) to a date:
+flowToDate(type, asOf)     = Σ entry.amount WHERE type=t AND occurredAt <= asOf
+flowInBucket(type, [a,b])  = Σ entry.amount WHERE type=t AND occurredAt IN [a,b]
+# DERIVED — recompute the §17 formula using as-of stocks/flows + interestToDate(loan, asOf)
 ```
 
-Series (decision 16): portfolio value · available cash (and per-treasurer) · outstanding loans ·
-deposits/month · interest/month · member-vs-club-average. **Optional `MonthlyRollup`** cache,
-rebuilt deterministically from the ledger and invalidated for the earliest dirty month, added only
-if profiling demands (owner OK'd background caching for non-time-sensitive aggregates).
+### Metric catalogue (label → shape → source; §17 formulas evaluated `asOf`)
+
+| Metric (label) | Shape | Source |
+|----------------|-------|--------|
+| Active Members | stock | COUNT active memberships as-of |
+| Club Age | derived | months since `startedAt` |
+| Member Deposits | flow | Σ `PERIODIC_DEPOSIT` to date |
+| Catch-up *(Member Adjustments)* | flow | Σ `CATCHUP` pay-downs to date |
+| Member Pending | derived | expected − periodic, as-of |
+| Catch-up Pending *(Adjustments Pending)* | derived | `catchUpOwed` as-of (charges − pay-downs) |
+| Total Loan Given | flow | Σ `LOAN_TAKEN` to date |
+| Total Interest Collected | flow | −`INTEREST_INCOME` to date |
+| Current Loan Taken | stock | Σ `LOAN_RECEIVABLE` as-of |
+| Interest Pending | derived | `expectedTotalLoanInterest(asOf) − collected(asOf)` |
+| Vendor Investment | stock | Σ `VENDOR_RECEIVABLE` as-of |
+| Vendor Profit | derived | vendor P&L as-of |
+| Current Profit | derived | §17.3 profit as-of |
+| Profit Withdrawals | flow | profit-withdrawn to date |
+| Total Invested | derived | loans + vendor holding as-of |
+| Total Pending | derived | member pending + interest balance as-of |
+| Available Cash | stock | Σ `TREASURY_CASH` as-of (per-treasurer available) |
+| Current Value | derived | cash + loans + vendor holding as-of |
+| Total Portfolio Value | derived | current value + interest balance + member pending as-of |
+| *(opt)* Penalty Income | flow | −`OTHER_INCOME` to date |
+| *(opt)* Profit per Member | derived | `profitPerMember(asOf)` |
+
+`getGraphSeries({ metric, range })` → `{ points: [{ t, valuePaise }], latest, changePct }`. Derived
+metrics that need past interest recompute `interestToDate(loan, asOf)` for loans active at each
+point — bounded (active loans only), fine to run live.
+
+**Optional `MonthlyRollup`** cache — rebuilt deterministically from the ledger, invalidated for the
+earliest dirty month — added only if the derived-as-of scans ever get slow at scale.
 
 ---
 
@@ -1539,7 +1579,8 @@ v1 fixtures are the source of truth for "correct."
 - [ ] Tag caching + `affectedTags` / config cascade wired in.
 
 ### P3 — Analytics & polish
-- [ ] `getGraphSeries`; the 6 series; exports; empty/loading; mobile cards.
+- [ ] Analytics **metric explorer**: `getGraphSeries({metric, range})`, full metric catalogue (§19),
+      ranges 1M/3M/6M/1Y/ALL with adaptive spacing; exports; empty/loading; mobile cards.
 
 ### P4 — Migration
 - [ ] `migrate-from-v1.ts` (idempotent) incl. treasury assignment + reconciliation → green; cut over.
