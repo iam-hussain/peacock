@@ -660,21 +660,36 @@ flowchart TD
 
 ---
 
-## 15. Transparency & permissions
+## 15. Transparency, submitting entries & approvals
 
 Transparency is a core value. **Every member can see everything** about the club's finances — all
-members, all loans, all vendors, all transactions, and their own statement — **read-only**.
+members, all loans, all vendors, all transactions, and their own statement.
+
+### Members submit, admins approve
+
+Recording money uses a simple **submit → approve** flow:
+
+- **A member submits an entry** (e.g. "I paid my ₹2,000 deposit"). It becomes a **pending request** —
+  it does **not** change the club's books yet.
+- **An admin approves (or rejects)** it. Only on **approval** does it actually post to the records.
+- **An admin's own entry** posts directly (no self-approval).
+
+Pending requests reach admins as **actionable notifications** (Approve / Reject) — there's **no
+separate "approvals" screen** (§18).
+
+There is **no complicated permissions matrix** — just **one setting**: *who may submit entries —
+**admins only**, or **all members** (with admin approval).* Everything else (approving, managing
+members/vendors/loans, changing settings, closing a quarter) is **admin-only**.
 
 | Action | Admin | Member |
 |--------|:-----:|:------:|
-| See the dashboard, members, loans, vendors, transactions, own statement | ✓ | ✓ (view) |
-| Enter / edit / correct any money event | ✓ | — |
-| Manage members, vendors, loans, chits | ✓ | — |
-| Change admin settings (rates, limits, stages, penalties) | ✓ | — |
+| See everything (dashboard, members, loans, vendors, transactions, own statement) | ✓ | ✓ (view) |
+| **Submit** an entry (pending until approved) | ✓ (posts directly) | ✓ *if the club allows member submissions* |
+| **Approve / reject** submitted entries | ✓ | — |
+| Manage members/vendors/loans/chits; change settings; close a quarter | ✓ | — |
 | Hold club cash (be a treasurer) | ✓ (any member) | ✓ (any member) |
 
-Vendors are not users and never log in. Members can optionally have a login to view; admins always
-do.
+Vendors are not users and never log in. Members can optionally have a login to view; admins always do.
 
 ---
 
@@ -688,9 +703,25 @@ Peacock is built to be **auditable**: nothing is ever silently deleted.
   *is* the correction.
 - The reversal is **dated to the original entry's month** so past months and charts stay accurate,
   while separately recording **when** the change was made (the audit trail).
-- Every change is **logged** (who did what, when).
 - Because these are real entries, **all the numbers and history update instantly and stay
   consistent** — including past months and charts.
+
+### Audit log
+
+Every action is recorded in an **audit log** — *who did what, and when* ("Approved loan disbursal to
+Rahul", "Changed default loan interest to 2%/month", "System posted monthly interest to 41 accounts",
+"Priya updated her phone number"). Admins can browse it; it's the club's tamper-evident history.
+
+### Closing a quarter
+
+At the end of each quarter (the club's financial quarters), an admin can **close the quarter**. This:
+
+- **Locks** that quarter's entries so no one can edit the past by accident, and
+- **Takes a snapshot** of the club's figures at that point (a clean quarter-end statement).
+
+It **doesn't move any money** — the club's profit simply **keeps accumulating** (there's no payout);
+closing is **housekeeping**: a lock plus a snapshot. It **can't be undone**, so the app warns before
+confirming.
 
 ---
 
@@ -763,35 +794,38 @@ There is **no manual "adjustment"** that nudges a number, and no separate "corre
 
 ---
 
-## 18. Notifications
+## 18. Notifications (one inbox for everything)
 
-A **simple, in-app** notification system keeps people informed — deliberately lightweight (no email/
-push for now). Notifications are **stored** and **created the moment a relevant event happens** (no
-background jobs); members and admins see them in an in-app **notification centre** (bell), with an
-unread count.
+A **simple, in-app** notification centre (the **bell**, with an unread count) is the single place for
+everything that needs attention — deliberately lightweight (no email/push for now). It carries
+**three kinds** of item:
 
-**Members get notified about** things relevant to them, for example:
-- a **new member joined** the club,
-- their **deposit is recorded**, **loan disbursed/repaid**, **interest collected**, or **settlement**
-  done,
-- their **password was reset**.
+1. **Events** — things that happened: "Anita recorded a ₹5,000 deposit", "loan disbursed to Rahul",
+   "vendor return from Surya Traders", "member settled / rejoined", "password reset requested".
+   *(Stored the moment they happen — no background jobs.)*
+2. **Alerts** — proactive warnings computed from the club's current state: **a loan is overdue**, a
+   **large amount** was involved (over a set threshold), or **pending deposits / pending interest are
+   heavy**. *(Worked out live when you open the bell, against thresholds set in Settings.)*
+3. **Approvals** — a **pending entry** waiting on an admin, shown with **Approve / Reject** right
+   there. This **replaces a separate approvals screen** — approvals live in the notification list.
 
-**Admins get notified about** things needing attention or awareness, for example:
-- a **forgot-password request** (needs action),
-- **new entries** recorded (deposits, loans, vendor moves, etc.),
-- **member lifecycle** events (someone left / rejoined),
-- anything else worth an approval/awareness ping.
+**Members** mostly get events relevant to them (their deposit/loan/interest/settlement, a new joiner,
+their password reset). **Admins** additionally get **approvals** (pending entries, forgot-password
+requests) and **alerts** (overdue loans, big amounts, heavy pending).
 
-Each notification has a **recipient, a short message, a link** to the relevant item, a **read/unread**
-state, and a time. Keep it simple: one notifications store, a small set of event types, marked read
-when seen.
+Each item has a **short message, a link** to the thing, a **read/unread** state, and a time. Approval
+items also carry **Approve/Reject**. "Mark all read" clears the count.
 
 ```mermaid
 flowchart LR
-  EV["Something happens<br/>(entry saved, member joins, reset requested…)"] --> N["Create notification(s)<br/>for the right people"]
-  N --> BELL["Shown in the in-app bell<br/>(unread count)"]
-  BELL --> OPEN["Tap → go to the item; marked read"]
+  E["Event (entry saved, member joins…)"] --> BELL["Notification bell (unread count)"]
+  A["Approval (member submitted an entry)"] --> BELL
+  AL["Alert (overdue / over threshold) — computed live"] --> BELL
+  BELL --> OPEN["Open → read event · Approve/Reject · or jump to the item"]
 ```
+
+> **Thresholds** for alerts (what counts as a "large amount", heavy pending deposit / interest) are
+> set in **admin Settings**, so the club decides when it wants to be nudged.
 
 ---
 

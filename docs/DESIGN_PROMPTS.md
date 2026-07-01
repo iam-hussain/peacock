@@ -206,24 +206,27 @@ Profit is shared **proportionally to how fully a member paid** their deposits.
 
 ---
 
-## 6. ⚠ Product decisions for YOU (not the designer) — the prototype invented these
+## 6. Governance features — decisions made (now in the spec)
 
-The designer added features that **contradict or extend** the locked spec. Decide whether to adopt
-(I'll update the spec) or drop (designer removes them):
+The prototype's admin/governance screens are **resolved**:
 
-1. **Approval workflow.** The prototype says *"This entry goes to an admin for approval before it's
-   posted,"* with an **Approvals** inbox and a **Permissions** screen (*"who can post entries:
-   Treasurer / All members"*). Our spec is **admin-only writes; members are read-only; no approval
-   step.** → **Decide:** do you want members/treasurers to *submit* entries that an admin approves?
-   If yes, it's a real new capability (and a permissions model) we should spec. If no, remove
-   Approvals + Permissions + the "needs approval" note.
-2. **Close financial year / reinvest profit.** The prototype has a **"Close financial year"** action
-   that **locks the year and "reinvests net profit into the club."** Our spec keeps profit
-   **accumulating** (no dividend) and the **period-lock as an off-by-default seam.** A year-close
-   that locks + rolls profit forward is *compatible* with "accumulate," but it's not in scope yet.
-   → **Decide:** include year-close now, or later?
-3. **Granular permissions** (post entries / approve loans / manage vendors / export). → tied to (1);
-   only needed if you adopt the approval/permissions model. Otherwise roles stay **Admin / Member**.
+1. **Approval workflow — ADOPTED.** Members **submit** entries; an admin **approves/rejects**; only
+   approved entries post. An admin's own entry posts directly.
+   > **Prompt:** in the entry drawer, a **member's** save creates a **pending** entry ("goes to an
+   > admin for approval"); an **admin's** save posts directly. See approvals in notifications below.
+2. **Approvals → merged into Notifications.** **Remove the standalone Approvals screen.** Pending
+   entries appear as **actionable notification items** (Approve / Reject inline).
+   > **Prompt:** the notification list carries three kinds — **events**, **alerts** (overdue, large
+   > amount, heavy pending — computed live vs thresholds), and **approvals** (Approve/Reject inline).
+   > Keep the bell + unread count + "Mark all read".
+3. **Permissions matrix — REMOVED.** Drop the per-capability Permissions screen entirely.
+   > **Prompt:** replace it with a **single Settings toggle**: *"Who can submit entries — Admins only
+   > / All members."* Everything else is admin-only.
+4. **Close financial year → "Close quarter".** Not annual — **quarterly**. It **locks the quarter +
+   snapshots** figures (no money moves; profit keeps accumulating). Keep the "can't be undone" warning.
+   > **Prompt:** rename/rework the modal to **Close quarter** (the club's financial quarter), showing
+   > the period, members, and the snapshot; it's housekeeping (lock + snapshot), not a payout.
+5. **Audit log — keep as-is** (who/what/when). It's already in the spec.
 
 ---
 
@@ -232,7 +235,10 @@ The designer added features that **contradict or extend** the locked spec. Decid
 - [ ] Chit fund: type, setup, detail (installments/payout/obligation/profit), 2 intents (1.1)
 - [ ] Bank model: member page = person (identity + membership bar + current stint + **previous memberships** history); leave closes the membership, rejoin opens a new one (1.2)
 - [ ] Catch-up & penalty as **charges (dues)**: raise (member page, reason + suggested/editable) + pay-down (remaining/amount/treasurer) + cumulative display; catch-up→value, penalty→income (1.3)
-- [ ] Notification bell + centre (1.4)
+- [ ] Notification bell + centre carrying **events · alerts · approvals** (approve/reject inline) (1.4, 6.2)
+- [ ] Approval flow: member save → pending; admin approves/rejects (6.1). **Remove Approvals screen.**
+- [ ] **Remove Permissions screen** → single "who can submit entries" toggle in Settings (6.3)
+- [ ] **Close financial year → Close quarter** (lock + snapshot, quarterly) (6.4)
 - [ ] Loan tranches in Give-a-loan + loan detail (1.5)
 - [ ] Entry drawer: full grouped intent set; rename Withdrawal → "Member leaves (settle up)" (2)
 - [ ] Add-member: phone required+unique, joined required, username optional/not-login (3.1)
@@ -240,7 +246,6 @@ The designer added features that **contradict or extend** the locked spec. Decid
 - [ ] Settings: full club config (stages, rate schedule, limit, term, cooldown, penalty, dividend) (3.3, 3.4)
 - [ ] Dashboard: Profit per member (4.1); member: full vs actual profit share (4.2)
 - [ ] Universal empty/loading/error + theme-token-only styling (5)
-- [ ] **Owner to decide:** approvals/permissions (6.1), year-close (6.2)
 
 *Cross-references: `PRODUCT.md` (behavior), `FORMS_AND_FIELDS.md` (fields), `SCREENS.md` (per-screen
 expectations).*

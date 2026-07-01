@@ -232,8 +232,11 @@ PG gives that natively. The analytics are **grouped aggregates** (`GROUP BY mont
 13. **Roles = `ADMIN` / `MEMBER`** only; **treasurer is a flag**, not a role. (`SUPER_ADMIN`
     optional later if a "manages admins" tier is wanted.)
 14. **Member visibility:** full read transparency, no write.
-15. **Edit/delete:** admin only, via reversal (audited); period-lock seam built, off by default.
+15. **Edit/delete:** admin only, via reversal (audited); refused for dates in a **closed quarter**.
 16. **Member ↔ User:** separate entities, optional `Member.userId` link.
+17. **Approval workflow:** members **submit**, admins **approve** (one config toggle for who may
+    submit); pending entries live as **approval notifications**; no granular permissions matrix.
+18. **Quarterly close:** an admin can **close a quarter** (lock + snapshot); profit still accumulates.
 
 ### 4.3 Deposit stages (locked from owner data)
 
@@ -552,23 +555,58 @@ model ClubConfig {
   loanCooldownMonths Int    @default(1)
   overduePenaltyBps  Int    @default(0)  // AUTO extra monthly rate on the overdue portion (G1); CURRENT config — applies instantly to ALL loans
   dividendEnabled  Boolean  @default(false) // periodic member dividend seam (G2); off for now
+  entrySubmission  EntrySubmissionMode @default(ALL_MEMBERS) // who can SUBMIT entries (admin always approves)
+  fyStartMonth     Int      @default(4)     // fiscal year start month (Apr) — drives quarter boundaries
+  alertThresholds  Json     // { largeAmountPaise, pendingInterestPaise, pendingDepositPaise } for proactive alerts
   timezone         String   @default("Asia/Kolkata")
   updatedAt        DateTime @updatedAt
 }
 // NOTE: late/delayed-deposit penalty is NOT an auto config — it's a manual penalty CHARGE the admin
 // raises (Charge model), paid down via PENALTY transactions → OTHER_INCOME. See §16.2.
 
+model Submission {                              // a PROPOSED entry awaiting admin approval (approval workflow)
+  id          String   @id @default(cuid())
+  intent      String                            // the "What happened?" intent (maps to a TxnType or charge)
+  payload     Json                              // the entry's fields (member/amount/treasury/date/…)
+  status      SubmissionStatus @default(PENDING)
+  submittedById String                          // the member who submitted it
+  decidedById String?                           // admin who approved/rejected
+  decidedAt   DateTime?
+  postedTxnId String?  @unique                  // set to the Transaction created on approval
+  createdAt   DateTime @default(now())
+  @@index([status])
+}
+// Approve → run the matching service (postTransaction / addCharge / …) and link postedTxnId.
+// Reject → status=REJECTED, nothing posts. The ledger only ever contains APPROVED, posted entries.
+
+model PeriodClose {                             // a locked QUARTER with a profit snapshot (quarterly close)
+  id          String   @id @default(cuid())
+  periodStart DateTime                          // quarter start (IST)
+  periodEnd   DateTime                          // quarter end (IST)
+  snapshot    Json                              // the §17.3 figures frozen at close (for the year-/quarter-end statement)
+  closedById  String?
+  closedAt    DateTime @default(now())
+  @@unique([periodStart])
+}
+// Closing a quarter LOCKS its entries (edits/reversals/new postings dated in it are refused) and stores
+// a snapshot. Profit still ACCUMULATES (no distribution); the "reinvest" is just the snapshot + lock.
+
 model Notification {
   id          String   @id @default(cuid())
   recipientId String                            // member/user who should see it
-  type        String                            // e.g. "password.reset_requested", "entry.created", "member.joined"
+  kind        NotificationKind @default(EVENT)  // EVENT (something happened) or APPROVAL (actionable)
+  type        String                            // e.g. "password.reset_requested", "entry.created", "submission.pending"
   title       String
   body        String?
-  link        String?                           // deep-link to the related item
+  link        String?                           // deep-link to the related item / submission
+  submissionId String?                          // set for APPROVAL notifications (Approve/Reject inline)
   isRead      Boolean  @default(false)
   createdAt   DateTime @default(now())
   @@index([recipientId, isRead])
 }
+// Stored notifications are EVENT + APPROVAL. The THIRD kind — ALERTS (overdue loan, large-amount /
+// heavy-pending thresholds) — is DERIVED ON READ (no jobs) from current state + ClubConfig.alertThresholds,
+// and merged into the list when the bell opens. See §18 (getNotifications).
 
 model Charge {                                   // a due the member OWES (catch-up or penalty), paid down over time
   id           String   @id @default(cuid())
@@ -612,6 +650,9 @@ enum ChargeKind { CATCHUP PENALTY }
 //   penalty:  DELAYED_PAYMENT | LOAN_REPAYMENT_DELAY | HOLDING_TOO_LONG | MISSED_DEPOSIT | OTHER
 enum MemberRole { ADMIN MEMBER }
 enum MembershipStatus { ACTIVE CLOSED }        // a person is "active" iff they have an ACTIVE membership
+enum SubmissionStatus { PENDING APPROVED REJECTED }
+enum EntrySubmissionMode { ADMINS_ONLY ALL_MEMBERS }  // who may SUBMIT entries (admin always approves)
+enum NotificationKind { EVENT APPROVAL }
 enum VendorType { GENERAL CHIT }
 enum VendorStatus { ACTIVE INACTIVE CLOSED }
 enum ChitStatus { RUNNING PAID_OUT COMPLETED }
@@ -760,7 +801,7 @@ Beyond `Σ lines == 0`, the engine + services enforce (each unit-tested):
 | **Repay ≤ outstanding** | `LOAN_REPAY` principal leg ≤ `principalOutstanding`; closes the loan exactly at 0. |
 | **Vendor return split** | `P ≤ A` on `VENDOR_RETURN` / `CHIT_PAYOUT`; residual cleared via `VENDOR_WRITEOFF` on close. |
 | **Frozen member** | No new financial postings (except reactivation) against an `INACTIVE`/`LEFT` member. |
-| **Period lock** | If the target month is locked, refuse create/edit/reverse (seam off by default). |
+| **Closed quarter** | If the target date falls in a `PeriodClose` (a closed quarter), refuse create/edit/reverse. |
 | **Positive amounts** | Every line `amount != 0`; intent amounts `> 0`; rounding only via `lib/money`. |
 
 These run in the **pure pre-validate** step (§12) where possible, and inside the `$transaction`
@@ -773,7 +814,7 @@ so they're race-safe.
 
 ```
 reverseTransaction(targetId, actorId):
-  target = load txn + entries ; assert not already reversed ; assert period not locked
+  target = load txn + entries ; assert not already reversed ; assert target.occurredAt not in a closed quarter
   post REVERSAL with negated lines, reversesId=target.id, same loanId/vendorId
   # loan/chit side-effects undone in the REVERSAL branch
 
@@ -781,8 +822,8 @@ editTransaction(targetId, corrected, actorId):
   $transaction: reverseTransaction(targetId) ; postTransaction(corrected)   # atomic; O(lines)
 ```
 
-Delete = reverse (history kept, balances restored). Edit = reverse + re-post. Both refuse on a
-locked period. `‹TBD›` `REVERSAL.occurredAt`: date "now" (audit-accurate) vs target's date
+Delete = reverse (history kept, balances restored). Edit = reverse + re-post. Both refuse if the
+target date is in a **closed quarter** (`PeriodClose`). `‹TBD›` `REVERSAL.occurredAt`: date "now" (audit-accurate) vs target's date
 (keeps analytics buckets stable) — recommend dating the reversal to the target's `occurredAt` for
 edits so buckets stay correct.
 
@@ -1176,6 +1217,9 @@ availableProfit         = realizedProfit − profitWithdrawals                  
 | `getChit(id)` | chit schedule, paid, payout, obligation | `ChitFund` + entries |
 | `listTransactions(filter, page)` | paginated ledger | transactions + entries (indexed) |
 | `getGraphSeries(range)` | §19 series | grouped aggregates over entries |
+| `getNotifications(recipientId)` | merged EVENT + APPROVAL + derived ALERTS | Notification rows + Submission(PENDING) + on-read alert scan vs thresholds |
+| `getAuditLog(filter, page)` | who did what, when | `AuditLog` rows |
+| `getQuarterStatement(periodStart)` | a closed quarter's snapshot | `PeriodClose.snapshot` |
 
 ---
 
@@ -1196,21 +1240,31 @@ if profiling demands (owner OK'd background caching for non-time-sensitive aggre
 
 ---
 
-## 20. Auth, roles & permissions
+## 20. Auth, roles & the approval workflow
 
 - **Better Auth** owns User/Session/Account/Verification. `Member.userId` optionally links.
-- **Roles: `ADMIN` / `MEMBER`** on the member (write vs read). **Treasurer** is a separate
-  capability (`isTreasurer` + holding a `TREASURY_CASH` account), not a role.
-- `requireRole(min)` wraps protected actions/pages.
+- **Roles: `ADMIN` / `MEMBER`.** **Treasurer** is a separate capability (`isTreasurer` + holding a
+  `TREASURY_CASH` account), not a role. `requireRole(min)` wraps protected actions/pages.
+- **No granular permissions matrix** (dropped). There is exactly one knob:
+  `ClubConfig.entrySubmission` — **who may *submit* entries** (`ADMINS_ONLY` or `ALL_MEMBERS`).
+
+### The approval workflow
+
+Writes go through **submit → approve**:
 
 | Capability | ADMIN | MEMBER |
 |------------|:-----:|:------:|
-| View dashboard, members, loans, vendors, transactions, own statement | ✓ | ✓ (read) |
-| Create / edit / reverse transactions; manage members/vendors/loans/chits | ✓ | — |
+| View everything (dashboard, members, loans, vendors, transactions, own statement) | ✓ | ✓ (read) |
+| **Submit** an entry (creates a `PENDING` `Submission`) | ✓ (posts directly) | ✓ *if* `entrySubmission = ALL_MEMBERS` |
+| **Approve / reject** submissions | ✓ | — |
+| Manage members/vendors/loans/chits; edit config; close quarter | ✓ | — |
 | Hold club cash (be a treasurer) | ✓ (any member) | ✓ (any member) |
-| Edit club config (stages, rate schedule, loan limit); lock periods | ✓ | — |
 
-`‹TBD›` whether to add `SUPER_ADMIN` (manages admins) — not needed for v1 functionality.
+- A **member's submit** creates a `Submission (PENDING)` — **nothing hits the ledger yet**. Admins
+  see it as an **actionable notification** (Approve/Reject). On **approve**, the matching service runs
+  (`postTransaction` / `addCharge` / …) and the real transaction posts; on **reject**, nothing posts.
+- An **admin's own entry** posts directly (no self-approval needed).
+- So the ledger only ever contains **approved, balanced** entries. `‹TBD›` `SUPER_ADMIN` — not needed.
 
 ---
 
@@ -1251,9 +1305,13 @@ configTags() = ["config","dashboard","members","loans","vendors","analytics"]   
 `openMembership` (rejoin → new `Membership` seq+1 + auto catch-up charge); treasurer
 designate/transfer; vendor CRUD (`GENERAL`/`CHIT`); chit `payInstallment` / `recordPayout`;
 loan `addLoanDisbursement` (auto-creates the loan on first call) / `repayLoan` / `payInterest` /
-`closeLoan`; `updateClubConfig` (incl. `appendRateChange`, `setLoanLimit`, `editStages`);
-`lockPeriod`. **Auth/account:** `resetMemberPassword` (admin → default = phone), `requestPasswordReset`
-(member → notifies admins), `changeOwnPassword` (clears `mustChangePassword`), `updateOwnAvatar`.
+`closeLoan`; `updateClubConfig` (incl. `appendRateChange`, `setLoanLimit`, `editStages`,
+`setAlertThresholds`, `setEntrySubmissionMode`); **`closeQuarter(periodStart)`** (locks the quarter +
+snapshot). **Approval workflow:** `submitEntry(intent, payload, submittedById)` → `Submission(PENDING)`
++ notify admins; `approveSubmission(id, adminId)` → runs the matching service and posts;
+`rejectSubmission(id, adminId)`. **Auth/account:** `resetMemberPassword` (admin → default = phone),
+`requestPasswordReset` (member → notifies admins), `changeOwnPassword` (clears `mustChangePassword`),
+`updateOwnAvatar`.
 
 **Charges (dues):** `addCatchupCharge(memberId, {amount, reason, occurredAt})`,
 `addPenaltyCharge(memberId, {amount, reason, occurredAt})` — create a `Charge` row (no cash leg);
@@ -1265,9 +1323,12 @@ intent helpers `payCatchup` / `payPenalty` (cash ≤ outstanding, with a treasur
 `vendorInvest`, `vendorReturn`, `chitPayment`, `chitPayout`, `settleMembership` (closes the stint),
 `openMembership` (rejoin → new stint, auto-adds the rejoin catch-up charge).
 
-**Notifications:** `notify(recipientId, type, {title, body, link})` — called **inline** inside the
-relevant services (no jobs), e.g. on entry create, member join, leave/rejoin, and password-reset
-request/done. Queries: `listNotifications(recipientId)`, `markRead`.
+**Notifications:** `notify(recipientId, kind, type, {title, body, link, submissionId})` — called
+**inline** inside services (no jobs), e.g. on entry create, member join, leave/rejoin, password-reset,
+and **pending submission** (kind=`APPROVAL`, sent to admins). `getNotifications(recipientId)` returns
+the merged, time-ordered list of: stored **EVENT** rows + stored **APPROVAL** items (with inline
+Approve/Reject) + **derived ALERTS** computed on read from current state + `alertThresholds` (overdue
+loans, large amount, heavy pending deposit/interest). `markRead` / `markAllRead`.
 
 **Queries:** as §18. All inputs/outputs Zod-validated; money fields = string paise.
 

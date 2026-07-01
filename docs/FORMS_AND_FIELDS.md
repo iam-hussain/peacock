@@ -195,26 +195,30 @@ What an admin can do, in two buckets: **manage people** and **configure the club
 | Loan cooldown | Wait after closing before borrowing again. | 1 month. |
 | Overdue penalty | **Automatic** extra rate on overdue loans (applies instantly to all). | 0 (off). |
 | Dividend | Periodic profit payout toggle. | Off. |
+| **Who can submit entries** | `Admins only` or `All members` (members' entries need admin approval). | All members. |
+| **Alert thresholds** | Amounts that trigger proactive alerts: large amount, heavy pending deposit, heavy pending interest. | Set by club. |
+| **Fiscal year start** | Month the financial year starts — drives quarter boundaries for Close quarter. | April. |
 | Timezone | Month-boundary timezone. | Asia/Kolkata. |
 
 ### 4.3 Other admin actions
 
 - Create / edit vendors and chits (§2).
 - Raise **catch-up / penalty charges** and record their pay-downs (§3.1); record / edit / reverse any
-  transaction (§3).
-- Lock/unlock a period (seam built, off by default).
-- See the **notification centre** (incl. forgot-password requests and new entries).
+  transaction (§3); **approve/reject** members' pending submissions (from notifications).
+- **Close quarter** — locks the quarter's entries + stores a snapshot (can't be undone).
+- Browse the **audit log** (who did what, when).
 
-> Members (non-admin) can **view** everything but change nothing (see `PRODUCT.md` §15). Members can
-> change their **own avatar and password** in Profile.
+> Members (non-admin) **view** everything; if the club allows, they can **submit** entries (which need
+> admin approval). They can change their **own avatar and password** in Profile. There is **no
+> permissions matrix** — just the "who can submit entries" toggle above.
 
-### 4.4 Notifications (simple, in-app)
+### 4.4 Notifications & approvals (one in-app inbox)
 
-A lightweight notification store; rows are created inline when events happen (no background jobs).
-See `PRODUCT.md` §18 for the behavior. Each notification: **recipient · type · short message · link ·
-read/unread · time.** Members get relevant alerts (new joiner, their deposit/loan/interest/
-settlement, password reset); admins get approvals (forgot-password requests), new entries, and
-lifecycle events.
+See `PRODUCT.md` §18. The bell carries three kinds: **events** (stored when they happen), **alerts**
+(computed live vs the thresholds above — overdue loan, large amount, heavy pending), and **approvals**
+(a member's **pending submission** with Approve/Reject inline). Each item: **recipient · kind · short
+message · link · read/unread · time.** A **submission** holds the proposed entry (intent + fields +
+who submitted) until an admin approves (it posts) or rejects (it's discarded).
 
 ---
 

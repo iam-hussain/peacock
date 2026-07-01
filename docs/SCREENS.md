@@ -159,13 +159,16 @@ linked to their original.
 - **Entry drawer ("What happened?"):** plain-language intent grid (deposit, pay catch-up, pay
   penalty, give loan, repayment, collect interest, funds transfer, vendor invest/return, chit
   installment/payout, member leaves, member rejoins). **No "corrections" group.** Pick intent → step 2
-  collects the fields (`FORMS_AND_FIELDS.md`), **always including which treasury** → save. Optimistic
-  confirmation.
+  collects the fields (`FORMS_AND_FIELDS.md`), **always including which treasury** → save.
+  - **Admin** save → posts directly (optimistic confirmation).
+  - **Member** save (if allowed) → creates a **pending submission**; the drawer shows "goes to an
+    admin for approval." It appears in admins' notifications with **Approve / Reject** and only posts
+    on approval.
 - **Edit / Delete** any entry on its row → the app reverses the original (and re-posts the corrected
-  one on edit); **history kept**. This *is* the correction mechanism — there's no separate
-  adjustment/correction entry.
+  one on edit); **history kept**. This *is* the correction mechanism — no separate adjustment entry.
 
-**Access:** all (view); add/edit/reverse = admin.
+**Access:** view = all; **submit** = admins (direct) or members (pending, if the club allows);
+**approve / edit / reverse** = admin.
 
 ---
 
@@ -201,14 +204,17 @@ interest/month; **member-vs-club-average**. Range selectors; export.
 
 **Shows / does — configuration:** club name & start date; deposit **stages**; **interest-rate
 schedule** (add dated change for new loans); daily-interest-from date; loan limit; loan term;
-cooldown; **overdue penalty** (default 0, auto); **dividend** toggle (off); timezone. *(Late/delayed
-payment is handled as a manual penalty **charge** on the member page, not an auto setting.)*
+cooldown; **overdue penalty** (default 0, auto); **dividend** toggle (off); **who can submit entries**
+(admins only / all members); **alert thresholds** (large amount, heavy pending deposit/interest);
+timezone. *(Late/delayed payment is a manual penalty **charge** on the member page, not an auto
+setting. There is **no permissions matrix**.)*
 
-**Shows / does — people:** add/edit members; **reset any member's password**; view & action
-**forgot-password requests** (a queue, each with a "reset" action); grant/revoke admin; set/unset
-treasurer; deactivate/archive.
+**Shows / does — people:** add/edit members; **reset any member's password**; grant/revoke admin;
+set/unset treasurer; deactivate/archive. *(Forgot-password requests arrive as **notifications**, not a
+separate queue.)*
 
-**Does — other:** lock/unlock a period (seam, off by default).
+**Does — other:** **Audit log** (who did what, when — browsable); **Close quarter** (locks the quarter
++ snapshot, with an "can't be undone" warning). *(Backup/restore export too.)*
 
 **Access:** **admin only.**
 
@@ -227,18 +233,23 @@ Cannot grant themselves admin or edit club data.
 
 ---
 
-## 14. Notifications (in-app)
+## 14. Notifications — the one inbox (events · alerts · approvals)
 
-**Purpose:** keep members and admins informed of relevant events (see `PRODUCT.md` §18).
+**Purpose:** a single in-app centre for everything that needs attention (see `PRODUCT.md` §18). **This
+replaces a separate Approvals screen and the Permissions screen.**
 
-**Shows:** a **bell with an unread count** (global, in the app shell) and a **notification list** —
-each item: short message, time, read/unread, and a link to the related item.
+**Shows:** a **bell with an unread count** (app shell) and a **list** carrying three kinds:
+- **Events** — "recorded a ₹5,000 deposit", "loan disbursed", "vendor return", "member settled/
+  rejoined", "password reset requested".
+- **Alerts** (computed live) — "loan overdue (6 months)", "large amount", "heavy pending deposit/
+  interest" — against the thresholds in Settings.
+- **Approvals** — a **pending submitted entry** with **Approve / Reject** buttons inline (admins).
 
-**Does:** open an item → navigate to it and mark read; mark all read. **Members** see their relevant
-alerts (new joiner, their deposit/loan/interest/settlement, password reset); **admins** also see
-approvals (**forgot-password requests**), new entries, and lifecycle events.
+**Does:** open an item → jump to it / mark read; **Approve / Reject** a pending entry inline (on
+approve it posts to the ledger); **Mark all read**. Members see their relevant events; admins also
+see approvals + forgot-password requests + alerts.
 
-**Access:** everyone (their own notifications).
+**Access:** everyone (their own notifications; approvals shown to admins).
 
 ---
 
