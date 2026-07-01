@@ -249,3 +249,125 @@ The prototype's admin/governance screens are **resolved**:
 
 *Cross-references: `PRODUCT.md` (behavior), `FORMS_AND_FIELDS.md` (fields), `SCREENS.md` (per-screen
 expectations).*
+
+---
+
+# 8. Analytics page — full design brief
+
+> A ready-to-design brief for the **Analytics** page. Goal: a **clean, calm, single-focus "metric
+> explorer"** — pick one metric, pick a time range, see a beautiful trend, understand it in five
+> seconds. Behavior/data spec: `SCREENS.md` §11, `IMPLEMENTATION_PLAN.md` §19. Style rules:
+> `CLAUDE.md` (shadcn + Tailwind + **theme tokens only, no hard-coded colours**, light/dark).
+
+## 8.1 The idea in one line
+**One metric at a time, trended over a chosen range** — a metric selector × a time range × a big
+clean chart, with a headline number and its change. Not a cluttered dashboard of many charts; a
+focused explorer.
+
+## 8.2 Page layout (top → bottom)
+
+```
+┌───────────────────────────────────────────────────────────────────────┐
+│  Analytics                                              [⇩ Export]      │  ← title + export
+│  Track any club metric over time.                                       │
+├───────────────────────────────────────────────────────────────────────┤
+│  [ Metric ▾  Total Portfolio Value ]        [1M] [3M] [6M] [1Y] [ALL]   │  ← metric picker + range
+├───────────────────────────────────────────────────────────────────────┤
+│  ₹48,20,000                 ▲ +4.2%  (+₹1,95,000)   this 1Y             │  ← hero value + change
+│  high ₹48.2L · low ₹41.2L · avg ₹44.9L                                  │  ← small stat row
+├───────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│                              ╭─╮      ╭──╮   ╭───                        │
+│                    ╭────╮ ╭──╯ ╰─╮╭──╯  ╰──╯                            │  ← the chart (hero, area
+│           ╭───╮╭──╯    ╰─╯       ╰╯                                     │     w/ soft gradient fill)
+│      ╭────╯   ╰╯                                                        │
+│  ────┴────┬────┬────┬────┬────┬────┬────┬────┬────┬────┬────┬────       │  ← x-axis (adaptive labels)
+│   Jul   Aug  Sep  Oct  Nov  Dec  Jan  Feb  Mar  Apr  May  Jun           │
+├───────────────────────────────────────────────────────────────────────┤
+│  (optional) Breakdown — e.g. cash by treasurer · vendor by vendor       │  ← contextual, metric-aware
+└───────────────────────────────────────────────────────────────────────┘
+```
+
+## 8.3 Components, one by one
+
+### A. Header
+- **Title** "Analytics" + one-line subtitle "Track any club metric over time."
+- **Export** button (top-right): menu → **Download CSV** (the points) / **Download image** (PNG of
+  the chart). Secondary/ghost style.
+
+### B. Metric picker (the primary control)
+- A single **searchable dropdown** (shadcn `Combobox`/`Select`) labelled **"Metric"**, showing the
+  current metric. Opening it reveals the catalogue **grouped by category**:
+  - **Members** — Active Members · Club Age · Member Deposits · Catch-up · Member Pending · Catch-up Pending
+  - **Loans & Interest** — Total Loan Given · Total Interest Collected · Current Loan Taken · Interest Pending
+  - **Vendors** — Vendor Investment · Vendor Profit
+  - **Profit** — Current Profit · Profit Withdrawals · *(Penalty Income)* · *(Profit per Member)*
+  - **Cash & Valuation** — Total Invested · Total Pending · Available Cash · Current Value · Total Portfolio Value
+- Optional: a row of **quick chips** above the dropdown for 3 headline metrics (Portfolio Value ·
+  Available Cash · Profit per Member) for one-tap access.
+- Selecting a metric **animates** the chart transition (200–300ms ease).
+
+### C. Time-range control
+- A **segmented control**: `1M · 3M · 6M · 1Y · ALL`, right-aligned on the same row as the metric on
+  desktop. Selected segment uses the **primary** token; others muted. Point spacing is handled by
+  the data (1M daily, 3M/6M weekly, 1Y/ALL monthly) — the designer just styles the toggle.
+
+### D. Hero value + change
+- **Large current value** of the selected metric (money via `formatINR`; use **tabular/mono
+  numerals** so digits align — matches the club's mono-number style).
+- **Change over the range**: `▲ +4.2% (+₹1,95,000)` in **positive** token (green) when up, **negative**
+  (red) when down, with an arrow. Trailing "this 1Y" reflects the range.
+- A small muted **stat row**: high · low · average over the range. (Skip for count/age metrics.)
+
+### E. The chart (the star)
+- **Line + soft area gradient** by default (gradient fades to transparent at the bottom). Smooth
+  (monotone) curve; **2px** line in the metric's series colour (from theme accent tokens).
+- **X-axis:** time, adaptive labels (days/weeks/months per range); light, muted ticks.
+- **Y-axis:** value, **abbreviated** money (₹48.2L, ₹6.85L) — minimal gridlines (2–4 faint lines).
+- **Hover/press tooltip:** a floating card showing the **exact date + full value**; a vertical
+  guide line + a highlighted point marker. On mobile: **tap/drag** scrubs the tooltip.
+- **Metric-aware shape:** cumulative/stock metrics → area/line; if you show a *per-month flow*
+  variant (e.g. deposits/month) → **bars** are acceptable. Counts (Active Members) → **step** line.
+  Club Age → simple line (it only goes up).
+- **Zero-baseline** for money; don't truncate the Y-axis in a misleading way.
+
+### F. (Optional) contextual breakdown
+- For metrics with natural parts, a small panel under the chart:
+  - **Available Cash → by treasurer** (who holds how much) — the club's signature view.
+  - **Vendor Investment/Profit → by vendor**.
+  - **Profit → by source** (loan interest · vendor · penalty).
+- Keep it optional/secondary; the single trend is the focus.
+
+## 8.4 States
+- **Loading:** skeleton for the hero value + a shimmering chart placeholder (don't jump layout).
+- **Empty / not enough history:** friendly line — "Not enough history yet for this range" + suggest
+  a wider range. (Common for `1M` on a young metric.)
+- **Error:** compact message + **Retry**.
+
+## 8.5 Responsive / mobile
+- Metric dropdown becomes **full-width**; range control a **full-width segmented** (or horizontally
+  scrollable) below it. Hero value stacks above the chart. Chart is **full-bleed width**, ~220–260px
+  tall. Tooltip via touch. Export moves into an overflow menu.
+
+## 8.6 Styling & a11y (build rules)
+- **Theme tokens only** — series colour, positive/negative, grid, text all from shadcn CSS
+  variables; **no hard-coded hex**; must look right in **light and dark**.
+- Money always through `formatINR` (full value in hero/tooltip; abbreviated on axis).
+- **Accessible:** keyboard-operable controls; chart has an accessible summary / data-table fallback;
+  colour is never the only signal (arrows + labels for up/down); adequate contrast.
+- Smooth but **subtle** motion; respect `prefers-reduced-motion`.
+
+## 8.7 Interactions & niceties
+- Changing **metric** or **range** transitions the chart smoothly (no full-page reload flicker).
+- **Deep-link** the selection (metric + range in the URL) so a view can be shared — optional.
+- A quiet note that values are **live** ("reflects the latest data; historical edits update
+  instantly").
+
+## 8.8 Data the front end consumes
+`getGraphSeries({ metric, range })` → `{ points: [{ t, valuePaise }], latest, changePct, changeAbsPaise, high, low, avg }`
+(money as string paise; the client formats). Everything is derived from the ledger — no snapshot to
+manage.
+
+> **North star for the designer:** it should feel like a premium, focused analytics view (think a
+> clean fintech "one big chart" screen) — lots of breathing room, one confident chart, a crisp
+> headline number, and fast metric/range switching. Calm, not busy.
