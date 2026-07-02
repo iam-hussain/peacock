@@ -1,0 +1,12 @@
+import { chromium } from "playwright";
+const url = process.argv[2], outName = process.argv[3];
+const w = +(process.argv[4]||1440), h = +(process.argv[5]||900);
+const out = "/private/tmp/claude-501/-Volumes-space-code-peacock/d41273f3-c57a-4d1f-9985-15cc49bd2717/scratchpad/shots";
+const b = await chromium.launch();
+const p = await b.newPage({ viewport:{width:w,height:h}, deviceScaleFactor:2 });
+await p.goto(url, { waitUntil:"networkidle" });
+await p.waitForTimeout(1500);
+await p.addStyleTag({ content:"*,*::before,*::after{animation:none!important;transition:none!important}" });
+await p.screenshot({ path:`${out}/${outName}.png`, fullPage:true });
+console.log(`${out}/${outName}.png`);
+await b.close();

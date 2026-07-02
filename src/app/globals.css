@@ -1,0 +1,204 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* ---------- Peacock design tokens (extracted from the design system) ---------- */
+:root {
+  --radius: 0.75rem;
+
+  /* raw brand palette */
+  --ink: #14201e; /* primary text */
+  --teal: #0e8c82; /* brand / primary */
+  --teal-dark: #0b5e73; /* vendor tiles */
+  --teal-ink: #bdeae5; /* on-teal muted */
+  --teal-soft: #d6f5f1; /* on-teal subtle */
+  --teal-mut: #cfeeea; /* on-teal body text */
+  --gold: #e7b53c; /* accent */
+  --bg: #f7f8f7; /* app background */
+  --bg2: #f2f5f4; /* alt background */
+  --sf: #ffffff; /* surface / card */
+  --sf2: #fafbfb; /* subtle surface */
+  --mut: #7a8884; /* muted text */
+  --fnt: #9aa8a4; /* faint text */
+  --hair: #eef1f0; /* hairline divider */
+  --hr2: #f4f6f5; /* softer hairline */
+  --bd: #e7eae9; /* border */
+  --bd2: #dce1e0; /* stronger border */
+  --tlsf: #eef4f3; /* teal surface tint */
+
+  /* semantic status */
+  --in: #15803d; /* money in / positive */
+  --out: #b91c1c; /* money out / negative */
+  --wfg: #b5740e; /* warn foreground */
+  --wbg: #fdf1e3; /* warn background */
+  --wbd: #f0d9b4; /* warn border */
+  --nfg: #5c6b68; /* neutral chip fg */
+  --nbg: #eef1f0; /* neutral chip bg */
+  --outbg: #fbeaea; /* danger chip bg */
+  --outfg: #b91c1c; /* danger chip fg */
+  --outbd: #f3d6d6; /* danger chip border */
+
+  --shadow: rgba(20, 32, 30, 0.06);
+
+  /* ---- shadcn semantic aliases mapped to the brand palette ---- */
+  --background: var(--bg);
+  --foreground: var(--ink);
+  --card: var(--sf);
+  --card-foreground: var(--ink);
+  --popover: var(--sf);
+  --popover-foreground: var(--ink);
+  --primary: var(--teal);
+  --primary-foreground: #ffffff;
+  --secondary: var(--bg2);
+  --secondary-foreground: var(--ink);
+  --muted: var(--hair);
+  --muted-foreground: var(--mut);
+  --accent: var(--tlsf);
+  --accent-foreground: var(--teal);
+  --destructive: var(--out);
+  --border: var(--bd);
+  --input: var(--bd);
+  --ring: var(--teal);
+  --sidebar: var(--sf);
+  --sidebar-foreground: var(--ink);
+  --sidebar-primary: var(--teal);
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: var(--tlsf);
+  --sidebar-accent-foreground: var(--teal);
+  --sidebar-border: var(--bd);
+  --sidebar-ring: var(--teal);
+}
+
+.dark {
+  --ink: #eef4f3;
+  --bg: #0e1413;
+  --bg2: #131b19;
+  --sf: #161f1d;
+  --sf2: #1a2422;
+  --mut: #9aa8a4;
+  --fnt: #7a8884;
+  --hair: #21302d;
+  --hr2: #1b2725;
+  --bd: #263531;
+  --bd2: #2f403c;
+  --tlsf: #12211f;
+  --shadow: rgba(0, 0, 0, 0.4);
+
+  /* status tints — dark-mode variants: brighter foregrounds, dark tinted fills */
+  --in: #4cc27f; /* money in — brighter green on dark */
+  --out: #f0817b; /* money out — brighter red on dark */
+  --wfg: #d9a24a; /* warn fg — brighter gold */
+  --wbg: #241c10; /* warn bg — dark amber */
+  --wbd: #6d5a30; /* warn border — warm gold (approval/alert cards) */
+  --nfg: #a6b3af; /* neutral chip fg — lighter grey */
+  --nbg: #21302d; /* neutral chip bg — dark grey */
+  --outbg: #2b1616; /* danger chip bg — dark red */
+  --outfg: #f0817b; /* danger chip fg — brighter red */
+  --outbd: #4d2828; /* danger chip border — dark red */
+
+  --background: var(--bg);
+  --foreground: var(--ink);
+  --card: var(--sf);
+  --card-foreground: var(--ink);
+  --popover: var(--sf);
+  --popover-foreground: var(--ink);
+  --primary: var(--teal);
+  --primary-foreground: #ffffff;
+  --secondary: var(--bg2);
+  --secondary-foreground: var(--ink);
+  --muted: var(--hair);
+  --muted-foreground: var(--mut);
+  --accent: var(--tlsf);
+  --accent-foreground: var(--teal);
+  --destructive: var(--out);
+  --border: var(--bd);
+  --input: var(--bd);
+  --ring: var(--teal);
+  --sidebar: var(--sf);
+  --sidebar-foreground: var(--ink);
+  --sidebar-primary: var(--teal);
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: var(--tlsf);
+  --sidebar-accent-foreground: var(--teal);
+  --sidebar-border: var(--bd);
+  --sidebar-ring: var(--teal);
+}
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  /* shadcn semantic colors */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  /* named brand tokens — use directly as utilities: bg-teal, text-ink, border-hair … */
+  --color-ink: var(--ink);
+  --color-teal: var(--teal);
+  --color-teal-dark: var(--teal-dark);
+  --color-teal-ink: var(--teal-ink);
+  --color-teal-soft: var(--teal-soft);
+  --color-teal-mut: var(--teal-mut);
+  --color-gold: var(--gold);
+  --color-bg: var(--bg);
+  --color-bg2: var(--bg2);
+  --color-sf: var(--sf);
+  --color-sf2: var(--sf2);
+  --color-mut: var(--mut);
+  --color-fnt: var(--fnt);
+  --color-hair: var(--hair);
+  --color-hr2: var(--hr2);
+  --color-bd: var(--bd);
+  --color-bd2: var(--bd2);
+  --color-tlsf: var(--tlsf);
+  --color-in: var(--in);
+  --color-out: var(--out);
+  --color-wfg: var(--wfg);
+  --color-wbg: var(--wbg);
+  --color-wbd: var(--wbd);
+  --color-nfg: var(--nfg);
+  --color-nbg: var(--nbg);
+  --color-outbg: var(--outbg);
+  --color-outfg: var(--outfg);
+  --color-outbd: var(--outbd);
+
+  --font-sans: var(--font-sans), system-ui, sans-serif;
+  --font-display: var(--font-display), system-ui, sans-serif;
+  --font-mono: var(--font-mono), ui-monospace, monospace;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}

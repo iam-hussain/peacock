@@ -27,3 +27,6 @@ yarn-debug.log*
 yarn-error.log*
 .vercel
 *.tsbuildinfo
+
+# transient Claude Code session artifacts
+.claude/scheduled_tasks.lock

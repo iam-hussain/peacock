@@ -1,0 +1,403 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- Identity (banker model: Member = the person/customer; Membership = an account/stint) ----------
+model Member {
+  id                 String         @id @default(cuid())
+  firstName          String
+  lastName           String?
+  phone              String         @unique // REQUIRED + unique; also the default password seed
+  email              String? // optional contact
+  username           String?        @unique // optional handle; auto-generated from name if blank
+  avatarUrl          String?
+  role               MemberRole     @default(MEMBER) // ADMIN or MEMBER (admin = write access)
+  isTreasurer        Boolean        @default(false) // person-level: they physically hold club cash
+  userId             String?        @unique // Better Auth user link
+  user               User?          @relation("MemberUser", fields: [userId], references: [id])
+  mustChangePassword Boolean        @default(true) // first login forces a change (default pw = phone)
+  customerSince      DateTime // first-ever join date (display)
+  memberships        Membership[] // one per stint (join → leave → rejoin opens a new one)
+  treasury           LedgerAccount? @relation("MemberTreasury") // TREASURY_CASH lives on the PERSON
+  archivedAt         DateTime?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+}
+
+model Membership {
+  id            String           @id @default(cuid())
+  memberId      String // the person
+  member        Member           @relation(fields: [memberId], references: [id])
+  seq           Int // 1, 2, 3… ("Membership #N") per member
+  status        MembershipStatus @default(ACTIVE) // ACTIVE / CLOSED  (a person is "active" iff they have an ACTIVE membership)
+  joinedAt      DateTime // start of this stint (drives expected deposits for it)
+  leftAt        DateTime? // settlement/close date
+  settledAmount BigInt? // cash paid out at close (admin-entered)
+  accounts      LedgerAccount[] // THIS stint's MEMBER_EQUITY (+ LOAN_RECEIVABLE)
+  loans         Loan[]
+  charges       Charge[] // catch-up & penalty dues for THIS stint
+  createdAt     DateTime         @default(now())
+
+  @@unique([memberId, seq])
+  @@index([memberId, status])
+}
+
+model Vendor {
+  id         String          @id @default(cuid())
+  name       String
+  type       VendorType // GENERAL or CHIT (behavioral: how postings/profit work)
+  category   String? // display label only (e.g. "Bank", "Stocks"); no behavior
+  status     VendorStatus    @default(ACTIVE) // ACTIVE / INACTIVE / CLOSED
+  accounts   LedgerAccount[] // receivable + profit
+  chit       ChitFund? // present iff type = CHIT
+  startedAt  DateTime        @default(now())
+  closedAt   DateTime?
+  archivedAt DateTime?
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+}
+
+model ChitFund {
+  id                String     @id @default(cuid())
+  vendorId          String     @unique
+  vendor            Vendor     @relation(fields: [vendorId], references: [id])
+  chitValue         BigInt // face value, e.g. ₹5,00,000
+  durationMonths    Int // e.g. 20
+  marginInstallment BigInt // the CAP = chitValue / durationMonths (e.g. ₹25,000); installments ramp up to this
+  startedAt         DateTime
+  payoutMonth       Int? // month index the payout was taken (10..20 or last)
+  payoutAt          DateTime?
+  payoutAmount      BigInt? // cash received at payout
+  status            ChitStatus @default(RUNNING) // RUNNING / PAID_OUT / COMPLETED
+  createdAt         DateTime   @default(now())
+}
+
+// ---------- Auth (Better Auth) ----------
+model User {
+  id            String    @id
+  name          String
+  email         String    @unique
+  emailVerified Boolean   @default(false)
+  image         String?
+  member        Member?   @relation("MemberUser")
+  sessions      Session[]
+  accounts      Account[]
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@map("user")
+}
+
+model Session {
+  id        String   @id
+  expiresAt DateTime
+  token     String   @unique
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@map("account")
+}
+
+model Verification {
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("verification")
+}
+
+// ---------- Ledger ----------
+model LedgerAccount {
+  id           String            @id @default(cuid())
+  kind         LedgerAccountKind
+  balance      BigInt            @default(0) // cached running balance (paise)
+  membershipId String? // for MEMBER_EQUITY / LOAN_RECEIVABLE — scoped to a STINT
+  membership   Membership?       @relation(fields: [membershipId], references: [id])
+  memberId     String?           @unique // for TREASURY_CASH — the PERSON holds cash (one per person)
+  member       Member?           @relation("MemberTreasury", fields: [memberId], references: [id])
+  vendorId     String? // for VENDOR_RECEIVABLE / VENDOR_PROFIT
+  vendor       Vendor?           @relation(fields: [vendorId], references: [id])
+  entries      Entry[]
+  createdAt    DateTime          @default(now())
+
+  @@unique([membershipId, kind]) // one equity / one loan-acct per stint, per kind
+  @@unique([vendorId, kind])
+  @@index([kind])
+}
+
+model Transaction {
+  id           String   @id @default(cuid())
+  type         TxnType // CATCHUP/PENALTY here = cash pay-downs of a Charge (§ Charge model)
+  occurredAt   DateTime // drives month bucketing (UTC stored, IST bucketed)
+  description  String?
+  reference    String?
+  reversesId   String?  @unique // set when this reverses another txn
+  membershipId String? // member-scoped txns belong to a STINT (deposits, pay-downs, loans, settle, rejoin)
+  loanId       String? // link for loan-related txns (tranches, repay, interest)
+  vendorId     String? // link for vendor/chit txns
+  entries      Entry[]
+  createdById  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([occurredAt])
+  @@index([type, occurredAt])
+  @@index([membershipId])
+  @@index([loanId])
+  @@index([vendorId])
+}
+
+model Entry {
+  id            String        @id @default(cuid())
+  transactionId String
+  accountId     String
+  amount        BigInt // signed paise
+  transaction   Transaction   @relation(fields: [transactionId], references: [id], onDelete: Restrict)
+  account       LedgerAccount @relation(fields: [accountId], references: [id])
+
+  @@index([accountId])
+  @@index([transactionId])
+}
+
+model Loan {
+  id                   String     @id @default(cuid())
+  membershipId         String // belongs to a STINT (a member must clear loans before leaving)
+  membership           Membership @relation(fields: [membershipId], references: [id])
+  requestedAmount      BigInt // what the member asked for (funded via tranches)
+  principalOutstanding BigInt     @default(0) // Σ disbursed − Σ repaid (kept current)
+  monthlyRateBps       Int // SNAPSHOT of rateAt(startedAt); fixed for the loan's life (§14.2)
+  startedAt            DateTime // first tranche date; drives the 5-month term
+  closedAt             DateTime?
+  status               LoanStatus @default(ACTIVE) // ACTIVE / CLOSED  (overdue is derived)
+  createdAt            DateTime   @default(now())
+
+  @@index([membershipId])
+  @@index([status])
+}
+
+// ---------- Config & audit ----------
+model ClubConfig {
+  id                 String              @id @default("singleton")
+  name               String
+  startedAt          DateTime
+  stages             Json // [{ name, amountPaise, startDate, endDate? }]
+  rateSchedule       Json // [{ rateBps, effectiveFrom }]  (1% from start; admin appends changes)
+  dayInterestFrom    DateTime // daily proration applies from this date onward
+  maxLoanPaise       BigInt // current loan limit (₹5,00,000), revisable
+  loanTermMonths     Int                 @default(5)
+  loanCooldownMonths Int                 @default(1)
+  overduePenaltyBps  Int                 @default(0) // AUTO extra monthly rate on the overdue portion (G1); CURRENT config — applies instantly to ALL loans
+  dividendEnabled    Boolean             @default(false) // periodic member dividend seam (G2); off for now
+  entrySubmission    EntrySubmissionMode @default(ALL_MEMBERS) // who can SUBMIT entries (admin always approves)
+  fyStartMonth       Int                 @default(4) // fiscal year start month (Apr) — drives quarter boundaries
+  alertThresholds    Json // { largeAmountPaise, pendingInterestPaise, pendingDepositPaise } for proactive alerts
+  timezone           String              @default("Asia/Kolkata")
+  updatedAt          DateTime            @updatedAt
+}
+
+// NOTE: late/delayed-deposit penalty is NOT an auto config — it's a manual penalty CHARGE the admin
+// raises (Charge model), paid down via PENALTY transactions → OTHER_INCOME. See §16.2.
+
+model Submission {
+  id            String           @id @default(cuid())
+  intent        String // the "What happened?" intent (maps to a TxnType or charge)
+  payload       Json // the entry's fields (member/amount/treasury/date/…)
+  status        SubmissionStatus @default(PENDING)
+  submittedById String // the member who submitted it
+  decidedById   String? // admin who approved/rejected
+  decidedAt     DateTime?
+  postedTxnId   String?          @unique // set to the Transaction created on approval
+  createdAt     DateTime         @default(now())
+
+  @@index([status])
+}
+
+// Approve → run the matching service (postTransaction / addCharge / …) and link postedTxnId.
+// Reject → status=REJECTED, nothing posts. The ledger only ever contains APPROVED, posted entries.
+
+model PeriodClose {
+  id          String   @id @default(cuid())
+  periodStart DateTime // quarter start (IST)
+  periodEnd   DateTime // quarter end (IST)
+  snapshot    Json // the §17.3 figures frozen at close (for the year-/quarter-end statement)
+  closedById  String?
+  closedAt    DateTime @default(now())
+
+  @@unique([periodStart])
+}
+
+// Closing a quarter LOCKS its entries (edits/reversals/new postings dated in it are refused) and stores
+// a snapshot. Profit still ACCUMULATES (no distribution); the "reinvest" is just the snapshot + lock.
+
+model Notification {
+  id           String           @id @default(cuid())
+  recipientId  String // member/user who should see it
+  kind         NotificationKind @default(EVENT) // EVENT (something happened) or APPROVAL (actionable)
+  type         String // e.g. "password.reset_requested", "entry.created", "submission.pending"
+  title        String
+  body         String?
+  link         String? // deep-link to the related item / submission
+  submissionId String? // set for APPROVAL notifications (Approve/Reject inline)
+  isRead       Boolean          @default(false)
+  createdAt    DateTime         @default(now())
+
+  @@index([recipientId, isRead])
+}
+
+// Stored notifications are EVENT + APPROVAL. The THIRD kind — ALERTS (overdue loan, large-amount /
+// heavy-pending thresholds) — is DERIVED ON READ (no jobs) from current state + ClubConfig.alertThresholds,
+// and merged into the list when the bell opens. See §18 (getNotifications).
+
+model Charge {
+  id           String     @id @default(cuid())
+  membershipId String // belongs to a STINT
+  membership   Membership @relation(fields: [membershipId], references: [id])
+  kind         ChargeKind // CATCHUP or PENALTY
+  reason       String // see ChargeReason enums (stored as string for flexibility)
+  amount       BigInt // paise owed (admin-editable; suggestion computed)
+  occurredAt   DateTime
+  note         String?
+  createdById  String?
+  createdAt    DateTime   @default(now())
+
+  @@index([membershipId, kind])
+}
+
+// Charges do NOT post to the cash ledger; they are tracked dues. Cash moves only when paid down via
+// CATCHUP (→ MEMBER_EQUITY) / PENALTY (→ OTHER_INCOME) transactions. Outstanding due per kind =
+// Σ Charge.amount − Σ matching pay-down transactions (derive-on-read). Shown cumulatively on the
+// member page. A member may have many charges of each kind over time (e.g. one catch-up per rejoin).
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  action     String
+  entityType String
+  entityId   String
+  meta       Json?
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+}
+
+// Optional cache, rebuilt deterministically from the ledger (added only if profiling needs it):
+// model MonthlyRollup { month DateTime @id; data Json; builtAt DateTime }
+
+enum LedgerAccountKind {
+  TREASURY_CASH
+  MEMBER_EQUITY
+  LOAN_RECEIVABLE
+  VENDOR_RECEIVABLE
+  INTEREST_INCOME
+  OTHER_INCOME
+  VENDOR_PROFIT
+}
+
+// CATCHUP / PENALTY here are the PAY-DOWN cash transactions (paying off a Charge). Raising a charge
+// is a Charge row, not a TxnType.
+enum TxnType {
+  PERIODIC_DEPOSIT
+  CATCHUP
+  PENALTY
+  WITHDRAW
+  REJOIN
+  FUNDS_TRANSFER
+  LOAN_TAKEN
+  LOAN_REPAY
+  LOAN_INTEREST
+  VENDOR_INVEST
+  VENDOR_RETURN
+  VENDOR_WRITEOFF
+  CHIT_PAYMENT
+  CHIT_PAYOUT
+  REVERSAL
+}
+
+enum ChargeKind {
+  CATCHUP
+  PENALTY
+}
+
+// Reason values (stored as string on Charge.reason):
+//   catch-up: FIRST_TIME_JOIN | REJOIN | PROFIT_GAP_TOPUP | MID_TERM_EQUALISATION | OTHER
+//   penalty:  DELAYED_PAYMENT | LOAN_REPAYMENT_DELAY | HOLDING_TOO_LONG | MISSED_DEPOSIT | OTHER
+enum MemberRole {
+  ADMIN
+  MEMBER
+}
+
+// a person is "active" iff they have an ACTIVE membership
+enum MembershipStatus {
+  ACTIVE
+  CLOSED
+}
+
+enum SubmissionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+// who may SUBMIT entries (admin always approves)
+enum EntrySubmissionMode {
+  ADMINS_ONLY
+  ALL_MEMBERS
+}
+
+enum NotificationKind {
+  EVENT
+  APPROVAL
+}
+
+enum VendorType {
+  GENERAL
+  CHIT
+}
+
+enum VendorStatus {
+  ACTIVE
+  INACTIVE
+  CLOSED
+}
+
+enum ChitStatus {
+  RUNNING
+  PAID_OUT
+  COMPLETED
+}
+
+enum LoanStatus {
+  ACTIVE
+  CLOSED
+}
