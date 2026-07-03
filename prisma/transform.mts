@@ -21,7 +21,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const FILE = process.argv[2] ?? "peacock_backup_03_46_26_01_46.json";
-const prisma = new PrismaClient();
+const prisma = new PrismaClient({ datasourceUrl: process.env.DIRECT_URL }); // bulk seed → bypass PgBouncer
 const auth = betterAuth({
   database: prismaAdapter(prisma, { provider: "postgresql" }),
   emailAndPassword: { enabled: true },
@@ -52,7 +52,6 @@ const lrId = (m: string) => `lr_${m}`;
 const vrId = (v: string) => `vr_${v}`;
 const vpId = (v: string) => `vp_${v}`;
 const INTEREST_INCOME = "interest-income";
-const OTHER_INCOME = "other-income";
 
 // In-memory ledger account registry → bulk-created after the replay.
 interface Acct { id: string; kind: LedgerAccountKind; balance: bigint; memberId?: string; membershipId?: string; vendorId?: string; }
@@ -132,7 +131,8 @@ for (const t of txns) {
     case "LOAN_REPAY": // treasurer(to) +A, loan receivable(from) −A
       markTreasury(to); push(trAcc(to), A); push(lrAcc(from), -A); row.membershipId = msId(from); row.loanId = txnLoanId.get(t.id); break;
     case "VENDOR_INVEST": // treasurer(from) −A, vendor receivable(to) +A
-      markTreasury(from); push(trAcc(from), -A); push(vrAcc(to), A); row.vendorId = to; break;
+      markTreasury(from); push(trAcc(from), -A); push(vrAcc(to), A); row.vendorId = to;
+      if (isChitVendor(accById.get(to)!)) row.type = "CHIT_PAYMENT"; break;
     case "FUNDS_TRANSFER": // treasurer(from) −A, treasurer(to) +A
       markTreasury(from); markTreasury(to); push(trAcc(from), -A); push(trAcc(to), A); break;
     case "VENDOR_RETURNS": { // vendor(from) → treasurer(to): principal reduces receivable, rest is profit
@@ -142,7 +142,8 @@ for (const t of txns) {
       push(trAcc(to), A);
       if (principal > 0n) push(recv, -principal);
       if (A - principal > 0n) push(vpAcc(from), -(A - principal));
-      row.vendorId = from; break;
+      row.vendorId = from;
+      if (isChitVendor(accById.get(from)!)) row.type = "CHIT_PAYOUT"; break;
     }
     default: skipped++; continue;
   }

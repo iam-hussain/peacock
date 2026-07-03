@@ -3,8 +3,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL") // pooled (PgBouncer) for the app
+  directUrl = env("DIRECT_URL")   // direct for migrations & seed
 }
 
 // ---------- Identity (banker model: Member = the person/customer; Membership = an account/stint) ----------

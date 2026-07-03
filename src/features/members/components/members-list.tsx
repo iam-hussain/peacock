@@ -1,7 +1,7 @@
-import { Plus, ChevronDown } from "lucide-react";
+import { Plus } from "lucide-react";
 import type { Member } from "../data";
 import { MembersMobile } from "./members-mobile";
-import { MembersTable } from "./members-table";
+import { MembersBrowser } from "./members-browser";
 import { FormModalButton } from "@/components/shared/form-modal-button";
 
 export interface MemberSummary {
@@ -42,16 +42,7 @@ export function MembersList({ members, summary }: { members: Member[]; summary: 
           </div>
 
           <div className="overflow-hidden rounded-2xl border border-bd bg-sf shadow-[0_1px_2px_var(--shadow)]">
-            <div className="flex items-center gap-2.5 border-b border-hair px-5 py-4">
-              <div className="flex-1 rounded-[10px] border border-bd2 px-[13px] py-2.5 text-[13px] font-medium leading-none text-fnt">
-                Search members…
-              </div>
-              <button className="flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-bd2 px-3 py-[9px] text-xs font-semibold leading-none text-mut hover:bg-sf2">
-                All members <ChevronDown className="size-3 text-fnt" />
-              </button>
-            </div>
-
-            <MembersTable members={members} />
+            <MembersBrowser members={members} />
           </div>
         </div>
       </div>

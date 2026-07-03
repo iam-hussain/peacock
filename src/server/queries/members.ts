@@ -46,35 +46,52 @@ export async function getMembers(): Promise<MemberDTO[]> {
     },
   });
 
-  return Promise.all(
+  // Per-member gross deposits (PERIODIC_DEPOSIT + CATCHUP credited to equity) and net value.
+  const rows = await Promise.all(
     members.map(async (m) => {
       const active = m.memberships.some((s) => s.status === "ACTIVE");
       const equity = m.memberships.flatMap((s) => s.accounts)[0];
-      const equityId = equity?.id;
       const value = -(equity?.balance ?? 0n);
-      const dep = equityId
-        ? await prisma.entry.aggregate({ _sum: { amount: true }, where: { accountId: equityId, transaction: { type: "PERIODIC_DEPOSIT" } } })
+      const dep = equity
+        ? await prisma.entry.aggregate({ _sum: { amount: true }, where: { accountId: equity.id, transaction: { type: { in: ["PERIODIC_DEPOSIT", "CATCHUP"] } } } })
         : { _sum: { amount: null } };
       const deposits = -(dep._sum.amount ?? 0n);
-      const profit = value - deposits;
       const membershipId = m.memberships[0]?.id;
       const pending = membershipId ? await outstandingCharge(membershipId, "CATCHUP") : 0n;
       const penalty = membershipId ? await outstandingCharge(membershipId, "PENALTY") : 0n;
-
-      return {
-        id: m.id,
-        name: [m.firstName, m.lastName].filter(Boolean).join(" "),
-        joined: monthYear(m.customerSince),
-        deposits: formatLakh(deposits),
-        profit: formatPaise(profit),
-        value: active ? formatLakh(value) : "—",
-        held: m.treasury ? formatLakh(m.treasury.balance) : null,
-        penalty: penalty > 0n ? formatPaise(penalty) : null,
-        pending: pending > 0n ? formatPaise(pending) : null,
-        status: memberStatus(active, m.archivedAt),
-      } satisfies MemberDTO;
+      return { m, active, value, deposits, pending, penalty };
     }),
   );
+
+  // Profit isn't posted to member equity in this ledger — it pools in the club
+  // (interest + vendor returns). Share it proportionally to deposits among ACTIVE
+  // members (§ PRODUCT.md: profit shared proportionally to deposits paid).
+  const clubProfit = await realizedClubProfit();
+  const totalActiveDeposits = rows.filter((r) => r.active).reduce((s, r) => s + r.deposits, 0n);
+  const shareOf = (deposits: bigint, active: boolean) =>
+    active && totalActiveDeposits > 0n ? (clubProfit * deposits) / totalActiveDeposits : 0n;
+
+  return rows.map(({ m, active, value, deposits, pending, penalty }) => ({
+    id: m.id,
+    name: [m.firstName, m.lastName].filter(Boolean).join(" "),
+    joined: monthYear(m.customerSince),
+    deposits: formatLakh(deposits),
+    profit: formatPaise(shareOf(deposits, active)),
+    value: active ? formatLakh(value) : "—",
+    held: m.treasury && m.treasury.balance !== 0n ? formatLakh(m.treasury.balance) : null,
+    penalty: penalty > 0n ? formatPaise(penalty) : null,
+    pending: pending > 0n ? formatPaise(pending) : null,
+    status: memberStatus(active, m.archivedAt),
+  }));
+}
+
+/** Total realized, still-pooled club profit = loan interest + vendor profit + other income. */
+async function realizedClubProfit(): Promise<bigint> {
+  const income = await prisma.ledgerAccount.aggregate({
+    _sum: { balance: true },
+    where: { kind: { in: ["INTEREST_INCOME", "VENDOR_PROFIT", "OTHER_INCOME"] }, id: { not: "club-opening" } },
+  });
+  return -(income._sum.balance ?? 0n); // credit accounts hold negative balances
 }
 
 /** Headline for the members page, e.g. "11 members · 9 active". */
@@ -155,9 +172,13 @@ export async function getMemberDetail(id: string): Promise<MemberDetailDTO | nul
   const active = m.memberships.some((s) => s.status === "ACTIVE");
   const equity = ms?.accounts.find((a) => a.kind === "MEMBER_EQUITY");
   const value = -(equity?.balance ?? 0n);
-  const dep = equity ? await prisma.entry.aggregate({ _sum: { amount: true }, where: { accountId: equity.id, transaction: { type: "PERIODIC_DEPOSIT" } } }) : { _sum: { amount: null } };
+  const dep = equity ? await prisma.entry.aggregate({ _sum: { amount: true }, where: { accountId: equity.id, transaction: { type: { in: ["PERIODIC_DEPOSIT", "CATCHUP"] } } } }) : { _sum: { amount: null } };
   const deposits = -(dep._sum.amount ?? 0n);
-  const profit = value - deposits;
+  // proportional share of pooled club profit (same model as the members list)
+  const clubProfit = await realizedClubProfit();
+  const allDep = await prisma.entry.aggregate({ _sum: { amount: true }, where: { transaction: { type: { in: ["PERIODIC_DEPOSIT", "CATCHUP"] } }, account: { kind: "MEMBER_EQUITY", membership: { status: "ACTIVE" } } } });
+  const totalActiveDeposits = -(allDep._sum.amount ?? 0n);
+  const profit = active && totalActiveDeposits > 0n ? (clubProfit * deposits) / totalActiveDeposits : 0n;
 
   const pendingCharge = ms ? await outstandingCharge(ms.id, "CATCHUP") : 0n;
   const penaltyCharge = ms ? await outstandingCharge(ms.id, "PENALTY") : 0n;

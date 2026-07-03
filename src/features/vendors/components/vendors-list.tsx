@@ -90,9 +90,9 @@ function VendorRow({ v }: { v: Vendor }) {
       </div>
       <div className="text-right">
         <div className={`font-mono text-base font-semibold leading-none ${v.roiPositive ? "text-in" : "text-out"}`}>
-          {v.roi}
+          {v.profit}
         </div>
-        <div className="mt-1 font-mono text-[11px] font-medium leading-[1.3] text-fnt">{v.profit}</div>
+        <div className="mt-1 font-mono text-[11px] font-medium leading-[1.3] text-fnt">{v.roi}</div>
       </div>
       <ChevronRight className="size-4 flex-none text-fnt" strokeWidth={2} />
     </Link>

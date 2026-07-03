@@ -29,13 +29,11 @@ function pct(profit: bigint, invested: bigint): string {
   return `${p >= 0 ? "+" : "−"}${Math.abs(p).toFixed(1)}%`;
 }
 
-function toDTO(v: {
-  id: string; name: string; type: "GENERAL" | "CHIT"; category: string | null; status: string; startedAt: Date;
-  accounts: { kind: string; balance: bigint }[];
-  chit: { durationMonths: number } | null;
-}): VendorDTO {
-  const invested = v.accounts.find((a) => a.kind === "VENDOR_RECEIVABLE")?.balance ?? 0n;
-  const profit = -(v.accounts.find((a) => a.kind === "VENDOR_PROFIT")?.balance ?? 0n);
+function toDTO(
+  v: { id: string; name: string; type: "GENERAL" | "CHIT"; category: string | null; status: string; startedAt: Date; chit: { durationMonths: number } | null },
+  invested: bigint,
+  profit: bigint,
+): VendorDTO {
   const isChit = v.type === "CHIT";
   const statusLabel = v.status === "CLOSED" ? "Closed" : isChit ? "Running" : "Active";
   return {
@@ -55,18 +53,70 @@ function toDTO(v: {
   };
 }
 
-export async function getVendors(): Promise<VendorDTO[]> {
-  const vendors = await prisma.vendor.findMany({
-    orderBy: { createdAt: "asc" },
-    select: { id: true, name: true, type: true, category: true, status: true, startedAt: true, accounts: { select: { kind: true, balance: true } }, chit: { select: { durationMonths: true } } },
+export interface ChitStats {
+  paidCount: number; totalPaid: bigint; payout: bigint; taken: boolean; payoutAt: Date | null;
+  payoutMonth: number; obligation: bigint; pl: bigint; paidInstallments: { date: Date; amt: bigint }[];
+}
+
+/**
+ * Chit economics derived from the ACTUAL ledger (the ChitFund payout fields aren't
+ * populated by postings). Obligation left = remaining months × margin; P/L = what you
+ * receive (payout if taken, else the face value) minus what you pay over the chit's
+ * life (installments paid so far + remaining months at the margin cap).
+ */
+export async function chitLedger(vendorId: string, chit: { chitValue: bigint; durationMonths: number; marginInstallment: bigint }): Promise<ChitStats> {
+  const txns = await prisma.transaction.findMany({
+    where: { vendorId, type: { in: ["CHIT_PAYMENT", "VENDOR_INVEST", "CHIT_PAYOUT", "VENDOR_RETURN"] } },
+    orderBy: { occurredAt: "asc" },
+    select: { type: true, occurredAt: true, entries: { where: { account: { kind: "TREASURY_CASH" } }, select: { amount: true } } },
   });
-  return vendors.map(toDTO);
+  const absAmt = (t: (typeof txns)[number]) => t.entries.reduce((s, e) => s + (e.amount < 0n ? -e.amount : e.amount), 0n);
+  const paidInstallments = txns.filter((t) => t.type === "CHIT_PAYMENT" || t.type === "VENDOR_INVEST").map((t) => ({ date: t.occurredAt, amt: absAmt(t) }));
+  const payouts = txns.filter((t) => t.type === "CHIT_PAYOUT" || t.type === "VENDOR_RETURN");
+  const paidCount = paidInstallments.length;
+  const totalPaid = paidInstallments.reduce((s, i) => s + i.amt, 0n);
+  const payout = payouts.reduce((s, t) => s + absAmt(t), 0n);
+  const payoutAt = payouts[0]?.occurredAt ?? null;
+  const taken = payout > 0n;
+  const payoutMonth = taken && payoutAt ? paidInstallments.filter((i) => i.date <= payoutAt).length : 0;
+  const remaining = Math.max(0, chit.durationMonths - paidCount);
+  const obligation = chit.marginInstallment * BigInt(remaining);
+  const pl = (taken ? payout : chit.chitValue) - (totalPaid + obligation);
+  return { paidCount, totalPaid, payout, taken, payoutAt, payoutMonth, obligation, pl, paidInstallments };
+}
+
+// List-level invested + profit per vendor: chits use their real economics (paid-in +
+// projected P/L); general vendors use outstanding receivable + realized VENDOR_PROFIT.
+async function vendorFinancials(v: {
+  id: string; type: string; accounts: { kind: string; balance: bigint }[];
+  chit: { chitValue: bigint; durationMonths: number; marginInstallment: bigint } | null;
+}): Promise<{ invested: bigint; profit: bigint }> {
+  if (v.type === "CHIT" && v.chit) {
+    const s = await chitLedger(v.id, v.chit);
+    return { invested: s.totalPaid, profit: s.pl };
+  }
+  return {
+    invested: v.accounts.find((a) => a.kind === "VENDOR_RECEIVABLE")?.balance ?? 0n,
+    profit: -(v.accounts.find((a) => a.kind === "VENDOR_PROFIT")?.balance ?? 0n),
+  };
+}
+
+const LIST_SELECT = {
+  id: true, name: true, type: true, category: true, status: true, startedAt: true,
+  accounts: { select: { kind: true, balance: true } },
+  chit: { select: { chitValue: true, durationMonths: true, marginInstallment: true } },
+} as const;
+
+export async function getVendors(): Promise<VendorDTO[]> {
+  const vendors = await prisma.vendor.findMany({ orderBy: { name: "asc" }, select: LIST_SELECT });
+  return Promise.all(vendors.map(async (v) => { const f = await vendorFinancials(v); return toDTO(v, f.invested, f.profit); }));
 }
 
 export async function getVendorStats(): Promise<{ label: string; value: string; tone?: "in" | "teal" }[]> {
-  const accts = await prisma.ledgerAccount.findMany({ where: { OR: [{ kind: "VENDOR_RECEIVABLE" }, { kind: "VENDOR_PROFIT" }] }, select: { kind: true, balance: true } });
-  const invested = accts.filter((a) => a.kind === "VENDOR_RECEIVABLE").reduce((s, a) => s + a.balance, 0n);
-  const profit = accts.filter((a) => a.kind === "VENDOR_PROFIT").reduce((s, a) => s - a.balance, 0n);
+  const vendors = await prisma.vendor.findMany({ select: LIST_SELECT });
+  const fin = await Promise.all(vendors.map(vendorFinancials));
+  const invested = fin.reduce((s, f) => s + f.invested, 0n);
+  const profit = fin.reduce((s, f) => s + f.profit, 0n);
   const roi = invested > 0n ? (Number(profit) / Number(invested)) * 100 : 0;
   return [
     { label: "Invested", value: formatLakh(invested) },
@@ -102,15 +152,13 @@ async function loadVendor(id: string) {
 export async function getChitDetail(id: string): Promise<ChitDetailDTO | null> {
   const v = await loadVendor(id);
   if (!v || v.type !== "CHIT" || !v.chit) return null;
-  const base = toDTO({ ...v, chit: { durationMonths: v.chit.durationMonths } });
   const c = v.chit;
   const months = c.durationMonths;
   const margin = c.marginInstallment;
-  const paid = v.accounts.find((a) => a.kind === "VENDOR_RECEIVABLE")?.balance ?? 0n;
-  const paidCount = margin > 0n ? Number(paid / margin) : 0;
-  const obligation = c.chitValue - paid;
-  const taken = !!c.payoutMonth;
-  const pl = (c.payoutAmount ?? 0n) - c.chitValue;
+  const s = await chitLedger(id, c);
+  const { paidCount, totalPaid, payout, taken, payoutMonth, obligation, pl, paidInstallments } = s;
+  const base = toDTO(v, totalPaid, pl);
+
   return {
     ...base,
     start: monthYear(c.startedAt),
@@ -118,17 +166,17 @@ export async function getChitDetail(id: string): Promise<ChitDetailDTO | null> {
     paidCount,
     valueDisp: formatPaise(c.chitValue),
     marginDisp: formatPaise(margin),
-    totalPaidDisp: formatPaise(paid),
+    totalPaidDisp: formatPaise(totalPaid),
     obligationDisp: formatPaise(obligation),
-    payoutDisp: formatPaise(c.payoutAmount ?? 0n),
+    payoutDisp: formatPaise(payout),
     taken,
-    payoutMonth: c.payoutMonth ?? 0,
+    payoutMonth,
     plDisp: (pl >= 0n ? "+" : "−") + formatPaise(pl < 0n ? -pl : pl),
     plPositive: pl >= 0n,
-    installments: Array.from({ length: months }, (_, i) => {
+    installments: Array.from({ length: Math.max(months, paidCount) }, (_, i) => {
       const n = i + 1;
-      const amt = margin - (margin / 3n) + (margin / 3n / BigInt(months)) * BigInt(n);
-      return { n, isPayout: n === (c.payoutMonth ?? -1), lbl: n <= paidCount ? "paid" : "due", amt: formatPaise(amt < margin ? amt : margin), paid: n <= paidCount };
+      const real = paidInstallments[i];
+      return { n, isPayout: n === payoutMonth, lbl: real ? "paid" : "due", amt: formatPaise(real ? real.amt : margin), paid: !!real };
     }),
   };
 }
@@ -136,9 +184,9 @@ export async function getChitDetail(id: string): Promise<ChitDetailDTO | null> {
 export async function getGeneralDetail(id: string): Promise<GeneralDetailDTO | null> {
   const v = await loadVendor(id);
   if (!v || v.type !== "GENERAL") return null;
-  const base = toDTO({ ...v, chit: null });
   const invested = v.accounts.find((a) => a.kind === "VENDOR_RECEIVABLE")?.balance ?? 0n;
   const profit = -(v.accounts.find((a) => a.kind === "VENDOR_PROFIT")?.balance ?? 0n);
+  const base = toDTO({ ...v, chit: null }, invested, profit);
   const returns = await prisma.transaction.findMany({
     where: { vendorId: id, type: "VENDOR_RETURN", NOT: { description: { contains: "opening" } } },
     orderBy: { occurredAt: "desc" },

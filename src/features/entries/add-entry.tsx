@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useMemo, useState, useTransition } from "react";
+import { createContext, Suspense, use, useContext, useMemo, useState, useTransition } from "react";
 import { ArrowDown, ArrowUp, ArrowLeftRight, ChevronRight, Plus, Minus, type LucideIcon } from "lucide-react";
 import { Modal } from "@/components/shared/modal";
 import { SelectorCard, PickerSheet, type PickOption } from "@/components/shared/entity-picker";
@@ -70,12 +70,28 @@ export const useAddEntry = () => {
   return c;
 };
 
-export function AddEntryProvider({ children, options }: { children: React.ReactNode; options: EntryPickerOptions }) {
+export function AddEntryProvider({ children, optionsPromise }: { children: React.ReactNode; optionsPromise: Promise<EntryPickerOptions> }) {
+  // Picker data (a slow, non-critical query) is fetched lazily and never blocks page render —
+  // the dialog only mounts, and only then unwraps the promise, when the user opens Add-Entry.
+  const [open, setOpen] = useState(false);
+  return (
+    <Ctx.Provider value={{ open: () => setOpen(true) }}>
+      {children}
+      {open && (
+        <Suspense fallback={null}>
+          <AddEntryDialog optionsPromise={optionsPromise} onClose={() => setOpen(false)} />
+        </Suspense>
+      )}
+    </Ctx.Provider>
+  );
+}
+
+function AddEntryDialog({ optionsPromise, onClose }: { optionsPromise: Promise<EntryPickerOptions>; onClose: () => void }) {
+  const options = use(optionsPromise);
   const MEMBER_OPTS: PickOption[] = options.members;
   const VENDOR_OPTS: PickOption[] = options.vendors;
   const TREASURER_OPTS: PickOption[] = options.treasurers;
   const today = new Date().toISOString().slice(0, 10);
-  const [open, setOpen] = useState(false);
   const [intent, setIntent] = useState<string | null>(null);
   const [showMore, setShowMore] = useState(false);
   const [picking, setPicking] = useState<"party" | "holder" | null>(null);
@@ -86,17 +102,7 @@ export function AddEntryProvider({ children, options }: { children: React.ReactN
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
 
-  const close = () => {
-    setOpen(false);
-    setIntent(null);
-    setShowMore(false);
-    setPicking(null);
-    setParty(null);
-    setHolder(null);
-    setAmount("");
-    setTxnDate(today);
-    setError(null);
-  };
+  const close = onClose; // unmounts the dialog → all local state resets on next open
 
   const dir = intent ? INTENT_DIR[intent] : "in";
   const partyMeta = useMemo(() => getPartyMeta(intent), [intent]);
@@ -120,10 +126,8 @@ export function AddEntryProvider({ children, options }: { children: React.ReactN
   };
 
   return (
-    <Ctx.Provider value={{ open: () => setOpen(true) }}>
-      {children}
       <Modal
-        open={open}
+        open
         onClose={close}
         wide={!intent}
         hideHeader={!!picking}
@@ -212,7 +216,6 @@ export function AddEntryProvider({ children, options }: { children: React.ReactN
           </div>
         )}
       </Modal>
-    </Ctx.Provider>
   );
 }
 

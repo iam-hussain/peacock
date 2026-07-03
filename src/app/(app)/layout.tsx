@@ -6,10 +6,12 @@ import { getCurrentUser } from "@/server/queries/session";
 import { getEntryPickerOptions } from "@/server/queries/entries";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const [user, options] = await Promise.all([getCurrentUser(), getEntryPickerOptions()]);
+  const user = await getCurrentUser();
   if (!user) redirect("/login");
+  // Kick off picker data but do NOT await it — it must never block page render.
+  const optionsPromise = getEntryPickerOptions();
   return (
-    <AddEntryProvider options={options}>
+    <AddEntryProvider optionsPromise={optionsPromise}>
       <div className="min-h-screen bg-bg">
         <TopNav user={user} />
         <MobileTopBar user={user} />

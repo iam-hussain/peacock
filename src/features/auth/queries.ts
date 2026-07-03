@@ -19,7 +19,7 @@ function tagFor(role: string, isTreasurer: boolean): string {
 /** The sign-in directory: every member with a linked auth user, newest joiners last. */
 export async function getLoginProfiles(): Promise<LoginProfile[]> {
   const members = await prisma.member.findMany({
-    where: { user: { isNot: null } },
+    where: { user: { isNot: null }, memberships: { some: { status: "ACTIVE" } } },
     select: {
       id: true,
       firstName: true,

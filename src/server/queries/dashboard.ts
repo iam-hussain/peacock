@@ -32,7 +32,8 @@ async function totals() {
     activeLoanCount: activeLoans.length,
     activeMembers,
     pendingMemberCount: pendingMembers.length,
-    profit: portfolio - totalDeposits,
+    // realized, still-pooled club profit = loan interest collected + vendor returns profit
+    profit: -(interest._sum.balance ?? 0n) + -(vprofit._sum.balance ?? 0n),
   };
 }
 
