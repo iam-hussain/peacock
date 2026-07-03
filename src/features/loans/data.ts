@@ -11,4 +11,4 @@ export interface LoanStat {
   count?: string; // shown inline beside the value on mobile (e.g. "1 loan")
 }
 
-export const LOAN_FILTERS = ["All", "Active", "Overdue", "Closed"] as const;
+export const LOAN_FILTERS = ["Pending", "Active", "Closed", "All"] as const;

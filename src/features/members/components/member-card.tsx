@@ -7,14 +7,16 @@ import { ListAvatar } from "./list-avatar";
 export function MemberCard({ m }: { m: Member }) {
   const chips = [
     m.held ? { label: "Cash held", v: m.held, cls: "bg-tlsf text-teal" } : null,
-    m.adjustment ? { label: "Adjustment", v: m.adjustment, cls: "bg-wbg text-wfg" } : null,
+    m.adjustmentCharged
+      ? { label: `Adjustment · ${m.adjustment ?? "₹0"} pending`, v: m.adjustmentCharged, cls: m.adjustment ? "bg-wbg text-wfg" : "bg-nbg text-ink" }
+      : null,
     m.pending ? { label: "Pending", v: m.pending, cls: "bg-outbg text-outfg" } : null,
   ].filter((c): c is { label: string; v: string; cls: string } => c !== null);
 
   return (
     <Link href={`/members/${m.id}`} className="block rounded-2xl border border-bd bg-sf p-4 active:bg-sf2">
       <div className="flex items-center gap-3">
-        <ListAvatar name={m.name} size={44} />
+        <ListAvatar name={m.name} src={m.avatarUrl} size={44} />
         <div className="min-w-0 flex-1">
           <div className="text-[15px] font-bold leading-tight text-ink">{m.name}</div>
           <div className="mt-1 text-[11px] font-medium leading-none text-fnt">Joined {m.joined}</div>

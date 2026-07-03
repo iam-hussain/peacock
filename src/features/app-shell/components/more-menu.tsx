@@ -15,6 +15,8 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { signOut } from "@/lib/auth-client";
+import { toggleTheme } from "@/lib/theme";
+import { UserAvatar } from "./user-avatar";
 import type { CurrentUser } from "@/server/queries/session";
 
 export function MoreMenu({ user }: { user: CurrentUser }) {
@@ -25,9 +27,7 @@ export function MoreMenu({ user }: { user: CurrentUser }) {
     <div className="mx-auto flex max-w-[560px] flex-col gap-4 p-4 pb-[78px]">
       {/* profile */}
       <Link href="/settings" className="flex items-center gap-3.5 rounded-2xl border border-bd bg-sf px-4 py-4">
-        <span className="flex size-14 flex-none items-center justify-center rounded-full bg-teal text-lg font-bold text-white">
-          {user.initials}
-        </span>
+        <UserAvatar initials={user.initials} avatarUrl={user.avatarUrl} className="size-14 bg-teal text-lg font-bold text-white" />
         <div className="min-w-0 flex-1">
           <div className="text-base font-bold leading-tight text-ink">{user.name}</div>
           <div className="mt-1 truncate text-[13px] font-medium leading-none text-fnt">{user.email}</div>
@@ -89,7 +89,7 @@ function Row({ icon, label, sub, href }: { icon: LucideIcon; label: string; sub?
 function ThemeRow() {
   return (
     <button
-      onClick={() => document.documentElement.classList.toggle("dark")}
+      onClick={() => toggleTheme()}
       className="flex w-full items-center gap-3.5 border-b border-hr2 px-4 py-4 text-left active:bg-bg2"
     >
       <Tile icon={Sun} />

@@ -1,8 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { Check, TriangleAlert } from "lucide-react";
 import { initials } from "@/lib/avatar";
+import { decideSubmission, markAllRead } from "@/server/actions";
+import { useIsAdmin } from "@/lib/admin";
 import type { NotificationsData } from "@/server/queries/notifications";
 
 const CHIPS = ["All", "Approvals", "Alerts", "Activity"] as const;
@@ -22,9 +24,7 @@ export function Notifications({ approvals, alerts, events, summary }: Notificati
           <h1 className="text-2xl font-bold leading-none tracking-[-0.02em] text-ink">Notifications</h1>
           <p className="mt-[7px] text-[13px] font-medium leading-[1.4] text-mut">{approvals.length} approvals · {alerts.length} alerts need attention</p>
         </div>
-        <button className="flex items-center gap-[7px] whitespace-nowrap rounded-[10px] border border-bd2 px-3.5 py-2.5 text-xs font-semibold leading-none text-teal hover:bg-tlsf">
-          <Check className="size-3.5" strokeWidth={2.2} /> Mark all read
-        </button>
+        <MarkAllReadButton />
       </div>
 
       <div className="grid items-start gap-[22px] lg:grid-cols-[minmax(0,1fr)_300px]">
@@ -54,7 +54,7 @@ export function Notifications({ approvals, alerts, events, summary }: Notificati
               ) : (
                 <div className="flex flex-col gap-[11px]">
                   {approvals.map((a) => (
-                    <ApprovalCard key={a.who} a={a} />
+                    <ApprovalCard key={a.id} a={a} />
                   ))}
                 </div>
               )}
@@ -154,7 +154,28 @@ function EmptyState() {
   );
 }
 
+function MarkAllReadButton() {
+  const [pending, start] = useTransition();
+  return (
+    <button
+      onClick={() => start(() => markAllRead().then(() => {}))}
+      disabled={pending}
+      className="flex items-center gap-[7px] whitespace-nowrap rounded-[10px] border border-bd2 px-3.5 py-2.5 text-xs font-semibold leading-none text-teal hover:bg-tlsf disabled:opacity-60"
+    >
+      <Check className="size-3.5" strokeWidth={2.2} /> Mark all read
+    </button>
+  );
+}
+
 function ApprovalCard({ a }: { a: Approval }) {
+  const isAdmin = useIsAdmin();
+  const [pending, start] = useTransition();
+  const [err, setErr] = useState<string | null>(null);
+  const decide = (decision: "approve" | "reject") =>
+    start(async () => {
+      const res = await decideSubmission(a.id, decision);
+      if (!res.ok) setErr(res.error ?? "Something went wrong.");
+    });
   const meta = [
     { l: "Created by", v: a.creator },
     { l: "Treasurer", v: a.treasurer },
@@ -182,10 +203,25 @@ function ApprovalCard({ a }: { a: Approval }) {
           </div>
         ))}
       </div>
-      <div className="mt-3 flex gap-[9px]">
-        <button className="flex-1 rounded-[9px] bg-teal p-[11px] text-center text-[13px] font-semibold leading-none text-white">Approve</button>
-        <button className="flex-1 rounded-[9px] border border-outbd bg-sf p-[11px] text-center text-[13px] font-semibold leading-none text-out">Reject</button>
-      </div>
+      {isAdmin && (
+        <div className="mt-3 flex gap-[9px]">
+          <button
+            onClick={() => decide("approve")}
+            disabled={pending}
+            className="flex-1 rounded-[9px] bg-teal p-[11px] text-center text-[13px] font-semibold leading-none text-white hover:opacity-90 disabled:opacity-60"
+          >
+            Approve
+          </button>
+          <button
+            onClick={() => decide("reject")}
+            disabled={pending}
+            className="flex-1 rounded-[9px] border border-outbd bg-sf p-[11px] text-center text-[13px] font-semibold leading-none text-out hover:bg-outbg disabled:opacity-60"
+          >
+            Reject
+          </button>
+        </div>
+      )}
+      {err && <p className="mt-2 text-[12px] font-medium leading-[1.4] text-out">{err}</p>}
     </div>
   );
 }

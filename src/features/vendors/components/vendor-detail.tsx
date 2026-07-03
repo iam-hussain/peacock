@@ -3,27 +3,33 @@ import { Pencil, XCircle } from "lucide-react";
 import { StatCard } from "@/components/shared/stat-card";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { FormModalButton } from "@/components/shared/form-modal-button";
+import { AdminOnly } from "@/lib/admin";
 import type { ChitDetail, GeneralDetail } from "../data";
 
-function EditVendorButton({ name, chit = false }: { name: string; chit?: boolean }) {
+function EditVendorButton({
+  id, name, chit = false, category = "", statusLabel = "Active", value = "", months = "", margin = "",
+}: {
+  id: string; name: string; chit?: boolean; category?: string; statusLabel?: string; value?: string; months?: string; margin?: string;
+}) {
   return (
     <FormModalButton
       title={chit ? "Edit chit details" : "Edit vendor details"}
       subtitle={name}
       kind="editVendor"
       submitLabel="Save changes"
+      hiddenFields={{ id }}
       fields={
         chit
           ? [
               { name: "name", label: "Chit name", defaultValue: name, required: true },
-              { name: "value", label: "Chit value (₹)", defaultValue: "5,00,000" },
-              { name: "months", label: "Duration (months)", type: "number", defaultValue: "20" },
-              { name: "margin", label: "Max monthly (₹)", defaultValue: "25,000" },
+              { name: "value", label: "Chit value (₹)", defaultValue: value },
+              { name: "months", label: "Duration (months)", type: "number", defaultValue: months },
+              { name: "margin", label: "Max monthly (₹)", defaultValue: margin },
             ]
           : [
               { name: "name", label: "Vendor name", defaultValue: name, required: true },
-              { name: "category", label: "Category", options: ["Bank", "Stocks", "Gold", "Other"] },
-              { name: "status", label: "Status", options: ["Active", "Inactive", "Closed"] },
+              { name: "category", label: "Category", options: ["Bank", "Stocks", "Gold", "Other"], defaultValue: category },
+              { name: "status", label: "Status", options: ["Active", "Inactive", "Closed"], defaultValue: statusLabel },
             ]
       }
       buttonClassName="flex flex-none items-center gap-[7px] rounded-[9px] border border-bd2 bg-sf px-4 py-2.5 text-[13px] font-semibold leading-none text-teal hover:bg-sf2"
@@ -33,7 +39,7 @@ function EditVendorButton({ name, chit = false }: { name: string; chit?: boolean
   );
 }
 
-function WriteOffButton({ name }: { name: string }) {
+function WriteOffButton({ id, name }: { id: string; name: string }) {
   return (
     <FormModalButton
       title="Write off vendor"
@@ -41,6 +47,7 @@ function WriteOffButton({ name }: { name: string }) {
       kind="vendorWriteOff"
       submitLabel="Write off"
       destructive
+      hiddenFields={{ party: name, vendorId: id }}
       fields={[
         { name: "amount", label: "Write-off amount (₹)", placeholder: "0", required: true },
         { name: "reason", label: "Reason", type: "textarea", placeholder: "Why is this being written off?" },
@@ -97,9 +104,11 @@ export function ChitDetailView({ c }: { c: ChitDetail }) {
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2 md:flex-none">
-          <EditVendorButton name={c.name} chit />
-        </div>
+        <AdminOnly>
+          <div className="flex items-center gap-2 md:flex-none">
+            <EditVendorButton id={c.id} name={c.name} chit value={String(c.valueRupees)} months={String(c.months)} margin={String(c.marginRupees)} />
+          </div>
+        </AdminOnly>
       </div>
 
       <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-3.5">
@@ -146,12 +155,12 @@ export function ChitDetailView({ c }: { c: ChitDetail }) {
           </div>
           <div className="rounded-2xl border border-bd bg-sf p-5">
             <div className="text-[10px] font-semibold uppercase leading-none tracking-[0.05em] text-fnt">Profit / loss</div>
-            <div className={`mt-[11px] font-mono text-[30px] font-semibold leading-none ${c.plPositive ? "text-in" : "text-out"}`}>
-              {c.plDisp}
+            <div className={`mt-[11px] font-mono text-[30px] font-semibold leading-none ${c.roiPositive ? "text-in" : "text-out"}`}>
+              {c.profit}
             </div>
             <p className="mt-[9px] text-xs font-medium leading-[1.5] text-mut">
-              Payout minus total of all {c.months} installments. A negative figure is the cost of taking the money
-              early.
+              Realized profit minus the obligation still owed. While months remain uncovered a negative figure is
+              the cost of the installments the club must still pay.
             </p>
           </div>
         </div>
@@ -180,10 +189,12 @@ export function GeneralDetailView({ g }: { g: GeneralDetail }) {
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2 md:flex-none">
-          <WriteOffButton name={g.name} />
-          <EditVendorButton name={g.name} />
-        </div>
+        <AdminOnly>
+          <div className="flex items-center gap-2 md:flex-none">
+            <WriteOffButton id={g.id} name={g.name} />
+            <EditVendorButton id={g.id} name={g.name} category={g.category} statusLabel={g.statusLabel} />
+          </div>
+        </AdminOnly>
       </div>
 
       <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-3.5">

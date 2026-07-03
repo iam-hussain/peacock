@@ -16,8 +16,15 @@
 import { PrismaClient, type LedgerAccountKind, type TxnType } from "@prisma/client";
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+
+// Member avatars live in data/image/avatar_<n>.jpeg (1-based). Inline as a base64 data URL if present.
+function avatarDataUrl(index: number): string | null {
+  const url = new URL(`../data/image/avatar_${index + 1}.jpeg`, import.meta.url);
+  if (!existsSync(url)) return null;
+  return `data:image/jpeg;base64,${readFileSync(url).toString("base64")}`;
+}
 
 const prisma = new PrismaClient();
 const auth = betterAuth({
@@ -148,6 +155,7 @@ for (let i = 0; i < backup.members.length; i++) {
       userId,
       mustChangePassword: true,
       customerSince: since,
+      avatarUrl: avatarDataUrl(i),
     },
   });
 

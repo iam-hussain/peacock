@@ -9,6 +9,7 @@ export interface CurrentUser {
   name: string;
   firstName: string;
   initials: string;
+  avatarUrl: string | null;
   email: string;
   role: string; // "Admin" | "Treasurer" | "Member"
   isAdmin: boolean;
@@ -20,7 +21,7 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
   if (!session?.user) return null;
   const member = await prisma.member.findFirst({
     where: { userId: session.user.id },
-    select: { id: true, firstName: true, lastName: true, email: true, role: true, isTreasurer: true },
+    select: { id: true, firstName: true, lastName: true, email: true, role: true, isTreasurer: true, avatarUrl: true },
   });
   if (!member) return null;
   const name = [member.firstName, member.lastName].filter(Boolean).join(" ");
@@ -30,6 +31,7 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
     name,
     firstName: member.firstName,
     initials: initials(name),
+    avatarUrl: member.avatarUrl,
     email: member.email ?? session.user.email,
     role,
     isAdmin: member.role === "ADMIN",

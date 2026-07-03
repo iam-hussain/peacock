@@ -16,7 +16,8 @@ function tagFor(role: string, isTreasurer: boolean): string {
   return isTreasurer ? "Treasurer" : "Member";
 }
 
-/** The sign-in directory: every member with a linked auth user, newest joiners last. */
+/** The sign-in directory: every member with a linked auth user, most recently signed-in first
+ *  (members who never logged in fall to the end, ordered by join date). */
 export async function getLoginProfiles(): Promise<LoginProfile[]> {
   const members = await prisma.member.findMany({
     where: { user: { isNot: null }, memberships: { some: { status: "ACTIVE" } } },
@@ -28,10 +29,21 @@ export async function getLoginProfiles(): Promise<LoginProfile[]> {
       isTreasurer: true,
       archivedAt: true,
       customerSince: true,
-      user: { select: { email: true } },
+      user: {
+        select: {
+          email: true,
+          sessions: { select: { createdAt: true }, orderBy: { createdAt: "desc" }, take: 1 },
+        },
+      },
       memberships: { select: { status: true } },
     },
-    orderBy: { customerSince: "asc" },
+  });
+
+  members.sort((a, b) => {
+    const la = a.user!.sessions[0]?.createdAt.getTime() ?? 0;
+    const lb = b.user!.sessions[0]?.createdAt.getTime() ?? 0;
+    if (la !== lb) return lb - la; // most recent login first
+    return a.customerSince.getTime() - b.customerSince.getTime(); // tie / never logged in → oldest join first
   });
 
   return members.map((m) => {

@@ -6,6 +6,7 @@ import { Bell, Upload, LayoutDashboard, Users, HandCoins, LayoutGrid, Plus, type
 import { BrandLockup } from "@/components/shared/brand-lockup";
 import { NAV } from "../nav";
 import { useAddEntry } from "@/features/entries/add-entry";
+import { UserAvatar } from "./user-avatar";
 import type { CurrentUser } from "@/server/queries/session";
 
 const EXTRA_TITLES: Record<string, string> = {
@@ -25,7 +26,7 @@ function sectionTitle(pathname: string): string | null {
 }
 
 /** Mobile top bar: brand + section title + share / notifications / avatar. */
-export function MobileTopBar({ user }: { user: CurrentUser }) {
+export function MobileTopBar({ user, unread = 0 }: { user: CurrentUser; unread?: number }) {
   const pathname = usePathname();
   const title = sectionTitle(pathname);
   return (
@@ -51,13 +52,13 @@ export function MobileTopBar({ user }: { user: CurrentUser }) {
         className="relative flex size-[34px] flex-none items-center justify-center rounded-full border border-bd text-mut"
       >
         <Bell className="size-4" strokeWidth={2} />
-        <span className="absolute -right-[3px] -top-[3px] flex h-4 min-w-4 items-center justify-center rounded-lg border-2 border-sf bg-out px-[3px] font-mono text-[9px] font-bold text-white">
-          3
-        </span>
+        {unread > 0 && (
+          <span className="absolute -right-[3px] -top-[3px] flex h-4 min-w-4 items-center justify-center rounded-lg border-2 border-sf bg-out px-[3px] font-mono text-[9px] font-bold text-white">
+            {unread}
+          </span>
+        )}
       </Link>
-      <span className="flex size-[34px] flex-none items-center justify-center rounded-full bg-nbg text-xs font-bold text-nfg">
-        {user.initials}
-      </span>
+      <UserAvatar initials={user.initials} avatarUrl={user.avatarUrl} className="size-[34px] bg-nbg text-xs font-bold text-nfg" />
     </header>
   );
 }

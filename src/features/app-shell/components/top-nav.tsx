@@ -7,10 +7,11 @@ import { BrandLockup } from "@/components/shared/brand-lockup";
 import { NAV } from "../nav";
 import { UserMenu } from "./user-menu";
 import { useAddEntry } from "@/features/entries/add-entry";
+import { toggleTheme } from "@/lib/theme";
 import type { CurrentUser } from "@/server/queries/session";
 
 /** Desktop top navigation bar. */
-export function TopNav({ user }: { user: CurrentUser }) {
+export function TopNav({ user, unread = 0 }: { user: CurrentUser; unread?: number }) {
   const pathname = usePathname();
   const addEntry = useAddEntry();
   return (
@@ -42,9 +43,11 @@ export function TopNav({ user }: { user: CurrentUser }) {
         className="relative flex size-[34px] items-center justify-center rounded-[9px] border border-bd text-mut hover:bg-bg2"
       >
         <Bell className="size-[17px]" strokeWidth={2} />
-        <span className="absolute -right-1.5 -top-1.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-[9px] border-2 border-sf bg-out px-1 font-mono text-[9px] font-bold text-white">
-          3
-        </span>
+        {unread > 0 && (
+          <span className="absolute -right-1.5 -top-1.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-[9px] border-2 border-sf bg-out px-1 font-mono text-[9px] font-bold text-white">
+            {unread}
+          </span>
+        )}
       </Link>
 
       <Link
@@ -73,7 +76,7 @@ function ThemeToggle() {
   return (
     <button
       aria-label="Toggle theme"
-      onClick={() => document.documentElement.classList.toggle("dark")}
+      onClick={() => toggleTheme()}
       className="flex size-[34px] items-center justify-center rounded-[9px] border border-bd text-mut hover:bg-bg2"
     >
       <Sun className="size-[17px]" strokeWidth={2} />

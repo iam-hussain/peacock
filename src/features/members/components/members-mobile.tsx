@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Plus } from "lucide-react";
 import { FormModalButton } from "@/components/shared/form-modal-button";
+import { AdminOnly } from "@/lib/admin";
 import { ViewToggle, type ListView } from "@/components/shared/view-toggle";
 import type { Member } from "../data";
 import { ADD_MEMBER_FIELDS, type MemberSummary } from "./members-list";
@@ -20,17 +21,19 @@ export function MembersMobile({ members, summary }: { members: Member[]; summary
           {summary.text} · {summary.totalDeposits} deposits
         </span>
         <div className="flex flex-none items-center gap-2">
-          <FormModalButton
-            title="Add member"
-            subtitle="Create a new member profile."
-            kind="addMember"
-            submitLabel="Add member"
-            fields={ADD_MEMBER_FIELDS}
-            buttonAriaLabel="Add member"
-            buttonClassName="flex size-9 flex-none items-center justify-center rounded-[9px] bg-teal text-white"
-          >
-            <Plus className="size-4" strokeWidth={2.5} />
-          </FormModalButton>
+          <AdminOnly>
+            <FormModalButton
+              title="Add member"
+              subtitle="Create a new member profile."
+              kind="addMember"
+              submitLabel="Add member"
+              fields={ADD_MEMBER_FIELDS}
+              buttonAriaLabel="Add member"
+              buttonClassName="flex size-9 flex-none items-center justify-center rounded-[9px] bg-teal text-white"
+            >
+              <Plus className="size-4" strokeWidth={2.5} />
+            </FormModalButton>
+          </AdminOnly>
           <ViewToggle value={view} onChange={setView} />
         </div>
       </div>

@@ -4,6 +4,7 @@ import { StatCard } from "@/components/shared/stat-card";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { type Vendor } from "../data";
 import { FormModalButton } from "@/components/shared/form-modal-button";
+import { AdminOnly } from "@/lib/admin";
 
 type VendorStat = { label: string; value: string; tone?: "in" | "teal" };
 
@@ -13,6 +14,7 @@ export function VendorsList({ vendors, stats }: { vendors: Vendor[]; stats: Vend
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         {/* Title — desktop only (mobile top-bar already shows "Vendors") */}
         <h1 className="hidden text-2xl font-bold leading-none tracking-[-0.02em] text-ink md:block">Vendors &amp; chits</h1>
+        <AdminOnly>
         <div className="flex w-full gap-2.5 md:w-auto">
           <FormModalButton
             title="New vendor"
@@ -46,6 +48,7 @@ export function VendorsList({ vendors, stats }: { vendors: Vendor[]; stats: Vend
             + New chit
           </FormModalButton>
         </div>
+        </AdminOnly>
       </div>
 
       <div className="mb-4 grid grid-cols-3 gap-3 md:gap-3.5">
@@ -86,6 +89,7 @@ function VendorRow({ v }: { v: Vendor }) {
         </div>
         <div className="mt-1.5 text-[11px] font-medium leading-[1.3] text-fnt">
           {v.cycle} · invested {v.invested}
+          {v.obligation && <span className="text-out"> · owes {v.obligation}</span>}
         </div>
       </div>
       <div className="text-right">

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Settings, HelpCircle, FileText, LogOut, ChevronDown } from "lucide-react";
 import { signOut } from "@/lib/auth-client";
+import { UserAvatar } from "./user-avatar";
 import type { CurrentUser } from "@/server/queries/session";
 
 export function UserMenu({ user }: { user: CurrentUser }) {
@@ -20,9 +21,7 @@ export function UserMenu({ user }: { user: CurrentUser }) {
           open ? "border-bd2 bg-bg2" : "border-transparent hover:bg-bg2"
         }`}
       >
-        <span className="flex size-[30px] items-center justify-center rounded-full bg-teal text-xs font-bold text-white">
-          {user.initials}
-        </span>
+        <UserAvatar initials={user.initials} avatarUrl={user.avatarUrl} className="size-[30px] bg-teal text-xs font-bold text-white" />
         <ChevronDown className={`size-3.5 text-mut transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
 
@@ -31,9 +30,7 @@ export function UserMenu({ user }: { user: CurrentUser }) {
           <button className="fixed inset-0 z-40 cursor-default" onClick={() => setOpen(false)} aria-label="Close menu" />
           <div className="absolute right-0 top-[46px] z-[41] w-[248px] overflow-hidden rounded-[14px] border border-bd bg-sf shadow-[0_1px_2px_var(--shadow),0_18px_44px_var(--shadow)]">
             <div className="flex items-center gap-[11px] border-b border-hair px-4 py-[15px]">
-              <span className="flex size-[38px] items-center justify-center rounded-full bg-teal text-sm font-bold text-white">
-                {user.initials}
-              </span>
+              <UserAvatar initials={user.initials} avatarUrl={user.avatarUrl} className="size-[38px] bg-teal text-sm font-bold text-white" />
               <div className="min-w-0 flex-1">
                 <div className="text-[13px] font-bold leading-none text-ink">{user.name}</div>
                 <div className="mt-1 truncate font-mono text-[11px] font-medium leading-[1.3] text-fnt">

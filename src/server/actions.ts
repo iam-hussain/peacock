@@ -4,19 +4,45 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/server/db";
 import { rupeesToPaise } from "@/lib/money";
+import { headers } from "next/headers";
 import { approveSubmission, rejectSubmission } from "@/server/ledger/approve";
 import { postIntent } from "@/server/ledger/intents";
+import { reverseTransaction, editTransactionAmount } from "@/server/ledger/reverse";
+import { auth } from "@/server/auth";
+import { getCurrentUser } from "@/server/queries/session";
+import { quarterBounds } from "@/lib/quarter";
+import { quarterFigures } from "@/server/queries/close-quarter";
+
+// One admin gate for every mutation. Reads = free; writes below the line are admin-only.
+async function requireAdmin(): Promise<string | null> {
+  const me = await getCurrentUser();
+  return me?.isAdmin ? null : "Only an admin can do that.";
+}
 
 // Approve a pending money submission → posts balanced ledger entries. Reject → drops it.
 export async function decideSubmission(id: string, decision: "approve" | "reject"): Promise<ActionResult> {
   try {
-    if (decision === "approve") await approveSubmission(id);
-    else await rejectSubmission(id);
+    const me = await getCurrentUser();
+    if (!me?.isAdmin) return { ok: false, error: "Only an admin can do that." };
+    if (decision === "approve") await approveSubmission(id, me.id);
+    else await rejectSubmission(id, me.id);
     revalidatePath("/notifications");
     revalidatePath("/transactions");
+    revalidatePath("/dashboard");
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Could not process the approval." };
+  }
+}
+
+// Clear the bell: mark every unread notification read.
+export async function markAllRead(): Promise<ActionResult> {
+  try {
+    await prisma.notification.updateMany({ where: { isRead: false }, data: { isRead: true } });
+    revalidatePath("/notifications");
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Could not mark all read." };
   }
 }
 
@@ -35,15 +61,20 @@ const splitName = (full: string) => {
  * and invalidates the affected cache tags. Money-posting kinds create a pending
  * Submission (approval workflow) rather than posting to the ledger directly.
  */
+// Self-service kinds any signed-in member may run; everything else is admin-gated (fail-closed).
+const SELF_SERVICE = new Set(["changePassword", "editProfile", "entry"]);
+
 export async function formAction(kind: string, fd: FormData): Promise<ActionResult> {
   try {
+    if (!SELF_SERVICE.has(kind)) {
+      const denied = await requireAdmin();
+      if (denied) return { ok: false, error: denied };
+    }
     switch (kind) {
       case "addMember":
         return await addMember(fd);
       case "editMember":
         return await editMember(fd);
-      case "addAdmin":
-        return await addAdmin(fd);
       case "newVendor":
         return await newVendor(fd);
       case "newChit":
@@ -56,6 +87,10 @@ export async function formAction(kind: string, fd: FormData): Promise<ActionResu
         return await editCharge(fd);
       case "rejoin":
         return await rejoin(fd);
+      case "settle":
+        return await settle(fd);
+      case "vendorWriteOff":
+        return await vendorWriteOff(fd);
       case "recordPayment":
         return await recordPayment(fd);
       case "editPayment":
@@ -64,14 +99,18 @@ export async function formAction(kind: string, fd: FormData): Promise<ActionResu
         return await deleteCharge(fd);
       case "deletePayment":
         return await deletePayment(fd);
+      case "editTransaction":
+        return await editTransaction(fd);
+      case "deleteTransaction":
+        return await deleteTransaction(fd);
       case "entry":
         return await submitEntry(fd);
-      // Deferred until Better Auth (passwords) / the ledger engine (money math) land:
       case "changePassword":
+        return await changePassword(fd);
       case "resetPassword":
-      case "vendorWriteOff":
-      case "closeQuarter":
-        return { ok: true, deferred: true };
+        return await resetPassword(fd);
+      case "editProfile":
+        return await editProfile(fd);
       default:
         return { ok: true, deferred: true };
     }
@@ -141,18 +180,6 @@ async function editMember(fd: FormData): Promise<ActionResult> {
   return { ok: true };
 }
 
-async function addAdmin(fd: FormData): Promise<ActionResult> {
-  const name = str(fd, "member");
-  if (!name) return { ok: false, error: "Pick a member." };
-  const { firstName, lastName } = splitName(name);
-  const member = await prisma.member.findFirst({
-    where: { firstName, lastName: lastName ?? undefined },
-  });
-  if (!member) return { ok: false, error: `${name} isn't in the directory yet.` };
-  await prisma.member.update({ where: { id: member.id }, data: { role: "ADMIN" } });
-  return { ok: true };
-}
-
 async function newVendor(fd: FormData): Promise<ActionResult> {
   const name = str(fd, "name");
   if (!name) return { ok: false, error: "Vendor name is required." };
@@ -197,7 +224,7 @@ async function newChit(fd: FormData): Promise<ActionResult> {
 
 async function editVendor(fd: FormData): Promise<ActionResult> {
   const id = str(fd, "id");
-  if (!id) return { ok: true, deferred: true }; // vendor reads still on stubs; no DB id to target yet
+  if (!id) return { ok: false, error: "Missing vendor." };
 
   await prisma.vendor.update({
     where: { id },
@@ -207,7 +234,22 @@ async function editVendor(fd: FormData): Promise<ActionResult> {
       status: (str(fd, "status").toUpperCase() as "ACTIVE" | "INACTIVE" | "CLOSED") || undefined,
     },
   });
+  // Chit vendors also carry value / duration / margin — update the ChitFund when those come through.
+  const value = str(fd, "value");
+  const months = str(fd, "months");
+  const margin = str(fd, "margin");
+  if (value || months || margin) {
+    await prisma.chitFund.updateMany({
+      where: { vendorId: id },
+      data: {
+        ...(value ? { chitValue: rupeesToPaise(value) } : {}),
+        ...(months ? { durationMonths: Number(months) } : {}),
+        ...(margin ? { marginInstallment: rupeesToPaise(margin) } : {}),
+      },
+    });
+  }
   revalidatePath("/vendors");
+  revalidatePath(`/vendors/${id}`);
   return { ok: true };
 }
 
@@ -299,6 +341,39 @@ async function deletePayment(fd: FormData): Promise<ActionResult> {
   return { ok: true };
 }
 
+// A ledger correction touches balances that feed every money view — revalidate them all.
+function revalidateLedger() {
+  for (const p of ["/transactions", "/dashboard", "/members", "/vendors", "/analytics", "/notifications"]) revalidatePath(p);
+}
+
+// Delete a posted transaction (§16): post a reversal (keeps history), row drops out of the feed.
+async function deleteTransaction(fd: FormData): Promise<ActionResult> {
+  const id = str(fd, "id");
+  if (!id) return { ok: false, error: "Missing transaction." };
+  try {
+    await reverseTransaction(id);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Could not delete the transaction." };
+  }
+  revalidateLedger();
+  return { ok: true };
+}
+
+// Edit a posted transaction's amount / date (§16): reverse the original, re-post the corrected one.
+async function editTransaction(fd: FormData): Promise<ActionResult> {
+  const id = str(fd, "id");
+  if (!id) return { ok: false, error: "Missing transaction." };
+  const amount = rupeesToPaise(str(fd, "amount"));
+  if (amount <= 0n) return { ok: false, error: "Enter an amount greater than zero." };
+  try {
+    await editTransactionAmount(id, amount, str(fd, "date") || undefined);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Could not edit the transaction." };
+  }
+  revalidateLedger();
+  return { ok: true };
+}
+
 // Rejoin (PRODUCT.md §12): open a fresh membership #N+1 (Active) for a person whose last
 // membership is closed, and raise the auto-suggested catch-up as a "Rejoin" charge they pay
 // down over time. Back deposits aren't a charge — they surface as the new membership's normal
@@ -336,6 +411,223 @@ async function rejoin(fd: FormData): Promise<ActionResult> {
     // Clear the archived flag so a member who had fully "left" reads as active again.
     await tx.member.update({ where: { id: memberId }, data: { archivedAt: null } });
   });
+  revalidatePath("/members");
+  revalidatePath(`/members/${memberId}`);
+  return { ok: true };
+}
+
+// Close the current quarter (§18): freeze a snapshot + lock its entries (enforced in
+// postTransaction). Profit keeps accumulating; this is snapshot + lock, no distribution.
+export async function closeQuarterNow(): Promise<ActionResult> {
+  const me = await getCurrentUser();
+  if (!me?.isAdmin) return { ok: false, error: "Only an admin can close a quarter." };
+  const cfg = await prisma.clubConfig.findUnique({ where: { id: "singleton" }, select: { fyStartMonth: true } });
+  const { start, end, label } = quarterBounds(new Date(), cfg?.fyStartMonth ?? 4);
+  if (await prisma.periodClose.findUnique({ where: { periodStart: start } })) return { ok: false, error: `${label} is already closed.` };
+  const f = await quarterFigures(start, end);
+  await prisma.periodClose.create({
+    data: {
+      periodStart: start,
+      periodEnd: end,
+      closedById: me.id,
+      snapshot: {
+        label,
+        profitPaise: f.netProfitPaise.toString(),
+        availableCashPaise: f.availableCashPaise.toString(),
+        portfolioPaise: f.portfolioPaise.toString(),
+        activeMembers: f.activeMembers,
+      },
+    },
+  });
+  revalidatePath("/settings");
+  return { ok: true };
+}
+
+// The signed-in user changes their own password (Better Auth validates the current one).
+async function changePassword(fd: FormData): Promise<ActionResult> {
+  const currentPassword = str(fd, "current");
+  const newPassword = str(fd, "new");
+  if (newPassword.length < 6) return { ok: false, error: "New password must be at least 6 characters." };
+  if (newPassword !== str(fd, "confirm")) return { ok: false, error: "New passwords don't match." };
+  try {
+    await auth.api.changePassword({ body: { currentPassword, newPassword }, headers: await headers() });
+    const me = await getCurrentUser();
+    if (me) await prisma.member.update({ where: { id: me.id }, data: { mustChangePassword: false } });
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Could not change password — check your current one." };
+  }
+  return { ok: true };
+}
+
+// Admin resets a member's password to their phone number (default) or a custom value, and flags
+// mustChangePassword so the member is forced to set their own on next login.
+async function resetPassword(fd: FormData): Promise<ActionResult> {
+  const me = await getCurrentUser();
+  if (!me?.isAdmin) return { ok: false, error: "Only an admin can reset passwords." };
+  const memberName = str(fd, "member");
+  if (!memberName) return { ok: false, error: "Pick a member." };
+  const { firstName, lastName } = splitName(memberName);
+  const member = await prisma.member.findFirst({ where: { firstName, lastName: lastName ?? undefined }, select: { id: true, phone: true, userId: true } });
+  if (!member?.userId) return { ok: false, error: `${memberName} has no login account.` };
+  const newPassword = str(fd, "custom") || member.phone || "";
+  if (newPassword.length < 6) return { ok: false, error: "No default password available — enter a custom one (min 6 chars)." };
+  try {
+    const ctx = await auth.$context;
+    const hash = await ctx.password.hash(newPassword);
+    await ctx.internalAdapter.updatePassword(member.userId, hash);
+    await prisma.member.update({ where: { id: member.id }, data: { mustChangePassword: true } });
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Could not reset the password." };
+  }
+  return { ok: true };
+}
+
+// The signed-in member edits their own profile (name, phone, email, username, avatar URL).
+async function editProfile(fd: FormData): Promise<ActionResult> {
+  const me = await getCurrentUser();
+  if (!me) return { ok: false, error: "Not signed in." };
+  const p = memberSchema.safeParse({ name: str(fd, "name"), phone: str(fd, "phone"), email: str(fd, "email"), username: str(fd, "username") });
+  if (!p.success) return { ok: false, error: p.error.issues[0].message };
+  const { firstName, lastName } = splitName(p.data.name);
+  const clash = await prisma.member.findFirst({ where: { phone: p.data.phone, id: { not: me.id } }, select: { id: true } });
+  if (clash) return { ok: false, error: "Another member already uses that phone." };
+  await prisma.member.update({
+    where: { id: me.id },
+    data: {
+      firstName,
+      lastName,
+      phone: p.data.phone,
+      email: p.data.email || null,
+      username: p.data.username || null,
+    },
+  });
+  revalidatePath("/settings");
+  revalidatePath(`/members/${me.id}`);
+  return { ok: true };
+}
+
+// The signed-in member sets their own avatar (cropped + resized to a small square on the client,
+// passed here as a base64 data URL and stored inline on the member row).
+export async function updateAvatar(dataUrl: string): Promise<ActionResult> {
+  const me = await getCurrentUser();
+  if (!me) return { ok: false, error: "Not signed in." };
+  const cleared = dataUrl === "";
+  if (!cleared) {
+    if (!/^data:image\/(png|jpeg|webp);base64,/.test(dataUrl)) return { ok: false, error: "Unsupported image." };
+    if (dataUrl.length > 400_000) return { ok: false, error: "Image is too large — crop smaller." }; // ~300KB decoded
+  }
+  await prisma.member.update({ where: { id: me.id }, data: { avatarUrl: cleared ? null : dataUrl } });
+  revalidatePath("/settings");
+  revalidatePath(`/members/${me.id}`);
+  return { ok: true };
+}
+
+// Admin grants/revokes the ADMIN role on a member (used by the Admins management sheet).
+export async function setAdmin(memberId: string, makeAdmin: boolean): Promise<ActionResult> {
+  const me = await getCurrentUser();
+  if (!me?.isAdmin) return { ok: false, error: "Only an admin can change admins." };
+  if (!makeAdmin) {
+    if (memberId === me.id) return { ok: false, error: "You can't remove your own admin access." };
+    const admins = await prisma.member.count({ where: { role: "ADMIN" } });
+    if (admins <= 1) return { ok: false, error: "The club needs at least one admin." };
+  }
+  await prisma.member.update({ where: { id: memberId }, data: { role: makeAdmin ? "ADMIN" : "MEMBER" } });
+  revalidatePath("/settings");
+  return { ok: true };
+}
+
+// Admin edits club settings (design "Edit club settings"): name & timezone are locked; the
+// dividend toggle flips instantly; a new monthly-deposit amount or loan rate is an APPEND to the
+// dated history (effective going forward — past records untouched). Both fields of a pair required.
+type ClubStage = { name?: string; amountPaise: number; startDate: string; endDate?: string | null };
+type ClubRate = { rateBps: number; effectiveFrom: string };
+
+export async function saveClubSettings(input: {
+  dividend: boolean;
+  depositAmount?: string; depositFrom?: string; // ₹ + yyyy-mm-dd
+  rate?: string; rateFrom?: string; // %/mo + yyyy-mm-dd
+}): Promise<ActionResult> {
+  const me = await getCurrentUser();
+  if (!me?.isAdmin) return { ok: false, error: "Only an admin can edit the club." };
+  const cfg = await prisma.clubConfig.findUnique({ where: { id: "singleton" }, select: { stages: true, rateSchedule: true } });
+  if (!cfg) return { ok: false, error: "Club config not found." };
+
+  const data: { dividendEnabled: boolean; stages?: ClubStage[]; rateSchedule?: ClubRate[] } = { dividendEnabled: input.dividend };
+
+  const depA = (input.depositAmount ?? "").trim();
+  const depD = (input.depositFrom ?? "").trim();
+  if (depA || depD) {
+    if (!depA || !depD) return { ok: false, error: "Enter both a new deposit amount and its effective date." };
+    const amount = Number(rupeesToPaise(depA));
+    if (amount <= 0) return { ok: false, error: "Deposit amount must be greater than zero." };
+    const from = new Date(depD);
+    if (Number.isNaN(from.getTime())) return { ok: false, error: "Enter a valid deposit effective date." };
+    const stages = ([...(cfg.stages as unknown as ClubStage[])]).sort((a, b) => a.startDate.localeCompare(b.startDate));
+    const last = stages[stages.length - 1];
+    if (last && depD <= last.startDate) return { ok: false, error: "Effective date must be after the current stage." };
+    if (last) last.endDate = depD;
+    stages.push({ name: `Stage ${stages.length + 1}`, amountPaise: amount, startDate: depD });
+    data.stages = stages;
+  }
+
+  const rA = (input.rate ?? "").trim();
+  const rD = (input.rateFrom ?? "").trim();
+  if (rA || rD) {
+    if (!rA || !rD) return { ok: false, error: "Enter both a new rate and its effective date." };
+    const rateBps = Math.round(Number(rA) * 100);
+    if (!Number.isFinite(rateBps) || rateBps < 0) return { ok: false, error: "Enter a valid interest rate." };
+    if (Number.isNaN(new Date(rD).getTime())) return { ok: false, error: "Enter a valid rate effective date." };
+    const sched = ([...(cfg.rateSchedule as unknown as ClubRate[])]).sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom));
+    const last = sched[sched.length - 1];
+    if (last && rD <= last.effectiveFrom) return { ok: false, error: "Rate effective date must be after the current one." };
+    sched.push({ rateBps, effectiveFrom: rD });
+    data.rateSchedule = sched;
+  }
+
+  await prisma.clubConfig.update({ where: { id: "singleton" }, data });
+  for (const p of ["/settings", "/members", "/loans", "/dashboard", "/analytics"]) revalidatePath(p);
+  return { ok: true };
+}
+
+// Write off a vendor loss (§ vendor mgmt): reduces the receivable and books the shortfall against
+// vendor profit. No cash moves — it's an accounting loss. Resolves the vendor by name.
+async function vendorWriteOff(fd: FormData): Promise<ActionResult> {
+  const party = str(fd, "party");
+  if (!party) return { ok: false, error: "Missing vendor." };
+  try {
+    await postIntent({
+      intent: "Vendor write-off",
+      party,
+      amount: str(fd, "amount"),
+      date: str(fd, "date"),
+      note: str(fd, "reason") || undefined,
+    });
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Could not write off the vendor." };
+  }
+  const vendorId = str(fd, "vendorId");
+  revalidatePath("/vendors");
+  if (vendorId) revalidatePath(`/vendors/${vendorId}`);
+  return { ok: true };
+}
+
+// Settle up & leave (PRODUCT.md §12): admin pays the member out in cash from a treasurer and
+// closes their membership. Posts the WITHDRAW intent (TREASURY −A, MEMBER_EQUITY +A; membership
+// → CLOSED with leave date + settled amount). Profit zeroes out once they're no longer active.
+async function settle(fd: FormData): Promise<ActionResult> {
+  const memberId = str(fd, "memberId");
+  try {
+    await postIntent({
+      intent: "Member leaves (settle up)",
+      party: str(fd, "party"),
+      amount: str(fd, "amount"),
+      treasurer: str(fd, "treasurer"),
+      date: str(fd, "date"),
+      note: str(fd, "note"),
+    });
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Could not settle the member." };
+  }
   revalidatePath("/members");
   revalidatePath(`/members/${memberId}`);
   return { ok: true };
@@ -389,6 +681,8 @@ async function editPayment(fd: FormData): Promise<ActionResult> {
 // Money entries don't post to the ledger directly — they create a PENDING submission
 // that an admin approves (approval workflow). Posting happens on approval (ledger phase).
 async function submitEntry(fd: FormData): Promise<ActionResult> {
+  const me = await getCurrentUser();
+  if (!me) return { ok: false, error: "Not signed in." };
   const intent = str(fd, "intent");
   if (!intent) return { ok: false, error: "Pick what happened." };
   const payload: Record<string, string> = {};
@@ -397,18 +691,21 @@ async function submitEntry(fd: FormData): Promise<ActionResult> {
     if (v) payload[key] = v;
   }
   const submission = await prisma.submission.create({
-    data: { intent, payload, status: "PENDING", submittedById: "rajesh-kumar" },
+    data: { intent, payload, status: "PENDING", submittedById: me.id },
   });
-  await prisma.notification.create({
-    data: {
-      recipientId: "rajesh-kumar",
-      kind: "APPROVAL",
+  // Approval goes to every admin's inbox.
+  const admins = await prisma.member.findMany({ where: { role: "ADMIN" }, select: { id: true } });
+  const body = payload.party ? `${payload.party} · ${payload.amount ?? ""}`.trim() : null;
+  await prisma.notification.createMany({
+    data: admins.map((a) => ({
+      recipientId: a.id,
+      kind: "APPROVAL" as const,
       type: "submission.pending",
       title: intent,
-      body: payload.party ? `${payload.party} · ${payload.amount ?? ""}`.trim() : null,
+      body,
       link: "/notifications",
       submissionId: submission.id,
-    },
+    })),
   });
   revalidatePath("/notifications");
   return { ok: true };

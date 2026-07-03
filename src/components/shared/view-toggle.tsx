@@ -4,12 +4,12 @@ import { Rows3, LayoutGrid, type LucideIcon } from "lucide-react";
 
 export type ListView = "cards" | "table";
 
-/** Card ↔ table view switch (rows icon = cards, grid icon = table). */
+/** Card ↔ table view switch (grid icon = cards, rows icon = table — matches convention). */
 export function ViewToggle({ value, onChange }: { value: ListView; onChange: (v: ListView) => void }) {
   return (
     <div className="flex flex-none items-center gap-1 rounded-[10px] border border-bd2 bg-bg2 p-1">
-      <Button active={value === "cards"} onClick={() => onChange("cards")} icon={Rows3} label="Card view" />
-      <Button active={value === "table"} onClick={() => onChange("table")} icon={LayoutGrid} label="Table view" />
+      <Button active={value === "table"} onClick={() => onChange("table")} icon={Rows3} label="Table view" />
+      <Button active={value === "cards"} onClick={() => onChange("cards")} icon={LayoutGrid} label="Card view" />
     </div>
   );
 }

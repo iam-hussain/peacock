@@ -15,4 +15,8 @@ export interface Txn {
   entered: string;
   method: string;
   amount: string;
+  canEdit: boolean;
+  canDelete: boolean;
+  amountValue: string;
+  isoDate: string;
 }

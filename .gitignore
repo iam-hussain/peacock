@@ -30,3 +30,5 @@ yarn-error.log*
 
 # transient Claude Code session artifacts
 .claude/scheduled_tasks.lock
+
+/data

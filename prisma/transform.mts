@@ -17,10 +17,21 @@
 import { PrismaClient, Prisma, type LedgerAccountKind, type TxnType, type MembershipStatus } from "@prisma/client";
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const FILE = process.argv[2] ?? "peacock_backup_03_46_26_01_46.json";
+
+// The export stores avatarUrl as a bare filename in data/image/. Inline it as a base64 data URL
+// (the app renders avatars from the DB field directly); null if the file is missing.
+const AVATAR_MIME: Record<string, string> = { jpeg: "image/jpeg", jpg: "image/jpeg", png: "image/png", webp: "image/webp" };
+function avatarDataUrl(file: string | null): string | null {
+  if (!file) return null;
+  const url = new URL(`../data/image/${file}`, import.meta.url);
+  if (!existsSync(url)) return null;
+  const mime = AVATAR_MIME[file.split(".").pop()!.toLowerCase()] ?? "image/jpeg";
+  return `data:${mime};base64,${readFileSync(url).toString("base64")}`;
+}
 const prisma = new PrismaClient({ datasourceUrl: process.env.DIRECT_URL }); // bulk seed → bypass PgBouncer
 const auth = betterAuth({
   database: prismaAdapter(prisma, { provider: "postgresql" }),
@@ -30,7 +41,7 @@ const auth = betterAuth({
 
 interface Account { id: string; type: "MEMBER" | "VENDOR"; role: string; status: string; firstName: string; lastName: string | null; phone: string | null; username: string; email: string | null; avatarUrl: string | null; passbookId: string; startedAt: string; endedAt: string | null; active: boolean; }
 interface Txn { id: string; fromId: string; toId: string; amount: number; type: string; method: string; occurredAt: string; description: string | null; }
-interface Passbook { id: string; kind: string; isChit: boolean; payload: Record<string, number>; }
+interface Passbook { id: string; kind: string; isChit: boolean; payload: Record<string, number>; joiningOffset?: number; delayOffset?: number; }
 interface Backup { account: Account[]; transaction: Txn[]; passbook: Passbook[]; }
 
 const backup: Backup = JSON.parse(readFileSync(fileURLToPath(new URL(`../data/${FILE}`, import.meta.url)), "utf8"));
@@ -43,6 +54,13 @@ const pbById = new Map(backup.passbook.map((p) => [p.id, p]));
 // balance engine skipped it (reconciles exactly when we do too), so resolve → null → skip.
 const resolve = (id: string): string | null => (accById.has(id) ? id : null);
 const isChitVendor = (a: Account) => a.type === "VENDOR" && (pbById.get(a.passbookId)?.isChit ?? false);
+// Legacy catch-up / penalty dues cached on the member's passbook (in ₹): joiningOffset = catch-up,
+// delayOffset = penalty. The PAID part arrives as OFFSET_DEPOSIT txns; the assigned obligation is
+// seeded as a Charge below so outstanding dues surface (see schema §Charge, derive-on-read).
+const offsetsFor = (memberId: string) => {
+  const p = pbById.get(accById.get(memberId)?.passbookId ?? "");
+  return { catchup: P(p?.joiningOffset ?? 0), penalty: P(p?.delayOffset ?? 0) };
+};
 const fullName = (a: Account) => [a.firstName, a.lastName].filter(Boolean).join(" ").trim() || a.username;
 
 // ---- ledger account ids (deterministic) ------------------------------------
@@ -52,6 +70,7 @@ const lrId = (m: string) => `lr_${m}`;
 const vrId = (v: string) => `vr_${v}`;
 const vpId = (v: string) => `vp_${v}`;
 const INTEREST_INCOME = "interest-income";
+const OTHER_INCOME = "other-income"; // penalty pay-downs land here (club income, shared as profit)
 
 // In-memory ledger account registry → bulk-created after the replay.
 interface Acct { id: string; kind: LedgerAccountKind; balance: bigint; memberId?: string; membershipId?: string; vendorId?: string; }
@@ -83,9 +102,16 @@ interface LoanAcc { id: string; memberId: string; requested: bigint; outstanding
 const loans: LoanAcc[] = [];
 const openLoan = new Map<string, LoanAcc>();
 const txnLoanId = new Map<string, string>();
+// Per-vendor lifetime investment — lets VENDOR_RETURNS split principal vs profit against the
+// vendor's TOTAL invested (order-independent), not the running receivable. A chit payout that
+// lands before all installments would otherwise book excess as profit and strand later
+// installments in receivable, inflating both. Net result per vendor = Σinvest − Σreturns.
+const vendorInvestTotal = new Map<string, bigint>();
+const vendorPrincipalReturned = new Map<string, bigint>(); // running principal repaid per vendor (pass 2)
 for (const t of txns) {
   const from = resolve(t.fromId), to = resolve(t.toId);
   const A = P(t.amount);
+  if (t.type === "VENDOR_INVEST" && to) vendorInvestTotal.set(to, (vendorInvestTotal.get(to) ?? 0n) + A);
   if (t.type === "LOAN_TAKEN" && to) {
     let ln = openLoan.get(to);
     if (!ln) { ln = { id: `loan_${t.id}`, memberId: to, requested: A, outstanding: A, startedAt: new Date(t.occurredAt), closedAt: null, status: "ACTIVE" }; loans.push(ln); openLoan.set(to, ln); }
@@ -119,9 +145,17 @@ for (const t of txns) {
   const row: (typeof txnRows)[number] = { id: t.id, type: TYPE_MAP[t.type] ?? "FUNDS_TRANSFER", occurredAt: when, description: t.description };
 
   switch (t.type) {
-    case "PERIODIC_DEPOSIT":
-    case "OFFSET_DEPOSIT": // treasurer(to) +A, member equity(from) −A
+    case "PERIODIC_DEPOSIT": // treasurer(to) +A, member equity(from) −A
       markTreasury(to); push(trAcc(to), A); push(eqAcc(from), -A); row.membershipId = msId(from); break;
+    case "OFFSET_DEPOSIT": { // pay-down of a legacy catch-up (→ equity) or penalty (→ club income) due
+      const o = offsetsFor(from);
+      markTreasury(to); push(trAcc(to), A); row.membershipId = msId(from);
+      // penalty pay-down = OTHER_INCOME (this app's model); catch-up pay-down = MEMBER_EQUITY.
+      // The source folds both into memberBalance, so a penalty-payer's value is intentionally lower here.
+      if (o.penalty > 0n && o.catchup === 0n) { push(ensure(OTHER_INCOME, "OTHER_INCOME"), -A); row.type = "PENALTY"; }
+      else { push(eqAcc(from), -A); row.type = "CATCHUP"; }
+      break;
+    }
     case "LOAN_INTEREST": // treasurer(to) +A, interest income −A
       markTreasury(to); push(trAcc(to), A); push(ensure(INTEREST_INCOME, "INTEREST_INCOME"), -A); row.membershipId = msId(from); break;
     case "WITHDRAW": // treasurer(from) −A, member equity(to) +A
@@ -135,12 +169,15 @@ for (const t of txns) {
       if (isChitVendor(accById.get(to)!)) row.type = "CHIT_PAYMENT"; break;
     case "FUNDS_TRANSFER": // treasurer(from) −A, treasurer(to) +A
       markTreasury(from); markTreasury(to); push(trAcc(from), -A); push(trAcc(to), A); break;
-    case "VENDOR_RETURNS": { // vendor(from) → treasurer(to): principal reduces receivable, rest is profit
+    case "VENDOR_RETURNS": { // vendor(from) → treasurer(to): principal reduces receivable, rest is profit.
+      // Principal is capped at the vendor's LIFETIME investment (see vendorInvestTotal), so the split
+      // is order-independent: Σprincipal = min(Σreturns, Σinvest), Σprofit = max(0, Σreturns − Σinvest).
       markTreasury(to);
-      const recv = vrAcc(from);
-      const principal = recv.balance > 0n ? (recv.balance < A ? recv.balance : A) : 0n;
+      const room = (vendorInvestTotal.get(from) ?? 0n) - (vendorPrincipalReturned.get(from) ?? 0n);
+      const principal = room <= 0n ? 0n : room < A ? room : A;
+      vendorPrincipalReturned.set(from, (vendorPrincipalReturned.get(from) ?? 0n) + principal);
       push(trAcc(to), A);
-      if (principal > 0n) push(recv, -principal);
+      if (principal > 0n) push(vrAcc(from), -principal);
       if (A - principal > 0n) push(vpAcc(from), -(A - principal));
       row.vendorId = from;
       if (isChitVendor(accById.get(from)!)) row.type = "CHIT_PAYOUT"; break;
@@ -209,7 +246,7 @@ for (let i = 0; i < members.length; i++) {
 
   memberCreates.push({
     id: a.id, firstName: a.firstName || a.username, lastName: a.lastName || null, phone, email,
-    username: a.username, avatarUrl: a.avatarUrl || null, role: a.role === "ADMIN" ? "ADMIN" : "MEMBER",
+    username: a.username, avatarUrl: avatarDataUrl(a.avatarUrl), role: a.role === "ADMIN" ? "ADMIN" : "MEMBER",
     userId: signUp.user.id, mustChangePassword: true, customerSince: new Date(a.startedAt),
     archivedAt: a.active ? null : a.endedAt ? new Date(a.endedAt) : null,
   });
@@ -220,6 +257,16 @@ await prisma.member.createMany({ data: memberCreates });
 await prisma.membership.createMany({ data: membershipCreates });
 // treasurer flag (person-level) for anyone who ever held club cash
 await prisma.member.updateMany({ where: { id: { in: [...treasurers] } }, data: { isTreasurer: true } });
+
+// legacy catch-up / penalty dues → Charge rows (the assigned obligation; pay-downs replayed above)
+const chargeCreates: Prisma.ChargeCreateManyInput[] = [];
+for (const a of members) {
+  const { catchup, penalty } = offsetsFor(a.id);
+  const when = new Date(a.startedAt);
+  if (catchup > 0n) chargeCreates.push({ membershipId: msId(a.id), kind: "CATCHUP", reason: "FIRST_TIME_JOIN", amount: catchup, occurredAt: when });
+  if (penalty > 0n) chargeCreates.push({ membershipId: msId(a.id), kind: "PENALTY", reason: "DELAYED_PAYMENT", amount: penalty, occurredAt: when });
+}
+await prisma.charge.createMany({ data: chargeCreates });
 
 // ---------------------------------------------------------------- vendors + chits
 const parseLakh = (s: string) => { const m = s.match(/(\d+(?:\.\d+)?)\s*L/i); return m ? P(Number(m[1]) * 100000) : 0n; };

@@ -3,20 +3,36 @@ import { prisma } from "@/server/db";
 import { formatLakh, formatPaise } from "@/lib/money";
 import { monthYear, monthsDays, tenure, daysBetween, dayMonthYear } from "@/lib/date";
 import { loanEvents, reconstructCycles } from "./loans";
+import { totalChitObligation } from "./vendors";
 import { getCashHolderOptions } from "./entries";
 import type { Status } from "@/components/shared/status-badge";
 
 export interface MemberDTO {
   id: string;
   name: string;
+  avatarUrl: string | null;
   joined: string;
   deposits: string;
   profit: string;
   value: string;
   held: string | null;
-  adjustment: string | null; // catch-up + penalty outstanding, combined
+  adjustment: string | null; // catch-up + penalty STILL OUTSTANDING, combined
+  adjustmentCharged: string | null; // catch-up + penalty EVER charged (shown even once fully paid)
+  sort?: MemberSort; // raw numeric keys for client-side column sorting (list rows only)
   pending: string | null;
   status: Status;
+}
+
+/** Raw values behind the formatted list cells, so the table can sort numerically (not by "₹3L" text). */
+export interface MemberSort {
+  name: string;
+  deposits: number;
+  profit: number;
+  value: number;
+  held: number;
+  adjustment: number; // sorts by total ever charged (the value the column shows)
+  pending: number;
+  status: number; // active first (0), then inactive (1), then left (2)
 }
 
 // Sum of a charge kind still outstanding for a membership (raised − paid down).
@@ -38,7 +54,7 @@ const monthIdx = (d: Date) => d.getUTCFullYear() * 12 + d.getUTCMonth();
 // Expected deposit total from the club's deposit start (earliest stage) through the current
 // month, per the stage schedule. This is the FULL-club-life baseline — the same for every
 // active member regardless of join date (PRODUCT.md §6); paid counts deposits + catch-up.
-function expectedClubDeposit(stages: Stage[], now = new Date()): bigint {
+export function expectedClubDeposit(stages: Stage[], now = new Date()): bigint {
   if (!stages.length) return 0n;
   const bands = stages
     .map((s) => ({ from: monthIdx(new Date(s.startDate)), amt: BigInt(s.amountPaise) }))
@@ -64,6 +80,7 @@ export async function getMembers(): Promise<MemberDTO[]> {
       id: true,
       firstName: true,
       lastName: true,
+      avatarUrl: true,
       customerSince: true,
       archivedAt: true,
       treasury: { select: { balance: true } },
@@ -90,8 +107,12 @@ export async function getMembers(): Promise<MemberDTO[]> {
       const penalty = membershipId ? await outstandingCharge(membershipId, "PENALTY") : 0n;
       const catchup = membershipId ? await outstandingCharge(membershipId, "CATCHUP") : 0n;
       const adjustment = (penalty > 0n ? penalty : 0n) + (catchup > 0n ? catchup : 0n);
+      const chargedAgg = membershipId
+        ? await prisma.charge.aggregate({ _sum: { amount: true }, where: { membershipId, kind: { in: ["CATCHUP", "PENALTY"] } } })
+        : { _sum: { amount: null } };
+      const charged = chargedAgg._sum.amount ?? 0n;
       const pending = active && expectedDeposit > deposits ? expectedDeposit - deposits : 0n;
-      return { m, active, value, deposits, pending, adjustment };
+      return { m, active, value, deposits, pending, adjustment, charged };
     }),
   );
 
@@ -104,29 +125,79 @@ export async function getMembers(): Promise<MemberDTO[]> {
     active && totalActiveDeposits > 0n ? (clubProfit * deposits) / totalActiveDeposits : 0n;
 
   return rows
-    .map(({ m, active, value, deposits, pending, adjustment }) => ({
+    .map(({ m, active, value, deposits, pending, adjustment, charged }) => ({
       id: m.id,
       name: [m.firstName, m.lastName].filter(Boolean).join(" "),
+      avatarUrl: m.avatarUrl,
       joined: monthYear(m.customerSince),
       deposits: formatPaise(deposits),
       profit: formatPaise(shareOf(deposits, active)),
       value: active ? formatPaise(value) : "—",
       held: m.treasury && m.treasury.balance !== 0n ? formatPaise(m.treasury.balance) : null,
       adjustment: adjustment > 0n ? formatPaise(adjustment) : null,
+      adjustmentCharged: charged > 0n ? formatPaise(charged) : null,
       pending: pending > 0n ? formatPaise(pending) : null,
       status: memberStatus(active, m.archivedAt),
+      sort: {
+        name: [m.firstName, m.lastName].filter(Boolean).join(" "),
+        deposits: Number(deposits),
+        profit: Number(shareOf(deposits, active)),
+        value: Number(value),
+        held: Number(m.treasury?.balance ?? 0n),
+        adjustment: Number(charged),
+        pending: Number(pending),
+        status: active ? 0 : m.archivedAt ? 2 : 1,
+      },
     }))
     // Active members first, then alphabetical by name.
     .sort((a, b) => Number(b.status === "active") - Number(a.status === "active") || a.name.localeCompare(b.name));
 }
 
-/** Total realized, still-pooled club profit = loan interest + vendor profit + other income. */
-async function realizedClubProfit(): Promise<bigint> {
+/** Shareable club profit = loan interest + vendor profit + other income − chit obligations still
+ *  owed (PRODUCT.md §11: the money the club must still pay into chits reduces shareable profit). */
+export async function realizedClubProfit(): Promise<bigint> {
   const income = await prisma.ledgerAccount.aggregate({
     _sum: { balance: true },
     where: { kind: { in: ["INTEREST_INCOME", "VENDOR_PROFIT", "OTHER_INCOME"] }, id: { not: "club-opening" } },
   });
-  return -(income._sum.balance ?? 0n); // credit accounts hold negative balances
+  return -(income._sum.balance ?? 0n) - (await totalChitObligation()); // credit accounts hold negative balances
+}
+
+/** Raw active-member fund aggregates for the dashboard (paise). Same deposit + pending
+ * definition as getMembers (PRODUCT.md §6): pending = expected(club-life) − paid, floored. */
+export async function getMemberFunds(): Promise<{
+  activeMembers: number; activeDeposits: bigint; avgBalance: bigint; pendingTotal: bigint; pendingCount: number;
+}> {
+  const cfg = await prisma.clubConfig.findUnique({ where: { id: "singleton" }, select: { stages: true } });
+  const expected = expectedClubDeposit((cfg?.stages as Stage[] | undefined) ?? []);
+  const active = await prisma.membership.findMany({
+    where: { status: "ACTIVE" },
+    select: { accounts: { where: { kind: "MEMBER_EQUITY" }, select: { id: true, balance: true } } },
+  });
+  let activeDeposits = 0n, value = 0n, pendingTotal = 0n, pendingCount = 0;
+  for (const ms of active) {
+    const eq = ms.accounts[0];
+    if (!eq) continue;
+    const dep = await prisma.entry.aggregate({ _sum: { amount: true }, where: { accountId: eq.id, transaction: { type: { in: ["PERIODIC_DEPOSIT", "CATCHUP"] } } } });
+    const deposits = -(dep._sum.amount ?? 0n);
+    activeDeposits += deposits;
+    value += -(eq.balance ?? 0n);
+    if (expected > deposits) { pendingTotal += expected - deposits; pendingCount++; }
+  }
+  const n = active.length;
+  return { activeMembers: n, activeDeposits, avgBalance: n ? value / BigInt(n) : 0n, pendingTotal, pendingCount };
+}
+
+/** Club-wide charge totals for a kind (paise): assigned (raised), collected (paid down), pending. */
+export async function chargeTotals(kind: "CATCHUP" | "PENALTY"): Promise<{ assigned: bigint; collected: bigint; pending: bigint }> {
+  const raised = await prisma.charge.aggregate({ _sum: { amount: true }, where: { kind } });
+  const paid = await prisma.entry.aggregate({
+    _sum: { amount: true },
+    where: { transaction: { type: kind }, account: { kind: kind === "CATCHUP" ? "MEMBER_EQUITY" : "OTHER_INCOME" } },
+  });
+  const assigned = raised._sum.amount ?? 0n;
+  const collected = -(paid._sum.amount ?? 0n); // pay-down legs are negative
+  return { assigned, collected, pending: assigned - collected };
 }
 
 /** Headline for the members page, e.g. "11 members · 9 active". */
@@ -202,9 +273,21 @@ export interface RejoinDTO {
   profitRupees: number; // same, raw rupees (prefills the editable catch-up field)
 }
 
+// Suggested payout when an active member leaves (PRODUCT.md §12): capital + profit − loan − unpaid interest.
+export interface SettleDTO {
+  guide: string; // formatted suggested settlement
+  guideRupees: number; // raw rupees, prefills the editable final-amount field
+  capital: string; // paid-in capital = deposits + catch-up (their value)
+  profit: string; // profit share (zeroed after leaving)
+  loan: string; // outstanding loan principal (subtracted)
+  interest: string; // unpaid interest (subtracted)
+  owes: boolean; // has a loan / interest to subtract → show the minus rows
+}
+
 export interface MemberDetailDTO extends MemberDTO {
   membershipId: string;
   rejoin: RejoinDTO | null;
+  settle: SettleDTO | null;
   tenure: string;
   managing: string | null;
   loanTaken: string;
@@ -247,6 +330,7 @@ export async function getMemberDetail(id: string): Promise<MemberDetailDTO | nul
       id: true,
       firstName: true,
       lastName: true,
+      avatarUrl: true,
       customerSince: true,
       archivedAt: true,
       treasury: { select: { balance: true } },
@@ -409,17 +493,34 @@ export async function getMemberDetail(id: string): Promise<MemberDetailDTO | nul
   cycles.reverse(); // most-recent cycle first
   const interestDue = interestGen > interestPaid ? interestGen - interestPaid : 0n;
 
+  // Settlement guide for an active member leaving (§12): capital + profit − loan − unpaid interest.
+  const settleRaw = value + profit - currentLoan - interestDue;
+  const settle: SettleDTO | null = active
+    ? {
+        guide: formatPaise(settleRaw > 0n ? settleRaw : 0n),
+        guideRupees: Number(settleRaw > 0n ? settleRaw : 0n) / 100,
+        capital: formatPaise(value),
+        profit: formatPaise(profit),
+        loan: formatPaise(currentLoan),
+        interest: formatPaise(interestDue),
+        owes: currentLoan > 0n || interestDue > 0n,
+      }
+    : null;
+
   return {
     id: m.id,
     membershipId: ms?.id ?? "",
     rejoin,
+    settle,
     name: [m.firstName, m.lastName].filter(Boolean).join(" "),
+    avatarUrl: m.avatarUrl,
     joined: monthYear(m.customerSince),
     deposits: formatPaise(deposits),
     profit: formatPaise(profit),
     value: active ? formatPaise(value) : "—",
     held: m.treasury ? formatPaise(m.treasury.balance) : null,
     adjustment: pendingCharge + penaltyCharge > 0n ? formatPaise(pendingCharge + penaltyCharge) : null,
+    adjustmentCharged: assigned + penaltyAssigned > 0n ? formatPaise(assigned + penaltyAssigned) : null,
     pending: pendingCharge > 0n ? formatPaise(pendingCharge) : null,
     status: memberStatus(active, m.archivedAt),
     tenure: tenure(m.customerSince),

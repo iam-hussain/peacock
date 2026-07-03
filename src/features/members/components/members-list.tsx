@@ -3,6 +3,7 @@ import type { Member } from "../data";
 import { MembersMobile } from "./members-mobile";
 import { MembersBrowser } from "./members-browser";
 import { FormModalButton } from "@/components/shared/form-modal-button";
+import { AdminOnly } from "@/lib/admin";
 
 export interface MemberSummary {
   text: string;
@@ -29,16 +30,18 @@ export function MembersList({ members, summary }: { members: Member[]; summary: 
                 {summary.text} · {summary.totalDeposits} total deposits
               </p>
             </div>
-            <FormModalButton
-              title="Add member"
-              subtitle="Create a new member profile."
-              kind="addMember"
-              submitLabel="Add member"
-              fields={ADD_MEMBER_FIELDS}
-              buttonClassName="flex items-center gap-1 rounded-[9px] bg-teal px-4 py-[11px] text-[13px] font-semibold leading-none text-white"
-            >
-              <Plus className="size-3.5" strokeWidth={2.5} /> Add member
-            </FormModalButton>
+            <AdminOnly>
+              <FormModalButton
+                title="Add member"
+                subtitle="Create a new member profile."
+                kind="addMember"
+                submitLabel="Add member"
+                fields={ADD_MEMBER_FIELDS}
+                buttonClassName="flex items-center gap-1 rounded-[9px] bg-teal px-4 py-[11px] text-[13px] font-semibold leading-none text-white"
+              >
+                <Plus className="size-3.5" strokeWidth={2.5} /> Add member
+              </FormModalButton>
+            </AdminOnly>
           </div>
 
           <div className="overflow-hidden rounded-2xl border border-bd bg-sf shadow-[0_1px_2px_var(--shadow)]">

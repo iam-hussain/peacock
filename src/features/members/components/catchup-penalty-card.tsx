@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Check, Plus, Pencil, Trash2, ChevronDown } from "lucide-react";
 import { FormModalButton } from "@/components/shared/form-modal-button";
+import { AdminOnly } from "@/lib/admin";
 import { AddChargeDialog, RecordPaymentDialog, DeleteEntryDialog } from "./catchup-penalty-modals";
 import type { MemberDetailDTO as MemberDetail, LedgerEntryDTO, ChargeSuggest } from "@/server/queries/members";
 
@@ -33,15 +34,17 @@ export function CatchupPenaltyCard({ m }: { m: MemberDetail }) {
       <div className="p-[18px]">
         <div className="mb-3 flex items-center justify-between gap-3">
           <h2 className="text-[15px] font-bold leading-none text-ink">Catch-up &amp; penalties</h2>
-          <AddChargeDialog
-            bucket={tab}
-            memberName={m.name}
-            hidden={hidden}
-            suggest={cur.suggest}
-            className="flex-none rounded-[9px] border border-bd2 bg-tlsf px-[11px] py-2 text-xs font-semibold leading-none text-teal"
-          >
-            + Add charge
-          </AddChargeDialog>
+          <AdminOnly>
+            <AddChargeDialog
+              bucket={tab}
+              memberName={m.name}
+              hidden={hidden}
+              suggest={cur.suggest}
+              className="flex-none rounded-[9px] border border-bd2 bg-tlsf px-[11px] py-2 text-xs font-semibold leading-none text-teal"
+            >
+              + Add charge
+            </AddChargeDialog>
+          </AdminOnly>
         </div>
 
         <div className="mb-3.5 flex gap-2">
@@ -64,18 +67,20 @@ export function CatchupPenaltyCard({ m }: { m: MemberDetail }) {
         <EntriesList entries={cur.entries} bucket={tab} styles={cur} hidden={hidden} memberName={m.name} />
       </div>
 
-      <RecordPaymentDialog
-        bucket={tab}
-        memberName={m.name}
-        party={m.name}
-        hidden={hidden}
-        remainingLabel={cur.remaining}
-        remainingRupees={cur.remainingRupees}
-        treasurers={m.treasurerOptions}
-        className={`flex w-full items-center justify-center gap-2 ${cur.bar} px-[22px] py-[15px] text-[15px] font-semibold leading-none text-white`}
-      >
-        <Plus className="size-[17px]" strokeWidth={2.5} /> Record {tab === "penalty" ? "penalty" : "catch-up"} payment
-      </RecordPaymentDialog>
+      <AdminOnly>
+        <RecordPaymentDialog
+          bucket={tab}
+          memberName={m.name}
+          party={m.name}
+          hidden={hidden}
+          remainingLabel={cur.remaining}
+          remainingRupees={cur.remainingRupees}
+          treasurers={m.treasurerOptions}
+          className={`flex w-full items-center justify-center gap-2 ${cur.bar} px-[22px] py-[15px] text-[15px] font-semibold leading-none text-white`}
+        >
+          <Plus className="size-[17px]" strokeWidth={2.5} /> Record {tab === "penalty" ? "penalty" : "catch-up"} payment
+        </RecordPaymentDialog>
+      </AdminOnly>
     </div>
   );
 }
@@ -108,48 +113,50 @@ function EntryRow({ e, bucket, styles, hidden, memberName }: { e: LedgerEntryDTO
         <div className="mt-0.5 text-[11px] font-medium leading-none text-fnt">{e.by} · {e.date}</div>
       </div>
       <span className={`font-mono text-[15px] font-semibold leading-none ${isPayment ? "text-in" : styles.amt}`}>{e.amount}</span>
-      {isPayment ? (
-        <FormModalButton
-          title="Edit payment"
-          subtitle={memberName}
-          kind="editPayment"
-          submitLabel="Save changes"
-          hiddenFields={{ ...hidden, id: e.id }}
-          fields={[
-            { name: "amount", label: "Amount received", defaultValue: e.editAmount, required: true },
-            { name: "date", label: "Date", type: "date", defaultValue: e.editDate },
-          ]}
-          buttonClassName="flex size-7 flex-none items-center justify-center rounded-[7px] border border-bd2 bg-sf text-fnt hover:bg-sf2"
-          buttonAriaLabel="Edit payment"
-        >
-          <Pencil className="size-[13px]" strokeWidth={2} />
-        </FormModalButton>
-      ) : (
-        <AddChargeDialog
+      <AdminOnly>
+        {isPayment ? (
+          <FormModalButton
+            title="Edit payment"
+            subtitle={memberName}
+            kind="editPayment"
+            submitLabel="Save changes"
+            hiddenFields={{ ...hidden, id: e.id }}
+            fields={[
+              { name: "amount", label: "Amount received", defaultValue: e.editAmount, required: true },
+              { name: "date", label: "Date", type: "date", defaultValue: e.editDate },
+            ]}
+            buttonClassName="flex size-7 flex-none items-center justify-center rounded-[7px] border border-bd2 bg-sf text-fnt hover:bg-sf2"
+            buttonAriaLabel="Edit payment"
+          >
+            <Pencil className="size-[13px]" strokeWidth={2} />
+          </FormModalButton>
+        ) : (
+          <AddChargeDialog
+            bucket={bucket}
+            memberName={memberName}
+            hidden={hidden}
+            editId={e.id}
+            defaults={{ amount: e.editAmount, reason: e.editReason ?? "OTHER", date: e.editDate, note: e.editNote }}
+            className="flex size-7 flex-none items-center justify-center rounded-[7px] border border-bd2 bg-sf text-fnt hover:bg-sf2"
+            ariaLabel="Edit charge"
+          >
+            <Pencil className="size-[13px]" strokeWidth={2} />
+          </AddChargeDialog>
+        )}
+        <DeleteEntryDialog
+          kind={isPayment ? "payment" : "charge"}
           bucket={bucket}
-          memberName={memberName}
-          hidden={hidden}
-          editId={e.id}
-          defaults={{ amount: e.editAmount, reason: e.editReason ?? "OTHER", date: e.editDate, note: e.editNote }}
-          className="flex size-7 flex-none items-center justify-center rounded-[7px] border border-bd2 bg-sf text-fnt hover:bg-sf2"
-          ariaLabel="Edit charge"
+          entryId={e.id}
+          memberId={hidden.memberId}
+          entryLabel={e.title}
+          entryAmount={e.amount}
+          entryDate={e.date}
+          className="flex size-7 flex-none items-center justify-center rounded-[7px] border border-bd2 bg-sf text-fnt hover:bg-wbg hover:text-out"
+          ariaLabel={isPayment ? "Delete payment" : "Delete charge"}
         >
-          <Pencil className="size-[13px]" strokeWidth={2} />
-        </AddChargeDialog>
-      )}
-      <DeleteEntryDialog
-        kind={isPayment ? "payment" : "charge"}
-        bucket={bucket}
-        entryId={e.id}
-        memberId={hidden.memberId}
-        entryLabel={e.title}
-        entryAmount={e.amount}
-        entryDate={e.date}
-        className="flex size-7 flex-none items-center justify-center rounded-[7px] border border-bd2 bg-sf text-fnt hover:bg-wbg hover:text-out"
-        ariaLabel={isPayment ? "Delete payment" : "Delete charge"}
-      >
-        <Trash2 className="size-[13px]" strokeWidth={2} />
-      </DeleteEntryDialog>
+          <Trash2 className="size-[13px]" strokeWidth={2} />
+        </DeleteEntryDialog>
+      </AdminOnly>
     </div>
   );
 }

@@ -1,13 +1,15 @@
 import Link from "next/link";
-import { UserPen, CreditCard } from "lucide-react";
+import { UserPen, CreditCard, LogOut } from "lucide-react";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { FormModalButton } from "@/components/shared/form-modal-button";
+import { AdminOnly } from "@/lib/admin";
 import { CatchupPenaltyCard } from "./catchup-penalty-card";
 import { RejoinDialog } from "./rejoin-modal";
+import { SettleDialog } from "./settle-modal";
 import { initials } from "@/lib/avatar";
 import type { MemberDetailDTO as MemberDetail } from "@/server/queries/members";
 
-function EditMemberButton({ m }: { m: MemberDetail }) {
+function EditMemberButton({ m, compact = false }: { m: MemberDetail; compact?: boolean }) {
   return (
     <FormModalButton
       title="Edit member details"
@@ -21,14 +23,36 @@ function EditMemberButton({ m }: { m: MemberDetail }) {
         { name: "email", label: "Email", type: "email", placeholder: "optional" },
         { name: "username", label: "Username" },
       ]}
-      buttonClassName="flex items-center justify-center gap-2 rounded-[11px] border border-bd2 bg-sf p-[13px] text-[13px] font-semibold leading-none text-ink hover:bg-sf2"
+      buttonClassName={`flex items-center justify-center gap-2 rounded-[11px] border border-bd2 bg-sf p-[13px] text-[13px] font-semibold leading-none text-ink hover:bg-sf2 ${compact ? "flex-1" : ""}`}
     >
-      <UserPen className="size-[15px]" strokeWidth={2} /> Edit member details
+      <UserPen className="size-[15px]" strokeWidth={2} /> {compact ? "Edit details" : "Edit member details"}
     </FormModalButton>
   );
 }
 
-function TealAvatar({ name, size }: { name: string; size: number }) {
+// Danger-outline "Settle up & leave" trigger (active members only). `compact` = mobile side-by-side row.
+function SettleButton({ m, compact = false }: { m: MemberDetail; compact?: boolean }) {
+  if (!m.settle) return null;
+  return (
+    <SettleDialog
+      memberId={m.id}
+      memberName={m.name}
+      settle={m.settle}
+      treasurers={m.treasurerOptions}
+      className={`flex items-center justify-center gap-2 rounded-[11px] border border-outbd bg-sf p-[13px] text-[13px] font-semibold leading-none text-out hover:bg-outbg ${compact ? "flex-1" : ""}`}
+    >
+      <LogOut className="size-[15px]" strokeWidth={2} /> {compact ? "Settle & leave" : "Settle up & leave"}
+    </SettleDialog>
+  );
+}
+
+function TealAvatar({ name, src, size }: { name: string; src?: string | null; size: number }) {
+  if (src) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element -- inline base64 avatar, no image domain config
+      <img src={src} alt="" className="flex-none rounded-full border-[3px] border-sf object-cover" style={{ width: size, height: size }} />
+    );
+  }
   return (
     <div
       className="flex flex-none items-center justify-center rounded-full border-[3px] border-sf bg-teal font-bold text-white"
@@ -53,9 +77,12 @@ export function MemberDetailView({ m }: { m: MemberDetail }) {
             <div className="sticky top-[26px] flex flex-col gap-3.5">
               <IdentityCard m={m} />
               <BalancesCard m={m} />
-              <div className="flex flex-col gap-[9px]">
-                <EditMemberButton m={m} />
-              </div>
+              <AdminOnly>
+                <div className="flex flex-col gap-[9px]">
+                  <EditMemberButton m={m} />
+                  <SettleButton m={m} />
+                </div>
+              </AdminOnly>
             </div>
             {/* right */}
             <div className="flex flex-col gap-4">
@@ -75,7 +102,12 @@ export function MemberDetailView({ m }: { m: MemberDetail }) {
             ← All members
           </Link>
           <IdentityCard m={m} />
-          <EditMemberButton m={m} />
+          <AdminOnly>
+            <div className="flex gap-2">
+              <EditMemberButton m={m} compact={!!m.settle} />
+              <SettleButton m={m} compact />
+            </div>
+          </AdminOnly>
           <BalancesCard m={m} />
           {m.rejoin && <RejoinCard m={m} />}
           <ContributionCard m={m} />
@@ -93,7 +125,7 @@ function IdentityCard({ m }: { m: MemberDetail }) {
       <div className="h-[58px] bg-tlsf" />
       <div className="px-5 pb-5">
         <div className="-mt-8">
-          <TealAvatar name={m.name} size={64} />
+          <TealAvatar name={m.name} src={m.avatarUrl} size={64} />
         </div>
         <div className="mt-[13px] flex items-center gap-2.5">
           <h1 className="font-display text-[21px] font-extrabold leading-[1.05] tracking-[-0.02em] text-ink">
@@ -179,14 +211,16 @@ function RejoinCard({ m }: { m: MemberDetail }) {
           </div>
         </div>
       </div>
-      <RejoinDialog
-        memberId={m.id}
-        memberName={m.name}
-        rejoin={r}
-        className="mt-4 flex w-full items-center justify-center gap-2 rounded-[11px] bg-white p-[13px] text-[13px] font-semibold leading-none text-ink-surface hover:opacity-90"
-      >
-        Record rejoin &amp; catch-up
-      </RejoinDialog>
+      <AdminOnly>
+        <RejoinDialog
+          memberId={m.id}
+          memberName={m.name}
+          rejoin={r}
+          className="mt-4 flex w-full items-center justify-center gap-2 rounded-[11px] bg-white p-[13px] text-[13px] font-semibold leading-none text-ink-surface hover:opacity-90"
+        >
+          Record rejoin &amp; catch-up
+        </RejoinDialog>
+      </AdminOnly>
     </div>
   );
 }

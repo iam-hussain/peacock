@@ -5,7 +5,7 @@ import { postIntent, type EntryPayload } from "./intents";
  * Approve a pending Submission → run the matching posting service and link the
  * created Transaction. The ledger only ever contains APPROVED, posted entries (§ schema note).
  */
-export async function approveSubmission(id: string, actorId = "rajesh-kumar"): Promise<{ id: string; txnId: string }> {
+export async function approveSubmission(id: string, actorId: string): Promise<{ id: string; txnId: string }> {
   const sub = await prisma.submission.findUnique({ where: { id } });
   if (!sub) throw new Error("Submission not found.");
   if (sub.status !== "PENDING") throw new Error("This submission was already decided.");
@@ -21,7 +21,7 @@ export async function approveSubmission(id: string, actorId = "rajesh-kumar"): P
   return { id, txnId: txn.id };
 }
 
-export async function rejectSubmission(id: string, actorId = "rajesh-kumar"): Promise<{ id: string }> {
+export async function rejectSubmission(id: string, actorId: string): Promise<{ id: string }> {
   const sub = await prisma.submission.findUnique({ where: { id } });
   if (!sub) throw new Error("Submission not found.");
   if (sub.status !== "PENDING") throw new Error("This submission was already decided.");

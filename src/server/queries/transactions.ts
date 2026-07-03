@@ -1,8 +1,9 @@
 import "server-only";
 import { prisma } from "@/server/db";
 import { formatPaise } from "@/lib/money";
-import { dayMonthYear, dayMonth } from "@/lib/date";
+import { dayMonthYear } from "@/lib/date";
 import { OPENING_ACCOUNT_ID } from "./shared";
+import { UNSAFE_TO_DELETE } from "@/server/ledger/reverse";
 import type { TxnType } from "@prisma/client";
 
 export type Dir = "in" | "out" | "neutral";
@@ -10,6 +11,8 @@ export type Role = "treasurer" | "member" | "vendor";
 export interface Party { name: string; role: Role }
 export interface TxnDTO {
   id: string; what: string; dir: Dir; from: Party; to: Party; date: string; entered: string; method: string; amount: string;
+  // correction affordances (§16): amount/date prefill + which actions this row allows
+  canEdit: boolean; canDelete: boolean; amountValue: string; isoDate: string;
 }
 
 const WHAT: Record<TxnType, string> = {
@@ -57,10 +60,21 @@ function partiesFor(type: TxnType, entries: EntryRow[]): { from: Party; to: Part
   return { from: otherParty(), to: club, dir: "neutral", amount };
 }
 
-/** The ledger feed — real postings only (opening-import scaffolding excluded). */
+/** The ledger feed — real postings only. Opening-import scaffolding, reversal entries, and any
+ *  posting that has since been reversed (§16) are all excluded so a deleted/edited row drops out. */
 export async function getTransactions(limit?: number): Promise<TxnDTO[]> {
+  const reversed = await prisma.transaction.findMany({
+    where: { type: "REVERSAL", reversesId: { not: null } },
+    select: { reversesId: true },
+  });
+  const reversedIds = reversed.map((r) => r.reversesId!).filter(Boolean);
+
   const txns = await prisma.transaction.findMany({
-    where: { entries: { none: { accountId: OPENING_ACCOUNT_ID } } },
+    where: {
+      type: { not: "REVERSAL" },
+      id: { notIn: reversedIds },
+      entries: { none: { accountId: OPENING_ACCOUNT_ID } },
+    },
     orderBy: { occurredAt: "desc" },
     take: limit,
     select: {
@@ -74,8 +88,12 @@ export async function getTransactions(limit?: number): Promise<TxnDTO[]> {
     const sign = dir === "in" ? "+" : dir === "out" ? "−" : "";
     return {
       id: t.id, what: WHAT[t.type], dir, from, to,
-      date: dayMonthYear(t.occurredAt), entered: dayMonth(t.createdAt), method: methodFor(t.id),
+      date: dayMonthYear(t.occurredAt), entered: dayMonthYear(t.createdAt), method: methodFor(t.id),
       amount: sign + formatPaise(amount),
+      canEdit: true, // every posted (non-reversal) row can be amount/date-corrected (§16)
+      canDelete: !UNSAFE_TO_DELETE.has(t.type),
+      amountValue: (Number(amount) / 100).toString(),
+      isoDate: t.occurredAt.toISOString().slice(0, 10),
     } satisfies TxnDTO;
   });
 }

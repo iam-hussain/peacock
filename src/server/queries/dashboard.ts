@@ -2,39 +2,36 @@ import "server-only";
 import { prisma } from "@/server/db";
 import { formatPaise, formatLakh } from "@/lib/money";
 import { getTransactions } from "./transactions";
+import { getMemberFunds, chargeTotals, realizedClubProfit } from "./members";
+import { getVendorTotals } from "./vendors";
+import { interestOwedTotal } from "./loans";
 
-const interestOf = (p: bigint, bps: number) => (p * BigInt(bps)) / 10000n;
-
+// Every figure reuses the same definition as the members / loans / vendors pages so the whole app
+// stays consistent. Portfolio value follows PRODUCT.md §14.4; profit-per-member mirrors the members
+// page (realized pooled profit ÷ members) — see the note in getDashboard on the §11 open question.
 async function totals() {
-  const equity = await prisma.ledgerAccount.aggregate({ _sum: { balance: true }, where: { kind: "MEMBER_EQUITY" } });
-  const deposits = await prisma.entry.aggregate({ _sum: { amount: true }, where: { transaction: { type: "PERIODIC_DEPOSIT" }, account: { kind: "MEMBER_EQUITY" } } });
-  const cash = await prisma.ledgerAccount.aggregate({ _sum: { balance: true }, where: { kind: "TREASURY_CASH" } });
-  const invested = await prisma.ledgerAccount.aggregate({ _sum: { balance: true }, where: { kind: "VENDOR_RECEIVABLE" } });
-  const vprofit = await prisma.ledgerAccount.aggregate({ _sum: { balance: true }, where: { kind: "VENDOR_PROFIT" } });
-  const interest = await prisma.ledgerAccount.aggregate({ _sum: { balance: true }, where: { kind: "INTEREST_INCOME" } });
-  const activeLoans = await prisma.loan.findMany({ where: { status: "ACTIVE" }, select: { principalOutstanding: true, monthlyRateBps: true } });
-  const activeMembers = await prisma.membership.count({ where: { status: "ACTIVE" } });
-  const charges = await prisma.charge.aggregate({ _sum: { amount: true }, where: { kind: "CATCHUP" } });
-  const paidDown = await prisma.entry.aggregate({ _sum: { amount: true }, where: { transaction: { type: "CATCHUP" }, account: { kind: "MEMBER_EQUITY" } } });
-  const pendingMembers = await prisma.charge.groupBy({ by: ["membershipId"], where: { kind: "CATCHUP" } });
+  const [cashA, interestA, activeLoans, funds, vendors, interestPending, profit, catchup, penalty] = await Promise.all([
+    prisma.ledgerAccount.aggregate({ _sum: { balance: true }, where: { kind: "TREASURY_CASH" } }),
+    prisma.ledgerAccount.aggregate({ _sum: { balance: true }, where: { kind: "INTEREST_INCOME" } }),
+    prisma.loan.findMany({ where: { status: "ACTIVE" }, select: { principalOutstanding: true } }),
+    getMemberFunds(),
+    getVendorTotals(),
+    interestOwedTotal(),
+    realizedClubProfit(),
+    chargeTotals("CATCHUP"),
+    chargeTotals("PENALTY"),
+  ]);
 
-  const portfolio = -(equity._sum.balance ?? 0n);
-  const totalDeposits = -(deposits._sum.amount ?? 0n);
+  const cash = cashA._sum.balance ?? 0n;
+  const interestCollected = -(interestA._sum.balance ?? 0n);
   const onLoan = activeLoans.reduce((s, l) => s + l.principalOutstanding, 0n);
-  const interestPending = activeLoans.reduce((s, l) => s + interestOf(l.principalOutstanding, l.monthlyRateBps), 0n);
-  const pendingDeposits = (charges._sum.amount ?? 0n) - (paidDown._sum.amount ?? 0n);
-  return {
-    portfolio, totalDeposits, onLoan, interestPending, pendingDeposits,
-    cash: cash._sum.balance ?? 0n,
-    invested: invested._sum.balance ?? 0n,
-    vprofit: -(vprofit._sum.balance ?? 0n),
-    interestCollected: -(interest._sum.balance ?? 0n),
-    activeLoanCount: activeLoans.length,
-    activeMembers,
-    pendingMemberCount: pendingMembers.length,
-    // realized, still-pooled club profit = loan interest collected + vendor returns profit
-    profit: -(interest._sum.balance ?? 0n) + -(vprofit._sum.balance ?? 0n),
-  };
+
+  // PRODUCT.md §14.4: current value = cash + loans out + vendor holding (money still out);
+  // total portfolio value = current value + pending loan interest + pending member deposits.
+  const portfolio = cash + onLoan + vendors.holding + interestPending + funds.pendingTotal;
+  const profitPerMember = funds.activeMembers > 0 ? profit / BigInt(funds.activeMembers) : 0n;
+
+  return { cash, onLoan, interestCollected, interestPending, portfolio, profitPerMember, activeLoanCount: activeLoans.length, funds, vendors, catchup, penalty };
 }
 
 export interface DashboardData {
@@ -47,23 +44,21 @@ export interface DashboardData {
 
 export async function getDashboard(): Promise<DashboardData> {
   const t = await totals();
-  const roi = t.invested > 0n ? (Number(t.vprofit) / Number(t.invested)) * 100 : 0;
-  const avgProfit = t.activeMembers > 0 ? t.profit / BigInt(t.activeMembers) : 0n;
-  const avgBalance = t.activeMembers > 0 ? t.portfolio / BigInt(t.activeMembers) : 0n;
+  const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
 
   const hero = [
     { label: "Portfolio value", value: formatPaise(t.portfolio), sub: "club total", accent: false },
-    { label: "Profit per member", value: formatPaise(avgProfit), sub: "avg. share this FY", accent: true },
+    { label: "Profit per member", value: formatPaise(t.profitPerMember), sub: "realized ÷ members", accent: true },
     { label: "Available cash", value: formatPaise(t.cash), sub: "liquid balance", accent: false },
-    { label: "Outstanding loans", value: formatPaise(t.onLoan), sub: `${t.activeLoanCount} active loan${t.activeLoanCount === 1 ? "" : "s"}`, accent: false },
-    { label: "Pending deposits", value: formatPaise(t.pendingDeposits), sub: `${t.pendingMemberCount} member${t.pendingMemberCount === 1 ? "" : "s"}`, accent: false },
+    { label: "Outstanding loans", value: formatPaise(t.onLoan), sub: plural(t.activeLoanCount, "active loan"), accent: false },
+    { label: "Pending deposits", value: formatPaise(t.funds.pendingTotal), sub: `${plural(t.funds.pendingCount, "member")} behind`, accent: false },
   ];
 
   const groups = [
     { title: "Member funds", items: [
-      { l: "Total deposits", v: formatPaise(t.totalDeposits) },
-      { l: "Members", v: String(t.activeMembers) },
-      { l: "Avg. balance", v: formatPaise(avgBalance) },
+      { l: "Deposits", v: formatPaise(t.funds.activeDeposits) },
+      { l: "Members", v: String(t.funds.activeMembers) },
+      { l: "Avg. balance", v: formatPaise(t.funds.avgBalance) },
     ] },
     { title: "Loans & interest", items: [
       { l: "Interest collected", v: formatPaise(t.interestCollected) },
@@ -71,17 +66,24 @@ export async function getDashboard(): Promise<DashboardData> {
       { l: "Active loans", v: String(t.activeLoanCount) },
     ] },
     { title: "Vendors", items: [
-      { l: "Invested", v: formatLakh(t.invested) },
-      { l: "Returns", v: formatLakh(t.vprofit) },
-      { l: "Avg. ROI", v: `${roi.toFixed(1)}%` },
+      { l: "Holding", v: formatLakh(t.vendors.holding) },
+      { l: "Profit", v: formatLakh(t.vendors.profit) },
+      { l: "Obligation", v: formatLakh(t.vendors.obligation) },
+    ] },
+    { title: "Catch-up", items: [
+      { l: "Assigned", v: formatPaise(t.catchup.assigned) },
+      { l: "Collected", v: formatPaise(t.catchup.collected) },
+      { l: "Pending", v: formatPaise(t.catchup.pending) },
+    ] },
+    { title: "Penalties", items: [
+      { l: "Assigned", v: formatPaise(t.penalty.assigned) },
+      { l: "Collected", v: formatPaise(t.penalty.collected) },
+      { l: "Pending", v: formatPaise(t.penalty.pending) },
     ] },
     { title: "Cash flow · 30d", items: await cashFlow30d() },
   ];
 
-  // ponytail: no monthly snapshots stored — show a gentle ramp to the real current
-  // value so the sparkline reads true at its endpoint. Real series needs period rollups.
-  const end = Number(t.portfolio) / 100 / 100000; // ₹ lakhs
-  const chart = Array.from({ length: 12 }, (_, i) => Number((end * (0.82 + (0.18 * i) / 11)).toFixed(1)));
+  const chart = await portfolioSeries();
 
   const recent = await getTransactions(8);
   const activity = recent.map((r) => {
@@ -91,7 +93,7 @@ export async function getDashboard(): Promise<DashboardData> {
 
   return {
     hero,
-    totalPortfolio: { value: formatPaise(t.portfolio), change: `${t.activeMembers} active members` },
+    totalPortfolio: { value: formatPaise(t.portfolio), change: `${t.funds.activeMembers} active members` },
     groups,
     chart,
     activity,
@@ -106,6 +108,28 @@ function labelShort(what: string): string {
     "Delayed-payment penalty": "Late penalty", "Chit installment": "Chit installment", "Chit payout": "Chit payout",
   };
   return map[what] ?? what;
+}
+
+// Real 12-month portfolio-value sparkline: cumulative member equity at each month-end.
+// Equity is a credit balance (entries negative), so portfolio = −Σ(equity entries) to date.
+async function portfolioSeries(): Promise<number[]> {
+  const rows = await prisma.entry.findMany({
+    where: { account: { kind: "MEMBER_EQUITY" } },
+    select: { amount: true, transaction: { select: { occurredAt: true } } },
+    orderBy: { transaction: { occurredAt: "asc" } },
+  });
+  const now = new Date();
+  // exclusive upper bound per point: first day of the month after each of the last 12 months
+  const cutoffs = Array.from({ length: 12 }, (_, i) => new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 10 + i, 1)));
+  const lakhs = (p: bigint) => Number((Number(p) / 100 / 100000).toFixed(1));
+  const out: number[] = [];
+  let acc = 0n, idx = 0;
+  for (const r of rows) {
+    while (idx < 12 && r.transaction.occurredAt >= cutoffs[idx]) out.push(lakhs(acc)), idx++;
+    acc -= r.amount;
+  }
+  while (idx < 12) out.push(lakhs(acc)), idx++;
+  return out;
 }
 
 async function cashFlow30d(): Promise<{ l: string; v: string }[]> {

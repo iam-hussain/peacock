@@ -35,6 +35,15 @@ export async function postTransaction(input: PostInput): Promise<{ id: string }>
     const accts = await tx.ledgerAccount.findMany({ where: { id: { in: ids } } });
     if (accts.length !== ids.length) throw new Error("Unknown ledger account in posting.");
 
+    // §18: a closed quarter is locked — refuse any posting dated inside it (unless it's a reversal).
+    if (!input.reversesId) {
+      const locked = await tx.periodClose.findFirst({
+        where: { periodStart: { lte: input.occurredAt }, periodEnd: { gte: input.occurredAt } },
+        select: { id: true },
+      });
+      if (locked) throw new Error("That date falls in a closed quarter — its entries are locked.");
+    }
+
     const txn = await tx.transaction.create({
       data: {
         type: input.type,

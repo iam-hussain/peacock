@@ -1,9 +1,17 @@
 "use client";
 
 import { useState } from "react";
-import { Users, FileText, CalendarClock, KeyRound, Database, Download, ChevronRight, LogOut, Shield, Pencil, Vault, ChevronDown } from "lucide-react";
+import { Users, FileText, CalendarClock, KeyRound, Database, Download, ChevronRight, LogOut, Shield, Vault, ChevronDown } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { signOut } from "@/lib/auth-client";
+import { useTheme } from "@/lib/theme";
 import { FormModalButton } from "@/components/shared/form-modal-button";
+import { CreateBackupButton, ImportButton } from "./backup-buttons";
+import { AvatarEditButton } from "./avatar-editor";
+import { EditClubButton } from "./edit-club-modal";
+import { AdminsButton } from "./admins-modal";
+import { CloseQuarterButton } from "./close-quarter-modal";
 import type { PickOption } from "@/components/shared/entity-picker";
 import type { SettingsData } from "@/server/queries/settings";
 
@@ -13,14 +21,15 @@ const CHANGE_PW_FIELDS = [
   { name: "confirm", label: "Confirm new password", type: "password" as const, required: true },
 ];
 
-const TABS = ["Admin tools", "Profile", "Club", "Treasury"] as const;
+const TABS = ["Profile", "Club", "Treasury", "Admin tools"] as const;
 
 function ini(name: string) {
   return name.split(" ").map((p) => p[0]).slice(0, 2).join("").toUpperCase();
 }
 
-export function Settings({ club, treasury, profile, memberOptions }: SettingsData) {
+export function Settings({ isAdmin, club, treasury, profile, memberOptions, admins, quarter, auditCount }: SettingsData & { isAdmin: boolean }) {
   const [tab, setTab] = useState<string>("Profile");
+  const tabs = isAdmin ? TABS : TABS.filter((t) => t !== "Admin tools");
   return (
     <div className="mx-auto max-w-[1280px] p-4 pb-[78px] md:p-[26px] md:pb-[26px]">
       <h1 className="text-2xl font-bold leading-none tracking-[-0.02em] text-ink">Settings</h1>
@@ -31,7 +40,7 @@ export function Settings({ club, treasury, profile, memberOptions }: SettingsDat
       <div className="flex flex-col gap-4 md:flex-row md:items-start md:gap-7">
         {/* tabs */}
         <div className="flex flex-none gap-1 overflow-x-auto md:sticky md:top-[26px] md:w-[196px] md:flex-col">
-          {TABS.map((t) => (
+          {tabs.map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -47,9 +56,9 @@ export function Settings({ club, treasury, profile, memberOptions }: SettingsDat
         {/* content */}
         <div className="min-w-0 flex-1">
           {tab === "Profile" && <ProfileTab profile={profile} />}
-          {tab === "Club" && <ClubTab club={club} />}
+          {tab === "Club" && <ClubTab club={club} isAdmin={isAdmin} />}
           {tab === "Treasury" && <TreasuryTab treasury={treasury} />}
-          {tab === "Admin tools" && <AdminTab memberOptions={memberOptions} />}
+          {tab === "Admin tools" && isAdmin && <AdminTab memberOptions={memberOptions} admins={admins} quarter={quarter} auditCount={auditCount} />}
         </div>
       </div>
     </div>
@@ -68,19 +77,53 @@ function FieldRow({ label, value, last = false, mono = true }: { label: string; 
   );
 }
 
+function EditProfileButton({
+  profile,
+  className,
+  ariaLabel,
+  children,
+}: {
+  profile: SettingsData["profile"];
+  className?: string;
+  ariaLabel?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <FormModalButton
+      title="Edit profile"
+      subtitle="Update your details."
+      kind="editProfile"
+      submitLabel="Save changes"
+      buttonClassName={className}
+      buttonAriaLabel={ariaLabel}
+      fields={[
+        { name: "name", label: "Full name", defaultValue: profile.name, required: true },
+        { name: "email", label: "Email", type: "email", defaultValue: profile.email },
+        { name: "phone", label: "Phone", type: "tel", defaultValue: profile.phone, required: true },
+        { name: "username", label: "Username", defaultValue: profile.username },
+      ]}
+    >
+      {children}
+    </FormModalButton>
+  );
+}
+
 function ProfileTab({ profile }: { profile: SettingsData["profile"] }) {
   return (
     <div className="flex flex-col gap-4">
       <Card>
         <div className="flex items-center gap-3.5 border-b border-hr2 px-5 py-[18px]">
           <span className="relative flex size-[52px] flex-none items-center justify-center rounded-full bg-teal text-lg font-bold text-white">
-            {ini(profile.name)}
-            <button
-              aria-label="Edit photo"
+            {profile.avatarUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element -- external avatar URL, no image domain config
+              <img src={profile.avatarUrl} alt="" className="size-full rounded-full object-cover" />
+            ) : (
+              ini(profile.name)
+            )}
+            <AvatarEditButton
+              hasAvatar={!!profile.avatarUrl}
               className="absolute -bottom-0.5 -right-0.5 flex size-[22px] items-center justify-center rounded-full border-2 border-sf bg-teal text-white"
-            >
-              <Pencil className="size-[11px]" strokeWidth={2.4} />
-            </button>
+            />
           </span>
           <div className="flex-1">
             <div className="flex items-center gap-2">
@@ -89,9 +132,13 @@ function ProfileTab({ profile }: { profile: SettingsData["profile"] }) {
                 <Shield className="size-2.5" strokeWidth={2.4} /> {profile.role}
               </span>
             </div>
-            <div className="mt-1.5 text-xs font-medium leading-none text-fnt">Treasurer · since 2020</div>
+            <div className="mt-1.5 text-xs font-medium leading-none text-fnt">
+              {[profile.isTreasurer && "Treasurer", profile.role].filter(Boolean).join(" · ")}
+            </div>
           </div>
-          <button className="text-xs font-semibold leading-none text-teal">Change</button>
+          <EditProfileButton profile={profile} className="text-xs font-semibold leading-none text-teal">
+            Change
+          </EditProfileButton>
         </div>
         <FieldRow label="Full name" value={profile.name} mono={false} />
         <FieldRow label="Email" value={profile.email} />
@@ -123,24 +170,48 @@ function ProfileTab({ profile }: { profile: SettingsData["profile"] }) {
             <div className="text-sm font-bold leading-none text-ink">Theme</div>
             <div className="mt-1 text-xs font-medium leading-none text-fnt">Light or dark interface</div>
           </div>
-          <div className="flex gap-[3px] rounded-[9px] bg-bg2 p-[3px]">
-            <span className="rounded-[7px] bg-sf px-3.5 py-2 text-xs font-semibold leading-none text-ink shadow-sm">Light</span>
-            <span className="rounded-[7px] px-3.5 py-2 text-xs font-semibold leading-none text-mut">Dark</span>
-          </div>
+          <ThemeToggle />
         </div>
       </Card>
 
-      <Link
-        href="/"
-        className="flex items-center justify-center gap-2 rounded-[14px] border border-bd bg-sf px-5 py-4 text-sm font-semibold leading-none text-out hover:bg-outbg"
-      >
-        <LogOut className="size-[15px]" strokeWidth={2} /> Sign out
-      </Link>
+      <SignOutButton />
     </div>
   );
 }
 
-function ClubTab({ club }: { club: SettingsData["club"] }) {
+function ThemeToggle() {
+  const [theme, setTheme] = useTheme();
+  return (
+    <div className="flex gap-[3px] rounded-[9px] bg-bg2 p-[3px]">
+      {(["light", "dark"] as const).map((t) => (
+        <button
+          key={t}
+          onClick={() => setTheme(t)}
+          aria-pressed={theme === t}
+          className={`rounded-[7px] px-3.5 py-2 text-xs font-semibold capitalize leading-none transition-colors ${
+            theme === t ? "bg-sf text-ink shadow-sm" : "text-mut hover:text-ink"
+          }`}
+        >
+          {t}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function SignOutButton() {
+  const router = useRouter();
+  return (
+    <button
+      onClick={() => signOut({ fetchOptions: { onSuccess: () => router.push("/login") } })}
+      className="flex items-center justify-center gap-2 rounded-[14px] border border-bd bg-sf px-5 py-4 text-sm font-semibold leading-none text-out hover:bg-outbg"
+    >
+      <LogOut className="size-[15px]" strokeWidth={2} /> Sign out
+    </button>
+  );
+}
+
+function ClubTab({ club, isAdmin }: { club: SettingsData["club"]; isAdmin: boolean }) {
   const rules = [
     { l: "Limit", v: club.loanLimit },
     { l: "Term", v: club.term },
@@ -159,9 +230,7 @@ function ClubTab({ club }: { club: SettingsData["club"] }) {
           <div className="text-[17px] font-bold leading-[1.15] text-ink">{club.name}</div>
           <div className="mt-1.5 text-xs font-medium leading-none text-fnt">{club.meta}</div>
         </div>
-        <button className="rounded-lg border border-bd2 px-3.5 py-2.5 text-xs font-semibold leading-none text-teal hover:bg-tlsf">
-          Edit
-        </button>
+        {isAdmin && <EditClubButton edit={club.edit} className="rounded-lg border border-bd2 px-3.5 py-2.5 text-xs font-semibold leading-none text-teal hover:bg-tlsf" />}
       </div>
       <div className="flex border-b border-hr2">
         <div className="flex-1 border-r border-hr2 px-5 py-4">
@@ -197,23 +266,12 @@ function ClubTab({ club }: { club: SettingsData["club"] }) {
         <span className="text-sm font-bold leading-none text-ink">Timezone</span>
         <span className="font-mono text-[13px] leading-none text-mut">{club.timezone}</span>
       </div>
-      <RateDepositHistory />
+      <RateDepositHistory history={club.history} />
     </Card>
   );
 }
 
-const DEPOSIT_STAGES = [
-  { amount: "₹2,000", range: "2019 – 2020" },
-  { amount: "₹3,000", range: "2021 – 2022" },
-  { amount: "₹5,000", range: "2023 – present" },
-];
-const RATE_SCHEDULE = [
-  { rate: "1.5% / mo", range: "2019 – 2021", current: false },
-  { rate: "1.25% / mo", range: "2022 – 2023", current: false },
-  { rate: "1% / mo", range: "2024 – present", current: true },
-];
-
-function RateDepositHistory() {
+function RateDepositHistory({ history }: { history: SettingsData["club"]["history"] }) {
   const [open, setOpen] = useState(false);
   return (
     <div>
@@ -229,7 +287,7 @@ function RateDepositHistory() {
         <div className="border-t border-hr2 px-5 py-4">
           <div className="mb-2.5 text-[10px] font-semibold uppercase leading-none tracking-[0.06em] text-fnt">Deposit stages</div>
           <div className="flex flex-col gap-2">
-            {DEPOSIT_STAGES.map((s) => (
+            {history.stages.map((s) => (
               <div key={s.range} className="flex items-center justify-between">
                 <span className="font-mono text-[13px] font-semibold leading-none text-ink">{s.amount}</span>
                 <span className="text-[11px] font-medium leading-none text-fnt">{s.range}</span>
@@ -239,7 +297,7 @@ function RateDepositHistory() {
 
           <div className="mb-2.5 mt-[18px] text-[10px] font-semibold uppercase leading-none tracking-[0.06em] text-fnt">Loan interest schedule</div>
           <div className="flex flex-col gap-2">
-            {RATE_SCHEDULE.map((r) => (
+            {history.rates.map((r) => (
               <div key={r.range} className="flex items-center justify-between">
                 <span className="flex items-center gap-2">
                   <span className="font-mono text-[13px] font-semibold leading-none text-ink">{r.rate}</span>
@@ -256,7 +314,7 @@ function RateDepositHistory() {
 
           <div className="mt-[18px] flex items-center justify-between border-t border-hr2 pt-3.5">
             <span className="text-[13px] font-medium leading-none text-mut">Daily interest from</span>
-            <span className="font-mono text-[13px] font-semibold leading-none text-ink">1 Jan 2024</span>
+            <span className="font-mono text-[13px] font-semibold leading-none text-ink">{history.dailyFrom}</span>
           </div>
           <div className="mt-3 text-[11px] font-medium leading-[1.5] text-fnt">
             Rate changes apply to new loans only — existing loans keep the rate fixed at origination.
@@ -332,35 +390,37 @@ function ActionInner({
   );
 }
 
-function AdminTab({ memberOptions }: { memberOptions: SettingsData["memberOptions"] }) {
-  const memberOpts: PickOption[] = memberOptions.map((m) => ({ id: m.value, name: m.label }));
+function AdminTab({
+  memberOptions,
+  admins,
+  quarter,
+  auditCount,
+}: {
+  memberOptions: SettingsData["memberOptions"];
+  admins: SettingsData["admins"];
+  quarter: SettingsData["quarter"];
+  auditCount: number;
+}) {
+  const memberOpts: PickOption[] = memberOptions.map((m) => ({ id: m.value, name: m.label, sub: m.sub }));
   return (
     <div className="flex flex-col gap-4">
       <div className="overflow-hidden rounded-2xl border border-bd bg-sf shadow-[0_1px_2px_var(--shadow)]">
         <div className="grid grid-cols-1 gap-px bg-hair sm:grid-cols-2">
-          <FormModalButton
-            title="Add admin"
-            subtitle="Promote a member to admin (write access)."
-            kind="addAdmin"
-            submitLabel="Make admin"
-            fields={[{ name: "member", label: "Member", placeholder: "No member selected", pickerOptions: memberOpts, pickerTitle: "Choose a member", pickerSubtitle: "Promote this member to admin.", pickerSearch: "Search members" }]}
-          >
-            <ActionInner icon={Users} tone="teal" title="Admins" sub="2 admins · add another" />
-          </FormModalButton>
+          <AdminsButton admins={admins} members={memberOptions} className="w-full text-left">
+            <ActionInner icon={Users} tone="teal" title="Admins" sub={`${admins.length} admin${admins.length === 1 ? "" : "s"} · add or remove`} />
+          </AdminsButton>
           <Link href="/audit">
-            <ActionInner icon={FileText} tone="teal" title="Audit log" sub="128 recorded events" />
+            <ActionInner icon={FileText} tone="teal" title="Audit log" sub={`${auditCount} recorded event${auditCount === 1 ? "" : "s"}`} />
           </Link>
-          <FormModalButton
-            title="Close quarter"
-            subtitle="Lock this quarter's entries and store a profit snapshot. This cannot be undone."
-            kind="closeQuarter"
-            submitLabel="Close & snapshot"
-            destructive
-            fields={[{ name: "note", label: "Note (optional)", type: "textarea", placeholder: "Anything to record with the close…" }]}
-            buttonClassName="sm:col-span-2"
-          >
-            <ActionInner icon={CalendarClock} tone="warn" title="Close quarter" sub="Lock the quarter & snapshot · Q2 open" wide />
-          </FormModalButton>
+          <CloseQuarterButton quarter={quarter} className="sm:col-span-2">
+            <ActionInner
+              icon={CalendarClock}
+              tone="warn"
+              title="Close quarter"
+              sub={`Lock the quarter & snapshot · ${quarter.label} ${quarter.alreadyClosed ? "closed" : "open"}`}
+              wide
+            />
+          </CloseQuarterButton>
           <FormModalButton
             title="Reset a member's password"
             subtitle="Resets to their phone number, or set a custom one."
@@ -388,7 +448,7 @@ function AdminTab({ memberOptions }: { memberOptions: SettingsData["memberOption
               <div className="text-sm font-bold leading-none text-ink">Create backup</div>
               <div className="mt-1 text-xs font-medium leading-[1.4] text-fnt">Download all club data as a JSON file.</div>
             </div>
-            <button className="rounded-lg bg-tlsf px-3.5 py-2.5 text-xs font-semibold leading-none text-teal">Create backup</button>
+            <CreateBackupButton />
           </div>
           <div className="flex items-center gap-3.5 px-5 py-[18px]">
             <span className="flex size-10 flex-none items-center justify-center rounded-[11px] bg-tlsf text-teal">
@@ -398,7 +458,7 @@ function AdminTab({ memberOptions }: { memberOptions: SettingsData["memberOption
               <div className="text-sm font-bold leading-none text-ink">Restore from backup</div>
               <div className="mt-1 text-xs font-medium leading-[1.4] text-fnt">Import a previously saved JSON backup.</div>
             </div>
-            <button className="rounded-lg border border-bd2 px-3.5 py-2.5 text-xs font-semibold leading-none text-ink">Import</button>
+            <ImportButton />
           </div>
         </Card>
       </div>

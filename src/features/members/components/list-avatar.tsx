@@ -1,7 +1,13 @@
 import { initials } from "@/lib/avatar";
 
-/** Flat muted-grey initials avatar for member list rows (uniform, not per-name colour). */
-export function ListAvatar({ name, size = 38 }: { name: string; size?: number }) {
+/** Member list-row avatar: the member's photo when `src` is set, else flat muted-grey initials. */
+export function ListAvatar({ name, src, size = 38 }: { name: string; src?: string | null; size?: number }) {
+  if (src) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element -- inline base64 avatar, no image domain config
+      <img src={src} alt="" className="flex-none rounded-full object-cover" style={{ width: size, height: size }} />
+    );
+  }
   return (
     <div
       className="flex flex-none items-center justify-center rounded-full bg-nbg font-bold text-nfg"

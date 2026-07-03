@@ -80,6 +80,7 @@ export function ModalActions({
   pending = false,
   destructive = false,
   formId,
+  onSubmit,
 }: {
   onCancel: () => void;
   submitLabel?: string;
@@ -87,6 +88,7 @@ export function ModalActions({
   pending?: boolean;
   destructive?: boolean;
   formId?: string;
+  onSubmit?: () => void; // imperative submit (modals without a native <form>)
 }) {
   return (
     <>
@@ -98,8 +100,9 @@ export function ModalActions({
         {cancelLabel}
       </button>
       <button
-        type="submit"
-        form={formId}
+        type={onSubmit ? "button" : "submit"}
+        form={onSubmit ? undefined : formId}
+        onClick={onSubmit}
         disabled={pending}
         className={`flex-1 rounded-xl py-3 text-sm font-semibold leading-none text-white disabled:opacity-60 ${
           destructive ? "bg-out" : "bg-teal"

@@ -5,10 +5,16 @@ import { daysBetween } from "@/lib/date";
 import { getTransactions } from "./transactions";
 
 export interface NotificationsData {
-  approvals: { who: string; type: string; sub: string; amt: string; dir: string; creator: string; treasurer: string; method: string; txn: string; created: string }[];
+  approvals: { id: string; who: string; type: string; sub: string; amt: string; dir: string; creator: string; treasurer: string; method: string; txn: string; created: string }[];
   alerts: { title: string; sub: string }[];
   events: { title: string; sub: string; time: string; amt: string; dir: string }[];
   summary: { label: string; v: string; color: string }[];
+}
+
+/** Bell badge count = what the notifications page surfaces as needing attention. */
+export async function getUnreadCount(): Promise<number> {
+  const { approvals, alerts } = await getNotifications();
+  return approvals.length + alerts.length;
 }
 
 export async function getNotifications(): Promise<NotificationsData> {
@@ -17,7 +23,7 @@ export async function getNotifications(): Promise<NotificationsData> {
   const approvals = subs.map((s) => {
     const p = s.payload as Record<string, string>;
     return {
-      who: p.party ?? "—", type: s.intent, sub: "awaiting your approval", amt: p.amount ?? "", dir: "in",
+      id: s.id, who: p.party ?? "—", type: s.intent, sub: "awaiting your approval", amt: p.amount ?? "", dir: "in",
       creator: p.party ?? "—", treasurer: p.treasurer ?? "—", method: p.method ?? "Cash", txn: p.date ?? "", created: "",
     };
   });

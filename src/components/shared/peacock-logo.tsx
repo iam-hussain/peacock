@@ -15,12 +15,15 @@ export function PeacockMark({
   px = 42,
   biasY = 50,
   className,
+  onDark = false,
 }: {
   px?: number;
   biasY?: number;
   className?: string;
+  onDark?: boolean; // side feathers turn white for dark backgrounds (poster headers)
 }) {
   const scale = px / 104;
+  const side = onDark ? "bg-white" : "bg-ink";
   return (
     <div
       className={cn("relative flex-none", className)}
@@ -31,11 +34,11 @@ export function PeacockMark({
         style={{ transform: `translate(-50%,-${biasY}%) scale(${scale})`, width: 88, height: 104 }}
       >
         {/* left feather */}
-        <Feather rotate={-26} stem={26} className="bg-ink" />
+        <Feather rotate={-26} stem={26} className={side} />
         {/* center feather */}
         <Feather rotate={0} stem={34} className="bg-teal" />
         {/* right feather */}
-        <Feather rotate={26} stem={26} className="bg-ink" />
+        <Feather rotate={26} stem={26} className={side} />
         {/* body */}
         <div
           className="absolute left-1/2 bottom-0 -translate-x-1/2 bg-teal"

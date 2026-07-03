@@ -60,7 +60,9 @@ export function MembersBrowser({ members }: { members: Member[] }) {
       </div>
 
       {rows.length ? (
-        <MembersTable members={rows} />
+        <div className="overflow-x-auto">
+          <MembersTable members={rows} />
+        </div>
       ) : (
         <div className="px-5 py-14 text-center text-[13px] font-medium text-fnt">No members match.</div>
       )}

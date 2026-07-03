@@ -2,18 +2,20 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Check } from "lucide-react";
+import { Eye, EyeOff } from "lucide-react";
 import { Avatar } from "@/components/shared/avatar";
 import { StatCard } from "@/components/shared/stat-card";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { LOAN_FILTERS, type Loan, type LoanStat } from "../data";
 
 export function LoansList({ loans, stats, rate }: { loans: Loan[]; stats: LoanStat[]; rate: string }) {
-  const [filter, setFilter] = useState<string>("All");
+  const [filter, setFilter] = useState<string>("Pending");
+  const [showClosedMembers, setShowClosedMembers] = useState(false);
   const rows = loans.filter((l) => {
+    if (!showClosedMembers && l.memberClosed) return false;
     if (filter === "All") return true;
-    if (filter === "Active") return l.status === "active";
-    if (filter === "Overdue") return l.status === "overdue";
+    if (filter === "Pending") return l.pendingInterest;
+    if (filter === "Active") return l.status === "active" || l.status === "overdue"; // overdue is active, past term
     return l.status === "closed";
   });
 
@@ -43,7 +45,7 @@ export function LoansList({ loans, stats, rate }: { loans: Loan[]; stats: LoanSt
 
       {/* Desktop: single card with rows */}
       <div className="hidden overflow-hidden rounded-2xl border border-bd bg-sf shadow-[0_1px_2px_var(--shadow)] md:block">
-        <Filters filter={filter} onChange={setFilter} className="border-b border-hair px-[18px] py-3.5" />
+        <Filters filter={filter} onChange={setFilter} showClosedMembers={showClosedMembers} onToggleClosedMembers={() => setShowClosedMembers((v) => !v)} className="border-b border-hair px-[18px] py-3.5" />
         {rows.map((l) => (
           <LoanRowDesktop key={l.id} l={l} />
         ))}
@@ -52,7 +54,7 @@ export function LoansList({ loans, stats, rate }: { loans: Loan[]; stats: LoanSt
 
       {/* Mobile: filter chips + separate loan cards */}
       <div className="md:hidden">
-        <Filters filter={filter} onChange={setFilter} className="pb-1" />
+        <Filters filter={filter} onChange={setFilter} showClosedMembers={showClosedMembers} onToggleClosedMembers={() => setShowClosedMembers((v) => !v)} className="pb-1" />
         <div className="mt-3 flex flex-col gap-3">
           {rows.map((l) => (
             <MobileLoanCard key={l.id} l={l} />
@@ -68,9 +70,21 @@ export function LoansList({ loans, stats, rate }: { loans: Loan[]; stats: LoanSt
   );
 }
 
-function Filters({ filter, onChange, className = "" }: { filter: string; onChange: (f: string) => void; className?: string }) {
+function Filters({
+  filter,
+  onChange,
+  showClosedMembers,
+  onToggleClosedMembers,
+  className = "",
+}: {
+  filter: string;
+  onChange: (f: string) => void;
+  showClosedMembers: boolean;
+  onToggleClosedMembers: () => void;
+  className?: string;
+}) {
   return (
-    <div className={`flex gap-2 overflow-x-auto ${className}`}>
+    <div className={`flex items-center gap-2 overflow-x-auto ${className}`}>
       {LOAN_FILTERS.map((f) => (
         <button
           key={f}
@@ -82,16 +96,26 @@ function Filters({ filter, onChange, className = "" }: { filter: string; onChang
           {f}
         </button>
       ))}
+      <button
+        onClick={onToggleClosedMembers}
+        aria-pressed={showClosedMembers}
+        className={`ml-auto flex items-center gap-1.5 whitespace-nowrap rounded-[8px] border px-3.5 py-2 text-[12px] font-semibold leading-none transition-colors ${
+          showClosedMembers ? "border-teal/40 bg-tlsf text-teal" : "border-bd2 bg-sf text-mut"
+        }`}
+      >
+        {showClosedMembers ? <Eye className="size-3.5" strokeWidth={2.5} /> : <EyeOff className="size-3.5" strokeWidth={2.5} />}
+        Closed members
+      </button>
     </div>
   );
 }
 
 /** Right-aligned label + value pair, used for the loan amount and pending interest. */
-function AmtCol({ label, value, tone, className = "" }: { label: string; value: string; tone: "ink" | "wfg"; className?: string }) {
+function AmtCol({ label, value, tone, className = "" }: { label: string; value: string; tone: "ink" | "wfg" | "in"; className?: string }) {
   return (
     <div className={`flex flex-col items-end gap-1.5 ${className}`}>
       <span className="text-[9px] font-semibold uppercase leading-none tracking-wide text-mut">{label}</span>
-      <span className={`font-mono text-sm font-semibold leading-none ${tone === "wfg" ? "text-wfg" : "text-ink"}`}>{value}</span>
+      <span className={`font-mono text-sm font-semibold leading-none ${tone === "wfg" ? "text-wfg" : tone === "in" ? "text-in" : "text-ink"}`}>{value}</span>
     </div>
   );
 }
@@ -108,10 +132,10 @@ function Empty() {
 /** Mobile: each loan is its own card — identity + amount/status, no progress bar. */
 function MobileLoanCard({ l }: { l: Loan }) {
   return (
-    <Link href={`/members/${l.memberId}`} className="block rounded-2xl border border-bd bg-sf px-4 py-[15px] active:bg-sf2">
+    <Link href={`/members/${l.memberId}`} className={`block rounded-2xl border px-4 py-[15px] active:bg-sf2 ${l.interestUnpaid ? "border-wfg/40 bg-wbg" : "border-bd bg-sf"}`}>
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 gap-3">
-          <Avatar name={l.member} size={38} muted />
+          <Avatar name={l.member} src={l.avatar} size={38} muted />
           <div className="min-w-0">
             <div className="flex items-center gap-[7px]">
               <span className="text-[15px] font-semibold leading-none text-ink">{l.member}</span>
@@ -138,21 +162,20 @@ function MobileLoanCard({ l }: { l: Loan }) {
               {l.open ? (
                 <>{l.rate}</>
               ) : (
-                <>
-                  interest earned {l.interestEarned}
-                  {l.interestDue && (
-                    <>
-                      {" "}· <span className="text-wfg">due {l.interestDue}</span>
-                    </>
-                  )}
-                </>
+                <>interest earned {l.interestEarned}</>
               )}
             </div>
           </div>
         </div>
         <div className="flex flex-none flex-col items-end gap-2.5">
           <div className="flex items-start gap-5">
-            {l.open && <AmtCol label="Pending interest" value={l.interest!} tone="wfg" />}
+            {l.interestOverpaid ? (
+              <AmtCol label="Overpaid" value={l.interestOverpaid} tone="in" />
+            ) : l.open ? (
+              <AmtCol label="Pending interest" value={l.interest!} tone="wfg" />
+            ) : l.interestUnpaid ? (
+              <AmtCol label="Interest due" value={l.interestDue!} tone="wfg" />
+            ) : null}
             <AmtCol label="Loan" value={l.amount} tone="ink" />
           </div>
           <StatusBadge status={l.badge} label={l.statusLabel} />
@@ -167,10 +190,12 @@ function LoanRowDesktop({ l }: { l: Loan }) {
   return (
     <Link
       href={`/members/${l.memberId}`}
-      className="flex items-center gap-3.5 border-b border-hr2 px-[18px] py-[15px] transition-colors last:border-b-0 hover:bg-sf2"
+      className={`flex items-center gap-3.5 border-b border-hr2 px-[18px] py-[15px] transition-colors last:border-b-0 hover:bg-sf2 ${
+        l.interestUnpaid ? "bg-wbg" : ""
+      }`}
     >
       <div className="flex flex-[1.4] items-center gap-3.5">
-        <Avatar name={l.member} size={34} muted />
+        <Avatar name={l.member} src={l.avatar} size={34} muted />
         <div className="min-w-0">
           <div className="flex items-center gap-[7px]">
             <span className="text-sm font-semibold leading-none text-ink">{l.member}</span>
@@ -195,30 +220,23 @@ function LoanRowDesktop({ l }: { l: Loan }) {
         </div>
       </div>
 
-      <div className="flex-[1.4]">
-        {l.open ? (
-          <>
-            <div className="h-[7px] overflow-hidden rounded-[20px] bg-hair">
-              <div className="h-full rounded-[20px] bg-teal" style={{ width: `${l.pct}%` }} />
-            </div>
-            <div className="mt-1.5 font-mono text-[11px] font-medium leading-[1.3] text-fnt">
-              {l.rate}
-            </div>
-          </>
-        ) : (
-          <>
-            <div className="flex items-center gap-1.5 text-[11px] font-semibold leading-none text-in">
-              <Check className="size-3" strokeWidth={3} /> Repaid in full
-            </div>
-            <div className="mt-1.5 font-mono text-[11px] font-medium leading-[1.3] text-fnt">
-              interest earned {l.interestEarned}
-            </div>
-          </>
-        )}
+      <div className="flex-[0.9]">
+        <div className="font-mono text-[11px] font-medium leading-[1.3] text-fnt">
+          <div>interest earned {l.interestEarned}</div>
+          {l.interestCurrent && <div>current {l.interestCurrent}</div>}
+        </div>
       </div>
 
       <div className="flex shrink-0 items-center gap-5">
-        {l.open ? <AmtCol label="Pending interest" value={l.interest!} tone="wfg" className="w-28 shrink-0" /> : <div className="w-28 shrink-0" />}
+        {l.interestOverpaid ? (
+          <AmtCol label="Overpaid" value={l.interestOverpaid} tone="in" className="w-28 shrink-0" />
+        ) : l.open ? (
+          <AmtCol label="Pending interest" value={l.interest!} tone="wfg" className="w-28 shrink-0" />
+        ) : l.interestUnpaid ? (
+          <AmtCol label="Interest due" value={l.interestDue!} tone="wfg" className="w-28 shrink-0" />
+        ) : (
+          <div className="w-28 shrink-0" />
+        )}
         <AmtCol label="Loan" value={l.amount} tone="ink" className="w-14 shrink-0" />
         <div className="flex w-24 shrink-0 justify-end">
           <StatusBadge status={l.badge} label={l.statusLabel} />
