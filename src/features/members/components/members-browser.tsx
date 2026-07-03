@@ -11,7 +11,7 @@ const LABELS: Record<Filter, string> = { all: "All members", active: "Active", i
 /** Desktop members card: live search + status filter over the table. */
 export function MembersBrowser({ members }: { members: Member[] }) {
   const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState<Filter>("all");
+  const [filter, setFilter] = useState<Filter>("active");
   const [open, setOpen] = useState(false);
 
   const rows = useMemo(() => {

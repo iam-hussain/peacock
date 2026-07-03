@@ -11,6 +11,7 @@
   --ink: #14201e; /* primary text */
   --teal: #0e8c82; /* brand / primary */
   --teal-dark: #0b5e73; /* vendor tiles */
+  --ink-surface: #16241f; /* dark quote card (rejoin) */
   --teal-ink: #bdeae5; /* on-teal muted */
   --teal-soft: #d6f5f1; /* on-teal subtle */
   --teal-mut: #cfeeea; /* on-teal body text */
@@ -163,6 +164,7 @@
   --color-ink: var(--ink);
   --color-teal: var(--teal);
   --color-teal-dark: var(--teal-dark);
+  --color-ink-surface: var(--ink-surface);
   --color-teal-ink: var(--teal-ink);
   --color-teal-soft: var(--teal-soft);
   --color-teal-mut: var(--teal-mut);

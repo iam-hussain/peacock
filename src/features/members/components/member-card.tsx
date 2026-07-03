@@ -7,7 +7,7 @@ import { ListAvatar } from "./list-avatar";
 export function MemberCard({ m }: { m: Member }) {
   const chips = [
     m.held ? { label: "Cash held", v: m.held, cls: "bg-tlsf text-teal" } : null,
-    m.penalty ? { label: "Penalty", v: m.penalty, cls: "bg-wbg text-wfg" } : null,
+    m.adjustment ? { label: "Adjustment", v: m.adjustment, cls: "bg-wbg text-wfg" } : null,
     m.pending ? { label: "Pending", v: m.pending, cls: "bg-outbg text-outfg" } : null,
   ].filter((c): c is { label: string; v: string; cls: string } => c !== null);
 

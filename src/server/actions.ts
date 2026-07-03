@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/server/db";
 import { rupeesToPaise } from "@/lib/money";
 import { approveSubmission, rejectSubmission } from "@/server/ledger/approve";
+import { postIntent } from "@/server/ledger/intents";
 
 // Approve a pending money submission → posts balanced ledger entries. Reject → drops it.
 export async function decideSubmission(id: string, decision: "approve" | "reject"): Promise<ActionResult> {
@@ -49,6 +50,20 @@ export async function formAction(kind: string, fd: FormData): Promise<ActionResu
         return await newChit(fd);
       case "editVendor":
         return await editVendor(fd);
+      case "addCharge":
+        return await addCharge(fd);
+      case "editCharge":
+        return await editCharge(fd);
+      case "rejoin":
+        return await rejoin(fd);
+      case "recordPayment":
+        return await recordPayment(fd);
+      case "editPayment":
+        return await editPayment(fd);
+      case "deleteCharge":
+        return await deleteCharge(fd);
+      case "deletePayment":
+        return await deletePayment(fd);
       case "entry":
         return await submitEntry(fd);
       // Deferred until Better Auth (passwords) / the ledger engine (money math) land:
@@ -193,6 +208,181 @@ async function editVendor(fd: FormData): Promise<ActionResult> {
     },
   });
   revalidatePath("/vendors");
+  return { ok: true };
+}
+
+const CATCHUP_REASONS = new Set(["FIRST_TIME_JOIN", "REJOIN", "PROFIT_GAP_TOPUP", "MID_TERM_EQUALISATION", "OTHER"]);
+const PENALTY_REASONS = new Set(["DELAYED_PAYMENT", "LOAN_REPAYMENT_DELAY", "HOLDING_TOO_LONG", "MISSED_DEPOSIT", "OTHER"]);
+
+const chargeSchema = z.object({
+  membershipId: z.string().min(1, "Missing membership."),
+  memberId: z.string().min(1, "Missing member."),
+  type: z.string().min(1),
+  amount: z.string().min(1, "Amount is required"),
+  reason: z.string().optional(),
+  date: z.string().optional(),
+  note: z.string().optional(),
+});
+
+// Admin raises a catch-up or penalty CHARGE against a membership (the "assigned" obligation).
+// Paying it down is a separate cash transaction; here we just create the Charge row.
+async function addCharge(fd: FormData): Promise<ActionResult> {
+  const p = chargeSchema.safeParse({
+    membershipId: str(fd, "membershipId"),
+    memberId: str(fd, "memberId"),
+    type: str(fd, "type"),
+    amount: str(fd, "amount"),
+    reason: str(fd, "reason"),
+    date: str(fd, "date"),
+    note: str(fd, "note"),
+  });
+  if (!p.success) return { ok: false, error: p.error.issues[0].message };
+  const amount = rupeesToPaise(p.data.amount);
+  if (amount <= 0n) return { ok: false, error: "Enter an amount greater than zero." };
+  const kind = p.data.type.toLowerCase().startsWith("pen") ? "PENALTY" : "CATCHUP";
+  const valid = kind === "PENALTY" ? PENALTY_REASONS : CATCHUP_REASONS;
+  const reason = p.data.reason && valid.has(p.data.reason) ? p.data.reason : "OTHER";
+  await prisma.charge.create({
+    data: { membershipId: p.data.membershipId, kind, reason, amount, occurredAt: p.data.date ? new Date(p.data.date) : new Date(), note: p.data.note || null },
+  });
+  revalidatePath(`/members/${p.data.memberId}`);
+  return { ok: true };
+}
+
+// Edit an existing charge's amount / reason / date / note (admin correction).
+async function editCharge(fd: FormData): Promise<ActionResult> {
+  const id = str(fd, "id");
+  const memberId = str(fd, "memberId");
+  if (!id || !memberId) return { ok: false, error: "Missing charge." };
+  const amount = rupeesToPaise(str(fd, "amount"));
+  if (amount <= 0n) return { ok: false, error: "Enter an amount greater than zero." };
+  const reason = str(fd, "reason");
+  const date = str(fd, "date");
+  await prisma.charge.update({
+    where: { id },
+    data: {
+      amount,
+      note: str(fd, "note") || null,
+      ...(reason && (CATCHUP_REASONS.has(reason) || PENALTY_REASONS.has(reason)) ? { reason } : {}),
+      ...(date ? { occurredAt: new Date(date) } : {}),
+    },
+  });
+  revalidatePath(`/members/${memberId}`);
+  return { ok: true };
+}
+
+// Delete a charge (obligation row) — charges never touch the ledger, so just remove the row.
+async function deleteCharge(fd: FormData): Promise<ActionResult> {
+  const id = str(fd, "id");
+  const memberId = str(fd, "memberId");
+  if (!id || !memberId) return { ok: false, error: "Missing charge." };
+  await prisma.charge.delete({ where: { id } });
+  revalidatePath(`/members/${memberId}`);
+  return { ok: true };
+}
+
+// Delete a recorded pay-down — reverse its ledger legs (undo the balance changes), then remove it.
+async function deletePayment(fd: FormData): Promise<ActionResult> {
+  const id = str(fd, "id");
+  const memberId = str(fd, "memberId");
+  if (!id || !memberId) return { ok: false, error: "Missing payment." };
+  const txn = await prisma.transaction.findUnique({ where: { id }, select: { entries: { select: { id: true, accountId: true, amount: true } } } });
+  if (!txn) return { ok: false, error: "Payment not found." };
+  await prisma.$transaction(async (tx) => {
+    for (const e of txn.entries) {
+      await tx.ledgerAccount.update({ where: { id: e.accountId }, data: { balance: { increment: -e.amount } } });
+    }
+    await tx.entry.deleteMany({ where: { transactionId: id } });
+    await tx.transaction.delete({ where: { id } });
+  });
+  revalidatePath(`/members/${memberId}`);
+  return { ok: true };
+}
+
+// Rejoin (PRODUCT.md §12): open a fresh membership #N+1 (Active) for a person whose last
+// membership is closed, and raise the auto-suggested catch-up as a "Rejoin" charge they pay
+// down over time. Back deposits aren't a charge — they surface as the new membership's normal
+// pending dues (0 paid vs the full club-life baseline). No cash moves here.
+async function rejoin(fd: FormData): Promise<ActionResult> {
+  const memberId = str(fd, "memberId");
+  if (!memberId) return { ok: false, error: "Missing member." };
+  const member = await prisma.member.findUnique({
+    where: { id: memberId },
+    select: { id: true, memberships: { select: { seq: true, status: true } } },
+  });
+  if (!member) return { ok: false, error: "Member not found." };
+  if (member.memberships.some((s) => s.status === "ACTIVE")) return { ok: false, error: "This member is already active." };
+
+  const catchup = rupeesToPaise(str(fd, "catchup"));
+  if (catchup < 0n) return { ok: false, error: "Catch-up can't be negative." };
+  const date = str(fd, "date") ? new Date(str(fd, "date")) : new Date();
+  const nextSeq = Math.max(0, ...member.memberships.map((s) => s.seq)) + 1;
+
+  await prisma.$transaction(async (tx) => {
+    const ms = await tx.membership.create({
+      data: {
+        memberId,
+        seq: nextSeq,
+        status: "ACTIVE",
+        joinedAt: date,
+        accounts: { create: { kind: "MEMBER_EQUITY", balance: 0n } },
+      },
+    });
+    if (catchup > 0n) {
+      await tx.charge.create({
+        data: { membershipId: ms.id, kind: "CATCHUP", reason: "REJOIN", amount: catchup, occurredAt: date, note: str(fd, "note") || null },
+      });
+    }
+    // Clear the archived flag so a member who had fully "left" reads as active again.
+    await tx.member.update({ where: { id: memberId }, data: { archivedAt: null } });
+  });
+  revalidatePath("/members");
+  revalidatePath(`/members/${memberId}`);
+  return { ok: true };
+}
+
+// Record a catch-up / penalty pay-down → posts a balanced ledger transaction directly (§8).
+async function recordPayment(fd: FormData): Promise<ActionResult> {
+  const memberId = str(fd, "memberId");
+  const isPenalty = str(fd, "type").toLowerCase().startsWith("pen");
+  try {
+    await postIntent({
+      intent: isPenalty ? "Delayed-payment penalty" : "Catch-up payment",
+      party: str(fd, "party"),
+      amount: str(fd, "amount"),
+      treasurer: str(fd, "treasurer"),
+      date: str(fd, "date"),
+      note: str(fd, "note"),
+    });
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Could not record the payment." };
+  }
+  revalidatePath(`/members/${memberId}`);
+  return { ok: true };
+}
+
+// Edit a recorded payment's amount / date by re-scaling its (balanced) 2-leg posting.
+async function editPayment(fd: FormData): Promise<ActionResult> {
+  const id = str(fd, "id");
+  const memberId = str(fd, "memberId");
+  if (!id || !memberId) return { ok: false, error: "Missing payment." };
+  const amount = rupeesToPaise(str(fd, "amount"));
+  if (amount <= 0n) return { ok: false, error: "Enter an amount greater than zero." };
+  const date = str(fd, "date");
+  const txn = await prisma.transaction.findUnique({ where: { id }, select: { entries: { select: { id: true, accountId: true, amount: true } } } });
+  if (!txn) return { ok: false, error: "Payment not found." };
+  // ponytail: assumes a balanced 2-leg pay-down; re-scale each leg to the new magnitude.
+  await prisma.$transaction(async (tx) => {
+    for (const e of txn.entries) {
+      const next = e.amount > 0n ? amount : -amount;
+      const delta = next - e.amount;
+      if (delta === 0n) continue;
+      await tx.entry.update({ where: { id: e.id }, data: { amount: next } });
+      await tx.ledgerAccount.update({ where: { id: e.accountId }, data: { balance: { increment: delta } } });
+    }
+    if (date) await tx.transaction.update({ where: { id }, data: { occurredAt: new Date(date) } });
+  });
+  revalidatePath(`/members/${memberId}`);
   return { ok: true };
 }
 

@@ -174,7 +174,12 @@ const firstStart = backup.account.map((a) => a.startedAt).sort()[0] ?? "2020-08-
 await prisma.clubConfig.create({
   data: {
     id: "singleton", name: "Peacock Investment Club", startedAt: new Date(firstStart),
-    stages: [{ name: "Stage 1", amountPaise: 100000, startDate: firstStart }],
+    // Deposits: ₹1,000/mo for the first 36 months (from Sep 2020), then ₹2,000/mo from Sep 2023
+    // (PRODUCT.md §6). Founding is Aug 31 2020; first deposit month is Sep 2020.
+    stages: [
+      { name: "Stage 1", amountPaise: 100000, startDate: "2020-09-01", endDate: "2023-09-01" },
+      { name: "Stage 2", amountPaise: 200000, startDate: "2023-09-01" },
+    ],
     rateSchedule: [{ rateBps: 100, effectiveFrom: firstStart }],
     dayInterestFrom: new Date(firstStart), maxLoanPaise: P(500000),
     alertThresholds: { largeAmountPaise: P(100000).toString(), pendingInterestPaise: P(50000).toString(), pendingDepositPaise: P(20000).toString() },

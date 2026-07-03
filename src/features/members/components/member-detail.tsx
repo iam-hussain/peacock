@@ -2,6 +2,8 @@ import Link from "next/link";
 import { UserPen, CreditCard } from "lucide-react";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { FormModalButton } from "@/components/shared/form-modal-button";
+import { CatchupPenaltyCard } from "./catchup-penalty-card";
+import { RejoinDialog } from "./rejoin-modal";
 import { initials } from "@/lib/avatar";
 import type { MemberDetailDTO as MemberDetail } from "@/server/queries/members";
 
@@ -57,8 +59,9 @@ export function MemberDetailView({ m }: { m: MemberDetail }) {
             </div>
             {/* right */}
             <div className="flex flex-col gap-4">
+              {m.rejoin && <RejoinCard m={m} />}
               <ContributionCard m={m} />
-              <LedgerCard m={m} />
+              <CatchupPenaltyCard m={m} />
               <LoansCard m={m} />
             </div>
           </div>
@@ -74,8 +77,9 @@ export function MemberDetailView({ m }: { m: MemberDetail }) {
           <IdentityCard m={m} />
           <EditMemberButton m={m} />
           <BalancesCard m={m} />
+          {m.rejoin && <RejoinCard m={m} />}
           <ContributionCard m={m} />
-          <LedgerCard m={m} />
+          <CatchupPenaltyCard m={m} />
           <LoansCard m={m} />
         </div>
       </div>
@@ -111,14 +115,14 @@ function IdentityCard({ m }: { m: MemberDetail }) {
 
 function BalancesCard({ m }: { m: MemberDetail }) {
   const rows = [
-    { l: "Pending dues", v: m.pending ?? "₹0", cls: m.pending ? "text-outfg" : "text-ink" },
+    { l: "Pending dues", v: m.overallPending ?? "₹0", cls: m.overallPending ? "text-outfg" : "text-ink" },
     { l: "Loan taken", v: m.loanTaken, cls: "text-ink" },
     { l: "Interest due", v: m.interestDue, cls: m.interestDue !== "₹0" ? "text-wfg" : "text-ink" },
   ];
   return (
     <div className="rounded-[18px] border border-bd bg-sf px-5 pb-3.5 shadow-[0_1px_2px_var(--shadow)]">
       <div className="pb-1 pt-3.5 text-[10px] font-semibold uppercase leading-none tracking-[0.08em] text-fnt">
-        Balances
+        Overall Balances
       </div>
       {rows.map((r) => (
         <div key={r.l} className="flex items-center justify-between border-t border-hr2 py-[13px]">
@@ -130,11 +134,71 @@ function BalancesCard({ m }: { m: MemberDetail }) {
   );
 }
 
-function CardShell({ title, right, children }: { title: string; right?: React.ReactNode; children: React.ReactNode }) {
+// Dark "quote" card shown for inactive members: what they must settle to rejoin (PRODUCT.md §12).
+function RejoinCard({ m }: { m: MemberDetail }) {
+  const r = m.rejoin!;
+  return (
+    <div className="rounded-[18px] border border-white/[0.08] bg-ink-surface p-5 text-white shadow-[0_10px_30px_rgba(0,0,0,0.28)] md:p-[22px]">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <div className="mb-3 inline-flex items-center gap-1.5 rounded-[20px] bg-white/[0.13] px-[11px] py-[5px]">
+            <span className="size-1.5 rounded-full bg-gold" />
+            <span className="text-[10px] font-bold uppercase leading-none tracking-[0.07em]">Inactive member</span>
+          </div>
+          <div className="text-lg font-bold leading-[1.2]">Amount to rejoin the club</div>
+          <div className="mt-[7px] max-w-[320px] text-xs font-medium leading-[1.5] text-white/[0.66]">
+            What {m.name}{" "}must settle to become an equal, active member again — backdated to the club&apos;s start.
+          </div>
+        </div>
+        <div className="flex-shrink-0 text-right">
+          <div className="text-[10px] font-medium uppercase leading-none tracking-[0.06em] text-white/[0.55]">Total</div>
+          <div className="mt-[9px] font-mono text-[31px] font-bold leading-none">{r.total}</div>
+        </div>
+      </div>
+      <div className="mt-[18px] grid grid-cols-2 gap-3">
+        <div className="rounded-[13px] border border-white/[0.13] bg-white/[0.07] px-4 py-3.5">
+          <div className="text-[11px] font-semibold leading-[1.3] text-white/85">
+            Monthly deposits
+            <br />
+            since club start
+          </div>
+          <div className="mt-[11px] font-mono text-[19px] font-bold leading-none">{r.depDue}</div>
+          <div className="mt-2 text-[10px] font-medium leading-[1.45] text-white/50">
+            {r.scheduled} scheduled − {r.paid} already paid
+          </div>
+        </div>
+        <div className="rounded-[13px] border border-white/[0.13] bg-white/[0.07] px-4 py-3.5">
+          <div className="text-[11px] font-semibold leading-[1.3] text-white/85">
+            Catch-up
+            <br />
+            per-member profit
+          </div>
+          <div className="mt-[11px] font-mono text-[19px] font-bold leading-none">{r.profit}</div>
+          <div className="mt-2 text-[10px] font-medium leading-[1.45] text-white/50">
+            Equal share of profit each active member holds
+          </div>
+        </div>
+      </div>
+      <RejoinDialog
+        memberId={m.id}
+        memberName={m.name}
+        rejoin={r}
+        className="mt-4 flex w-full items-center justify-center gap-2 rounded-[11px] bg-white p-[13px] text-[13px] font-semibold leading-none text-ink-surface hover:opacity-90"
+      >
+        Record rejoin &amp; catch-up
+      </RejoinDialog>
+    </div>
+  );
+}
+
+function CardShell({ title, titleBadge, right, children }: { title: string; titleBadge?: React.ReactNode; right?: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="overflow-hidden rounded-[18px] border border-bd bg-sf shadow-[0_1px_2px_var(--shadow)]">
       <div className="flex items-baseline justify-between px-[22px] pt-[18px]">
-        <h2 className="text-base font-bold leading-none text-ink">{title}</h2>
+        <div className="flex items-center gap-2.5">
+          <h2 className="text-base font-bold leading-none text-ink">{title}</h2>
+          {titleBadge}
+        </div>
         {right}
       </div>
       {children}
@@ -142,19 +206,35 @@ function CardShell({ title, right, children }: { title: string; right?: React.Re
   );
 }
 
+// Inactive members: contribution figures are a closed record — struck through and dimmed.
+const STRIKE = "line-through decoration-hair opacity-60";
+
 function ContributionCard({ m }: { m: MemberDetail }) {
+  const closed = m.status !== "active";
+  const strike = closed ? STRIKE : "";
   return (
-    <CardShell title="Contribution & deposits" right={<span className="text-xs font-medium leading-none text-fnt">over {m.tenure}</span>}>
+    <CardShell
+      title="Contribution & deposits"
+      titleBadge={
+        closed ? (
+          <span className="inline-flex items-center gap-[5px] rounded-[20px] border border-wbd bg-wbg px-[9px] py-[5px] text-[9px] font-bold uppercase leading-none tracking-[0.05em] text-wfg">
+            <span className="size-[5px] rounded-full bg-wfg" />
+            Settled · closing record
+          </span>
+        ) : undefined
+      }
+      right={<span className="text-xs font-medium leading-none text-fnt">over {m.tenure}</span>}
+    >
       <div className="my-4 grid grid-cols-2">
         <div className="border-r border-hr2 px-[22px]">
           <div className="text-[10px] font-semibold uppercase leading-none tracking-[0.05em] text-fnt">Member deposits</div>
-          <div className="mt-[11px] font-mono text-[28px] font-semibold leading-none text-ink">{m.deposits}</div>
+          <div className={`mt-[11px] font-mono text-[28px] font-semibold leading-none text-ink ${strike}`}>{m.deposits}</div>
         </div>
         <div className="px-[22px]">
           <div className="text-[10px] font-semibold uppercase leading-none tracking-[0.05em] text-fnt">
             Returns earned <span className="text-teal">· actual</span>
           </div>
-          <div className="mt-[11px] font-mono text-[28px] font-semibold leading-none text-in">{m.returnsActual}</div>
+          <div className={`mt-[11px] font-mono text-[28px] font-semibold leading-none text-in ${strike}`}>{m.returnsActual}</div>
           <div className="mt-2 text-[11px] font-medium leading-[1.4] text-fnt">
             Full share if paid in full: <span className="font-semibold text-ink">{m.fullShare}</span> · paid{" "}
             {m.paidRatioPct}%
@@ -162,73 +242,20 @@ function ContributionCard({ m }: { m: MemberDetail }) {
         </div>
       </div>
       <div className="grid grid-cols-4 border-t border-hr2">
-        <FourCell label="Periodic" value={m.periodic} />
-        <FourCell label="Catch-up" value={m.catchup} border />
-        <FourCell label="Total" value={m.totalDeposit} border />
-        <FourCell label="Pending dues" value={m.pending ?? "₹0"} border accent={!!m.pending} />
+        <FourCell label="Periodic" value={m.periodic} strike={strike} />
+        <FourCell label="Catch-up" value={m.catchup} border strike={strike} />
+        <FourCell label="Total" value={m.totalDeposit} border strike={strike} />
+        <FourCell label="Pending dues" value={m.depositPending ?? "₹0"} border accent={!!m.depositPending} strike={strike} />
       </div>
     </CardShell>
   );
 }
 
-function FourCell({ label, value, border = false, accent = false }: { label: string; value: string; border?: boolean; accent?: boolean }) {
+function FourCell({ label, value, border = false, accent = false, strike = "" }: { label: string; value: string; border?: boolean; accent?: boolean; strike?: string }) {
   return (
     <div className={`px-[22px] py-[15px] ${border ? "border-l border-hr2" : ""}`}>
       <div className="text-[11px] font-medium leading-none text-mut">{label}</div>
-      <div className={`mt-2 font-mono text-sm font-semibold leading-none ${accent ? "text-outfg" : "text-ink"}`}>
-        {value}
-      </div>
-    </div>
-  );
-}
-
-function LedgerCard({ m }: { m: MemberDetail }) {
-  return (
-    <div className="rounded-[18px] border border-bd bg-sf p-[18px] shadow-[0_1px_2px_var(--shadow)]">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <h2 className="text-[15px] font-bold leading-none text-ink">Catch-up &amp; penalties</h2>
-        <button className="flex-none rounded-[9px] border border-bd2 bg-tlsf px-[11px] py-2 text-xs font-semibold leading-none text-teal">
-          + Add charge
-        </button>
-      </div>
-      <div className="mb-3.5 flex gap-2">
-        <div className="flex-1 rounded-[11px] border border-teal/40 bg-tlsf px-[13px] py-2.5">
-          <div className="flex items-center gap-[7px]">
-            <span className="size-2 rounded-[3px] bg-teal" />
-            <span className="text-xs font-semibold leading-none text-teal">Catch-up</span>
-          </div>
-          <div className="mt-[9px] font-mono text-[15px] font-semibold leading-none text-ink">
-            {m.ledgerRemaining} <span className="font-sans text-[10px] font-medium text-fnt">left</span>
-          </div>
-        </div>
-        <div className="flex-1 rounded-[11px] border border-bd2 bg-sf px-[13px] py-2.5">
-          <div className="flex items-center gap-[7px]">
-            <span className="size-2 rounded-[3px] bg-wfg" />
-            <span className="text-xs font-semibold leading-none text-mut">Penalty</span>
-          </div>
-          <div className="mt-[9px] font-mono text-[15px] font-semibold leading-none text-ink">
-            ₹0 <span className="font-sans text-[10px] font-medium text-fnt">left</span>
-          </div>
-        </div>
-      </div>
-      <div className="mb-[11px] flex items-center gap-[18px]">
-        <LedgerStat label="Assigned" value={m.ledgerAssigned} />
-        <LedgerStat label="Paid" value={m.ledgerPaid} accent />
-        <LedgerStat label="Remaining" value={m.ledgerRemaining} />
-      </div>
-      <div className="mb-[7px] h-1.5 overflow-hidden rounded-md bg-bg2">
-        <div className="h-full rounded-md bg-teal" style={{ width: `${m.ledgerPct}%` }} />
-      </div>
-      <div className="text-[11px] font-medium leading-none text-fnt">{m.ledgerPct}% cleared</div>
-    </div>
-  );
-}
-
-function LedgerStat({ label, value, accent = false }: { label: string; value: string; accent?: boolean }) {
-  return (
-    <div className="flex-1">
-      <div className="text-[10px] font-medium leading-none text-mut">{label}</div>
-      <div className={`mt-[7px] font-mono text-[15px] font-semibold leading-none ${accent ? "text-in" : "text-ink"}`}>
+      <div className={`mt-2 font-mono text-sm font-semibold leading-none ${accent ? "text-outfg" : "text-ink"} ${strike}`}>
         {value}
       </div>
     </div>

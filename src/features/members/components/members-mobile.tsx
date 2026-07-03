@@ -11,7 +11,7 @@ import { MembersTable } from "./members-table";
 
 /** Members — mobile: header (summary + add + view toggle), then card or table view. */
 export function MembersMobile({ members, summary }: { members: Member[]; summary: MemberSummary }) {
-  const [view, setView] = useState<ListView>("cards");
+  const [view, setView] = useState<ListView>("table");
 
   return (
     <div className="pb-[78px] md:hidden">

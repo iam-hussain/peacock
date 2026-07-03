@@ -58,7 +58,7 @@ export function TopNav({ user }: { user: CurrentUser }) {
       <ThemeToggle />
 
       <button
-        onClick={addEntry.open}
+        onClick={() => addEntry.open()}
         className="flex items-center gap-1 rounded-[9px] bg-teal px-4 py-2.5 text-[13px] font-semibold leading-none text-white"
       >
         <Plus className="size-4" strokeWidth={2.5} /> Add entry

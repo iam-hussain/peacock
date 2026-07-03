@@ -20,6 +20,16 @@ export function daysBetween(a: Date, b: Date): number {
   return Math.max(0, Math.floor((b.getTime() - a.getTime()) / 86_400_000));
 }
 
+/** "4 months 5 days" from a whole-day count (30-day months for display). */
+export function monthsDays(days: number): string {
+  const m = Math.floor(days / 30);
+  const d = days % 30;
+  const parts: string[] = [];
+  if (m) parts.push(`${m} month${m === 1 ? "" : "s"}`);
+  if (d || !m) parts.push(`${d} day${d === 1 ? "" : "s"}`);
+  return parts.join(" ");
+}
+
 /** "5 yrs 6 mos" style tenure from a start date to now */
 export function tenure(from: Date, to = new Date()): string {
   let months = (to.getUTCFullYear() - from.getUTCFullYear()) * 12 + (to.getUTCMonth() - from.getUTCMonth());

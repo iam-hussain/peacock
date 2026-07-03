@@ -63,7 +63,14 @@ const INTENT_DIR: Record<string, Dir> = Object.fromEntries(
 );
 const VENDOR_INTENTS = new Set(["Vendor investment", "Vendor return", "Vendor write-off", "Chit installment", "Chit payout"]);
 
-const Ctx = createContext<{ open: () => void } | null>(null);
+/** Prefill the dialog straight into step 2 for a fixed intent/party (e.g. the member
+ * detail's "Record catch-up/penalty payment" reusing this flow). */
+export interface AddEntryPreset {
+  intent?: string;
+  party?: PickOption;
+}
+
+const Ctx = createContext<{ open: (preset?: AddEntryPreset) => void } | null>(null);
 export const useAddEntry = () => {
   const c = useContext(Ctx);
   if (!c) throw new Error("useAddEntry must be used within AddEntryProvider");
@@ -73,29 +80,30 @@ export const useAddEntry = () => {
 export function AddEntryProvider({ children, optionsPromise }: { children: React.ReactNode; optionsPromise: Promise<EntryPickerOptions> }) {
   // Picker data (a slow, non-critical query) is fetched lazily and never blocks page render —
   // the dialog only mounts, and only then unwraps the promise, when the user opens Add-Entry.
+  const [preset, setPreset] = useState<AddEntryPreset | null>(null);
   const [open, setOpen] = useState(false);
   return (
-    <Ctx.Provider value={{ open: () => setOpen(true) }}>
+    <Ctx.Provider value={{ open: (p) => { setPreset(p ?? null); setOpen(true); } }}>
       {children}
       {open && (
         <Suspense fallback={null}>
-          <AddEntryDialog optionsPromise={optionsPromise} onClose={() => setOpen(false)} />
+          <AddEntryDialog optionsPromise={optionsPromise} preset={preset} onClose={() => setOpen(false)} />
         </Suspense>
       )}
     </Ctx.Provider>
   );
 }
 
-function AddEntryDialog({ optionsPromise, onClose }: { optionsPromise: Promise<EntryPickerOptions>; onClose: () => void }) {
+function AddEntryDialog({ optionsPromise, preset, onClose }: { optionsPromise: Promise<EntryPickerOptions>; preset: AddEntryPreset | null; onClose: () => void }) {
   const options = use(optionsPromise);
   const MEMBER_OPTS: PickOption[] = options.members;
   const VENDOR_OPTS: PickOption[] = options.vendors;
   const TREASURER_OPTS: PickOption[] = options.treasurers;
   const today = new Date().toISOString().slice(0, 10);
-  const [intent, setIntent] = useState<string | null>(null);
+  const [intent, setIntent] = useState<string | null>(preset?.intent ?? null);
   const [showMore, setShowMore] = useState(false);
   const [picking, setPicking] = useState<"party" | "holder" | null>(null);
-  const [party, setParty] = useState<PickOption | null>(null);
+  const [party, setParty] = useState<PickOption | null>(preset?.party ?? null);
   const [holder, setHolder] = useState<PickOption | null>(null);
   const [amount, setAmount] = useState("");
   const [txnDate, setTxnDate] = useState(today);

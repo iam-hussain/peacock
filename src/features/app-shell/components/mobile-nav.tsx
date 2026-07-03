@@ -84,7 +84,7 @@ export function MobileBottomNav() {
       <div className="flex flex-1 items-start justify-center">
         <button
           aria-label="Add entry"
-          onClick={addEntry.open}
+          onClick={() => addEntry.open()}
           className="-mt-5 flex size-[52px] items-center justify-center rounded-full bg-teal text-white shadow-[0_8px_18px_rgba(14,140,130,0.35)] ring-4 ring-sf"
         >
           <Plus className="size-6" strokeWidth={2.5} />

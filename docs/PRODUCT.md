@@ -525,8 +525,8 @@ There are two kinds of penalty — one automatic (configurable, off today), one 
 ### Penalty charges (manual, multiple, paid down)
 
 Each penalty charge has:
-- an **amount** — **auto-suggested but admin-editable** (suggestion = *from this member's pending
-  dues*),
+- an **amount** — **auto-suggested but admin-editable** (suggestion = *2% of this member's pending
+  dues*, **not** the full accumulated dues),
 - a **reason** — *Delayed payment · Loan repayment delay · Holding club money too long · Missed
   deposit · Other*,
 - a **date**.

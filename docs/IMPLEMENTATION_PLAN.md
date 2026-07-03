@@ -1016,7 +1016,7 @@ Charge { memberId, kind: CATCHUP|PENALTY, reason, amount, occurredAt }
 
 # Suggested amounts (admin-editable):
 catchUpSuggestion(m) = max(0, profitPerMember(now) − memberProfit(m))   # the profit gap → equal value
-penaltySuggestion(m) = m.pendingDuesSoFar                               # from the member's pending dues
+penaltySuggestion(m) = m.pendingDuesSoFar * 2%                          # 2% of the member's pending dues
 
 # Paying a charge down — a cash transaction (any number of instalments):
 CATCHUP pay-down:  TREASURY_CASH(t) +A, MEMBER_EQUITY(m) −A     # builds the member's OWN capital
@@ -1664,7 +1664,7 @@ not** (capital owed).
   **cumulatively** (charged/paid/owed).
 - **Catch-up** pay-down → `MEMBER_EQUITY` (member's own value); **penalty** pay-down → `OTHER_INCOME`
   (shared profit). Suggestions: catch-up = profit gap (`profitPerMember − memberProfit`); penalty =
-  from pending dues. Both **admin-editable**.
+  2% of pending dues. Both **admin-editable**.
 - **Rejoin auto-adds a catch-up charge** (reason `REJOIN`, editable); the rejoin screen shows **back
   deposits + catch-up = total to rejoin**.
 - `‹CONFIRM›` penalty income recognised **on pay-down** (unpaid penalty = a due, not yet profit) —

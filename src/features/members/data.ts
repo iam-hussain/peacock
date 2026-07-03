@@ -9,7 +9,7 @@ export const MEMBER_COLS = [
   { key: "profit", label: "Profit", align: "right" as const, sort: "updown" as const },
   { key: "value", label: "Value", align: "right" as const, sort: "updown" as const },
   { key: "held", label: "Held", align: "right" as const, sort: "updown" as const },
-  { key: "penalty", label: "Penalty", align: "right" as const, sort: "updown" as const },
+  { key: "adjustment", label: "Adjustment", align: "right" as const, sort: "updown" as const },
   { key: "pending", label: "Pending", align: "right" as const, sort: "updown" as const },
   { key: "status", label: "Status", align: "right" as const, sort: "none" as const },
 ];

@@ -27,6 +27,7 @@ export function formatLakh(paise: bigint | number): string {
   const sign = rupees < 0 ? "−" : "";
   if (abs >= 1_00_00_000) return `${sign}₹${trim(abs / 1_00_00_000)}Cr`;
   if (abs >= 1_00_000) return `${sign}₹${trim(abs / 1_00_000)}L`;
+  if (abs >= 1_000) return `${sign}₹${trim(abs / 1_000)}K`;
   return sign + "₹" + new Intl.NumberFormat("en-IN").format(abs);
 }
 

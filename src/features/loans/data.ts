@@ -1,6 +1,5 @@
 export type {
   LoanDTO as Loan,
-  LoanDetailDTO as LoanDetail,
   LoanStatusKey as LoanStatus,
 } from "@/server/queries/loans";
 

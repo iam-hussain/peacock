@@ -47,7 +47,7 @@ function Row({ m }: { m: Member }) {
       <Cell v={m.profit} cls="text-in" />
       <Cell v={m.value} />
       <Cell v={m.held ?? "—"} cls={m.held ? "text-teal" : "text-fnt"} />
-      <Cell v={m.penalty ?? "—"} cls={m.penalty ? "text-wfg" : "text-fnt"} />
+      <Cell v={m.adjustment ?? "—"} cls={m.adjustment ? "text-wfg" : "text-fnt"} />
       <Cell v={m.pending ?? "—"} cls={m.pending ? "text-outfg" : "text-fnt"} />
       <div className="flex justify-end">
         <StatusBadge status={m.status} />

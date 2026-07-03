@@ -86,6 +86,16 @@ function Filters({ filter, onChange, className = "" }: { filter: string; onChang
   );
 }
 
+/** Right-aligned label + value pair, used for the loan amount and pending interest. */
+function AmtCol({ label, value, tone, className = "" }: { label: string; value: string; tone: "ink" | "wfg"; className?: string }) {
+  return (
+    <div className={`flex flex-col items-end gap-1.5 ${className}`}>
+      <span className="text-[9px] font-semibold uppercase leading-none tracking-wide text-mut">{label}</span>
+      <span className={`font-mono text-sm font-semibold leading-none ${tone === "wfg" ? "text-wfg" : "text-ink"}`}>{value}</span>
+    </div>
+  );
+}
+
 function Empty() {
   return (
     <div className="px-[18px] py-10 text-center">
@@ -98,7 +108,7 @@ function Empty() {
 /** Mobile: each loan is its own card — identity + amount/status, no progress bar. */
 function MobileLoanCard({ l }: { l: Loan }) {
   return (
-    <Link href={`/loans/${l.id}`} className="block rounded-2xl border border-bd bg-sf px-4 py-[15px] active:bg-sf2">
+    <Link href={`/members/${l.memberId}`} className="block rounded-2xl border border-bd bg-sf px-4 py-[15px] active:bg-sf2">
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 gap-3">
           <Avatar name={l.member} size={38} muted />
@@ -114,20 +124,19 @@ function MobileLoanCard({ l }: { l: Loan }) {
             <div className="mt-[7px] text-[11px] font-medium leading-[1.35] text-fnt">
               {l.open ? (
                 <>
-                  Started {l.start} ·{" "}
-                  <span className={`font-semibold ${l.overdue ? "text-out" : "text-mut"}`}>{l.elapsed}</span>
+                  <div>Started {l.start}</div>
+                  <div className={`font-semibold ${l.overdue ? "text-out" : "text-mut"}`}>{l.elapsed}</div>
                 </>
               ) : (
                 <>
-                  Closed {l.closedDate} · {l.ran}
+                  <div>Closed {l.closedDate}</div>
+                  <div>{l.ran}</div>
                 </>
               )}
             </div>
             <div className="mt-1 font-mono text-[11px] font-medium leading-[1.35] text-fnt">
               {l.open ? (
-                <>
-                  pending {l.pending} · {l.rate}
-                </>
+                <>{l.rate}</>
               ) : (
                 <>
                   interest earned {l.interestEarned}
@@ -141,8 +150,11 @@ function MobileLoanCard({ l }: { l: Loan }) {
             </div>
           </div>
         </div>
-        <div className="flex flex-none flex-col items-end gap-2">
-          <span className="font-mono text-[15px] font-semibold leading-none text-ink">{l.amount}</span>
+        <div className="flex flex-none flex-col items-end gap-2.5">
+          <div className="flex items-start gap-5">
+            {l.open && <AmtCol label="Pending interest" value={l.interest!} tone="wfg" />}
+            <AmtCol label="Loan" value={l.amount} tone="ink" />
+          </div>
           <StatusBadge status={l.badge} label={l.statusLabel} />
         </div>
       </div>
@@ -154,7 +166,7 @@ function MobileLoanCard({ l }: { l: Loan }) {
 function LoanRowDesktop({ l }: { l: Loan }) {
   return (
     <Link
-      href={`/loans/${l.id}`}
+      href={`/members/${l.memberId}`}
       className="flex items-center gap-3.5 border-b border-hr2 px-[18px] py-[15px] transition-colors last:border-b-0 hover:bg-sf2"
     >
       <div className="flex flex-[1.4] items-center gap-3.5">
@@ -190,7 +202,7 @@ function LoanRowDesktop({ l }: { l: Loan }) {
               <div className="h-full rounded-[20px] bg-teal" style={{ width: `${l.pct}%` }} />
             </div>
             <div className="mt-1.5 font-mono text-[11px] font-medium leading-[1.3] text-fnt">
-              pending {l.pending} · {l.rate}
+              {l.rate}
             </div>
           </>
         ) : (
@@ -205,9 +217,12 @@ function LoanRowDesktop({ l }: { l: Loan }) {
         )}
       </div>
 
-      <div className="flex items-center gap-3">
-        <span className="w-24 text-right font-mono text-sm font-semibold leading-none text-ink">{l.amount}</span>
-        <StatusBadge status={l.badge} label={l.statusLabel} />
+      <div className="flex shrink-0 items-center gap-5">
+        {l.open ? <AmtCol label="Pending interest" value={l.interest!} tone="wfg" className="w-28 shrink-0" /> : <div className="w-28 shrink-0" />}
+        <AmtCol label="Loan" value={l.amount} tone="ink" className="w-14 shrink-0" />
+        <div className="flex w-24 shrink-0 justify-end">
+          <StatusBadge status={l.badge} label={l.statusLabel} />
+        </div>
       </div>
     </Link>
   );
