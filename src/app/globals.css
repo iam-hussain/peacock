@@ -203,4 +203,26 @@
   body {
     @apply bg-background text-foreground;
   }
+  /* Disable the browser's double-tap-to-zoom on tappable controls. Removes the
+     ~300ms tap delay and the accidental zoom on mobile Chrome/Safari, while
+     keeping pinch-to-zoom intact (unlike user-scalable=no). */
+  a,
+  button,
+  [role="button"],
+  label,
+  select,
+  summary {
+    touch-action: manipulation;
+  }
+}
+
+/* Mobile only (< md): force text inputs to ≥16px so iOS/WebKit doesn't auto-zoom
+   the page when a field gains focus. Unlayered so it wins over Tailwind's text-*
+   utilities regardless of specificity; excludes non-typing control types. */
+@media (width < 48rem) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]):not([type="button"]):not([type="submit"]),
+  textarea,
+  select {
+    font-size: 1rem;
+  }
 }
