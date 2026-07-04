@@ -2,22 +2,16 @@ import { Plus } from "lucide-react";
 import type { Member } from "../data";
 import { MembersMobile } from "./members-mobile";
 import { MembersBrowser } from "./members-browser";
-import { FormModalButton } from "@/components/shared/form-modal-button";
+import { AddMemberDialog } from "./add-member-dialog";
 import { AdminOnly } from "@/lib/admin";
+import type { JoinPreviewDTO } from "@/server/queries/members";
 
 export interface MemberSummary {
   text: string;
   totalDeposits: string;
 }
 
-export const ADD_MEMBER_FIELDS = [
-  { name: "name", label: "Full name", placeholder: "e.g. Anita Rao", required: true },
-  { name: "phone", label: "Phone", type: "tel" as const, placeholder: "+91 …", required: true, hint: "Doubles as the default password." },
-  { name: "email", label: "Email", type: "email" as const, placeholder: "optional" },
-  { name: "username", label: "Username", placeholder: "auto-generated if blank" },
-];
-
-export function MembersList({ members, summary }: { members: Member[]; summary: MemberSummary }) {
+export function MembersList({ members, summary, joinPreview }: { members: Member[]; summary: MemberSummary; joinPreview: JoinPreviewDTO }) {
   return (
     <>
       {/* Desktop */}
@@ -31,16 +25,9 @@ export function MembersList({ members, summary }: { members: Member[]; summary: 
               </p>
             </div>
             <AdminOnly>
-              <FormModalButton
-                title="Add member"
-                subtitle="Create a new member profile."
-                kind="addMember"
-                submitLabel="Add member"
-                fields={ADD_MEMBER_FIELDS}
-                buttonClassName="flex items-center gap-1 rounded-[9px] bg-teal px-4 py-[11px] text-[13px] font-semibold leading-none text-white"
-              >
+              <AddMemberDialog preview={joinPreview} buttonClassName="flex items-center gap-1 rounded-[9px] bg-teal px-4 py-[11px] text-[13px] font-semibold leading-none text-white">
                 <Plus className="size-3.5" strokeWidth={2.5} /> Add member
-              </FormModalButton>
+              </AddMemberDialog>
             </AdminOnly>
           </div>
 
@@ -51,7 +38,7 @@ export function MembersList({ members, summary }: { members: Member[]; summary: 
       </div>
 
       {/* Mobile */}
-      <MembersMobile members={members} summary={summary} />
+      <MembersMobile members={members} summary={summary} joinPreview={joinPreview} />
     </>
   );
 }

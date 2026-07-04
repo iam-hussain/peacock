@@ -39,6 +39,7 @@ model Membership {
   joinedAt      DateTime // start of this stint (drives expected deposits for it)
   leftAt        DateTime? // settlement/close date
   settledAmount BigInt? // cash paid out at close (admin-entered)
+  settledGuide  Json? // snapshot of the settlement guide shown at close: { capital, profit, loan, interest, suggested, paid } (paise)
   accounts      LedgerAccount[] // THIS stint's MEMBER_EQUITY (+ LOAN_RECEIVABLE)
   loans         Loan[]
   charges       Charge[] // catch-up & penalty dues for THIS stint
@@ -323,6 +324,7 @@ enum LedgerAccountKind {
   INTEREST_INCOME
   OTHER_INCOME
   VENDOR_PROFIT
+  PROFIT_DISTRIBUTED // contra-income (debit): profit paid out to leavers; shareable pool = income − this (§11/§12)
 }
 
 // CATCHUP / PENALTY here are the PAY-DOWN cash transactions (paying off a Charge). Raising a charge
@@ -332,6 +334,7 @@ enum TxnType {
   CATCHUP
   PENALTY
   WITHDRAW
+  PROFIT_WITHDRAW // profit paid out at settlement (§12); debits PROFIT_DISTRIBUTED, separate from the capital WITHDRAW
   REJOIN
   FUNDS_TRANSFER
   LOAN_TAKEN

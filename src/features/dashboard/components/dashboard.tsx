@@ -1,9 +1,13 @@
+"use client"; // renderable inside the client-side Share poster (props stay serializable DTOs)
+
+import { useState } from "react";
 import Link from "next/link";
 import { StatCard } from "@/components/shared/stat-card";
 import { PortfolioChart } from "@/components/shared/portfolio-chart";
 import { RangeTabs } from "@/components/shared/range-tabs";
+import { useInPoster } from "@/lib/poster";
 import type { DashboardData } from "@/server/queries/dashboard";
-import { CHART_RANGES, CHART_DEFAULT } from "../data";
+import { CHART_RANGES, CHART_DEFAULT, DASH_ACTIVITY_MOBILE } from "../data";
 import { ActivityRow } from "./activity-row";
 import { DashActivityTabs } from "./dash-activity-tabs";
 
@@ -11,13 +15,16 @@ type Greeting = { hello: string; sub: string };
 
 export function Dashboard({ data, greeting }: { data: DashboardData; greeting: Greeting }) {
   const { hero, totalPortfolio, groups, chart, activity } = data;
+  const inPoster = useInPoster();
+  // "Club snapshot" lives only on the share poster; the live dashboard shows it in the greeting instead.
+  const shownGroups = inPoster ? groups : groups.filter((g) => g.title !== "Club snapshot");
   return (
     <>
-      {/* Desktop */}
-      <div className="hidden md:block">
+      {/* Desktop (forced in the poster regardless of viewport) */}
+      <div className={inPoster ? undefined : "hidden md:block"}>
         <div className="mx-auto max-w-[1280px] p-[26px]">
-          <h1 className="text-2xl font-bold leading-none tracking-[-0.02em] text-ink">{greeting.hello}</h1>
-          <p className="mb-5 mt-1 text-[13px] font-medium leading-[1.4] text-mut">{greeting.sub}</p>
+          {!inPoster && <h1 className="text-2xl font-bold leading-none tracking-[-0.02em] text-ink">{greeting.hello}</h1>}
+          {!inPoster && <p className="mb-5 mt-1 text-[13px] font-medium leading-[1.4] text-mut">{greeting.sub}</p>}
 
           <div className="mb-4 grid grid-cols-5 gap-3">
             {hero.map((m) => (
@@ -25,21 +32,31 @@ export function Dashboard({ data, greeting }: { data: DashboardData; greeting: G
             ))}
           </div>
 
-          <div className="grid grid-cols-[1.5fr_1fr] gap-4">
-            <div className="flex flex-col gap-4">
-              <ChartCard data={chart} />
-              <div className="grid grid-cols-2 gap-3.5">
-                {groups.map((g) => (
-                  <GroupCard key={g.title} title={g.title} items={g.items} />
-                ))}
-              </div>
+          {inPoster ? (
+            // Poster: just the summary groups — no portfolio chart or recent-activity feed.
+            <div className="grid grid-cols-3 gap-3.5">
+              {groups.map((g) => (
+                <GroupCard key={g.title} title={g.title} items={g.items} />
+              ))}
             </div>
-            <ActivityCard activity={activity} />
-          </div>
+          ) : (
+            <div className="grid grid-cols-[1.5fr_1fr] gap-4">
+              <div className="flex flex-col gap-4">
+                <ChartCard data={chart} />
+                <div className="grid grid-cols-2 gap-3.5">
+                  {shownGroups.map((g) => (
+                    <GroupCard key={g.title} title={g.title} items={g.items} />
+                  ))}
+                </div>
+              </div>
+              <ActivityCard activity={activity} />
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Mobile */}
+      {/* Mobile (never in the poster — it always uses the desktop layout) */}
+      {!inPoster && (
       <div className="pb-[78px] md:hidden">
         <div className="px-4 pb-0.5 pt-4">
           <h1 className="text-xl font-bold leading-none tracking-[-0.01em] text-ink">{greeting.hello}</h1>
@@ -62,30 +79,37 @@ export function Dashboard({ data, greeting }: { data: DashboardData; greeting: G
 
           <ChartCard mobile data={chart} />
 
-          {groups.map((g) => (
+          {shownGroups.map((g) => (
             <GroupCard key={g.title} title={g.title} items={g.items} />
           ))}
 
-          <DashActivityTabs activity={activity} />
+          <DashActivityTabs activity={activity.slice(0, DASH_ACTIVITY_MOBILE)} />
         </div>
       </div>
+      )}
     </>
   );
 }
 
-function ChartCard({ data, mobile = false }: { data: number[]; mobile?: boolean }) {
+const RANGE_SUBTITLE: Record<string, string> = { "3M": "last 3 months", "1Y": "last 12 months", All: "all time" };
+
+function ChartCard({ data, mobile = false }: { data: Record<string, number[]>; mobile?: boolean }) {
+  const [range, setRange] = useState<string>(CHART_DEFAULT);
+  const series = data[range] ?? [];
   return (
     <div className={`rounded-[14px] border border-hair bg-sf ${mobile ? "p-[15px]" : "p-[18px]"}`}>
       <div className={`flex items-center justify-between ${mobile ? "mb-3" : "mb-3.5"}`}>
         <div>
           <div className={`font-bold leading-none text-ink ${mobile ? "text-[13px]" : "text-sm"}`}>Portfolio value</div>
           <div className={`mt-[5px] font-medium leading-none text-fnt ${mobile ? "text-[11px]" : "text-xs"}`}>
-            last 12 months
+            {RANGE_SUBTITLE[range]}
           </div>
         </div>
-        <RangeTabs ranges={CHART_RANGES} defaultValue={CHART_DEFAULT} compact={mobile} />
+        {!useInPoster() && (
+          <RangeTabs ranges={CHART_RANGES} value={range} onChange={setRange} compact={mobile} />
+        )}
       </div>
-      <PortfolioChart data={data} height={mobile ? 120 : 150} gradientId={mobile ? "pgM" : "pgD"} />
+      <PortfolioChart data={series} height={mobile ? 120 : 150} gradientId={mobile ? "pgM" : "pgD"} />
     </div>
   );
 }
@@ -111,12 +135,14 @@ function ActivityCard({ activity }: { activity: DashboardData["activity"] }) {
     <div className="rounded-[14px] border border-hair bg-sf p-[18px]">
       <div className="mb-2 flex items-center justify-between">
         <h2 className="text-sm font-bold leading-none text-ink">Recent activity</h2>
-        <Link href="/transactions" className="text-xs font-medium leading-none text-teal">
-          View all
-        </Link>
+        {!useInPoster() && (
+          <Link href="/transactions" className="text-xs font-medium leading-none text-teal">
+            View all
+          </Link>
+        )}
       </div>
-      {activity.map((a) => (
-        <ActivityRow key={a.who + a.what} {...a} />
+      {activity.map((a, i) => (
+        <ActivityRow key={i} {...a} />
       ))}
     </div>
   );

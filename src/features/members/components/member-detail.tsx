@@ -1,8 +1,11 @@
+"use client"; // renderable inside the client-side Share poster (props stay serializable DTOs)
+
 import Link from "next/link";
 import { UserPen, CreditCard, LogOut } from "lucide-react";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { FormModalButton } from "@/components/shared/form-modal-button";
 import { AdminOnly } from "@/lib/admin";
+import { useInPoster } from "@/lib/poster";
 import { CatchupPenaltyCard } from "./catchup-penalty-card";
 import { RejoinDialog } from "./rejoin-modal";
 import { SettleDialog } from "./settle-modal";
@@ -19,9 +22,9 @@ function EditMemberButton({ m, compact = false }: { m: MemberDetail; compact?: b
       hiddenFields={{ id: m.id }}
       fields={[
         { name: "name", label: "Full name", defaultValue: m.name, required: true },
-        { name: "phone", label: "Phone", type: "tel", placeholder: "+91 …" },
-        { name: "email", label: "Email", type: "email", placeholder: "optional" },
-        { name: "username", label: "Username" },
+        { name: "phone", label: "Phone", type: "tel", placeholder: "+91 …", defaultValue: m.phone },
+        { name: "email", label: "Email", type: "email", placeholder: "optional", defaultValue: m.email },
+        { name: "username", label: "Username", defaultValue: m.username },
       ]}
       buttonClassName={`flex items-center justify-center gap-2 rounded-[11px] border border-bd2 bg-sf p-[13px] text-[13px] font-semibold leading-none text-ink hover:bg-sf2 ${compact ? "flex-1" : ""}`}
     >
@@ -64,38 +67,54 @@ function TealAvatar({ name, src, size }: { name: string; src?: string | null; si
 }
 
 export function MemberDetailView({ m }: { m: MemberDetail }) {
+  const inPoster = useInPoster();
   return (
     <>
-      {/* Desktop */}
-      <div className="hidden md:block">
+      {/* Desktop (forced in the poster regardless of viewport) */}
+      <div className={inPoster ? undefined : "hidden md:block"}>
         <div className="mx-auto max-w-[1280px] p-[26px]">
-          <Link href="/members" className="mb-4 inline-block text-[13px] font-semibold leading-none text-teal">
-            ← All members
-          </Link>
-          <div className="grid grid-cols-[330px_1fr] items-start gap-[18px]">
-            {/* left rail */}
-            <div className="sticky top-[26px] flex flex-col gap-3.5">
+          {!inPoster && (
+            <Link href="/members" className="mb-4 inline-block text-[13px] font-semibold leading-none text-teal">
+              ← All members
+            </Link>
+          )}
+          {inPoster ? (
+            // Poster: one stacked column instead of the sticky-rail two-column layout.
+            <div className="flex flex-col gap-4">
               <IdentityCard m={m} />
               <BalancesCard m={m} />
-              <AdminOnly>
-                <div className="flex flex-col gap-[9px]">
-                  <EditMemberButton m={m} />
-                  <SettleButton m={m} />
-                </div>
-              </AdminOnly>
-            </div>
-            {/* right */}
-            <div className="flex flex-col gap-4">
               {m.rejoin && <RejoinCard m={m} />}
               <ContributionCard m={m} />
               <CatchupPenaltyCard m={m} />
               <LoansCard m={m} />
             </div>
-          </div>
+          ) : (
+            <div className="grid grid-cols-[330px_1fr] items-start gap-[18px]">
+              {/* left rail */}
+              <div className="sticky top-[26px] flex flex-col gap-3.5">
+                <IdentityCard m={m} />
+                <BalancesCard m={m} />
+                <AdminOnly>
+                  <div className="flex flex-col gap-[9px]">
+                    <EditMemberButton m={m} />
+                    <SettleButton m={m} />
+                  </div>
+                </AdminOnly>
+              </div>
+              {/* right */}
+              <div className="flex flex-col gap-4">
+                {m.rejoin && <RejoinCard m={m} />}
+                <ContributionCard m={m} />
+                <CatchupPenaltyCard m={m} />
+                <LoansCard m={m} />
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Mobile */}
+      {/* Mobile (never in the poster — it always uses the desktop layout) */}
+      {!inPoster && (
       <div className="pb-[78px] md:hidden">
         <div className="flex flex-col gap-3 p-4">
           <Link href="/members" className="text-[13px] font-semibold leading-none text-teal">
@@ -115,11 +134,51 @@ export function MemberDetailView({ m }: { m: MemberDetail }) {
           <LoansCard m={m} />
         </div>
       </div>
+      )}
     </>
   );
 }
 
+// Whole months between a "Mon YYYY" join label and now — for the poster's "N mons" tenure.
+const MONTH_IDX: Record<string, number> = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
+function monthsSince(monYear: string): number {
+  const [mon, yr] = monYear.toLowerCase().split(/\s+/);
+  const mi = MONTH_IDX[mon?.slice(0, 3)] ?? 0;
+  const now = new Date();
+  return Math.max(1, (now.getFullYear() - (Number(yr) || now.getFullYear())) * 12 + (now.getMonth() - mi));
+}
+
 function IdentityCard({ m }: { m: MemberDetail }) {
+  const inPoster = useInPoster();
+  if (inPoster) {
+    const st =
+      m.status === "active"
+        ? { label: "Active", pill: "bg-tlsf text-teal", dot: "bg-teal" }
+        : m.status === "left"
+          ? { label: "Settled", pill: "bg-bg2 text-mut", dot: "bg-mut" }
+          : { label: "Inactive", pill: "bg-bg2 text-mut", dot: "bg-mut" };
+    return (
+      <div className="flex items-center justify-center gap-5 rounded-[18px] border border-bd bg-sf px-6 py-[26px] shadow-[0_1px_2px_var(--shadow)]">
+        {m.avatarUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element -- inline base64 avatar, no image domain config
+          <img src={m.avatarUrl} alt="" className="size-[88px] flex-none rounded-full object-cover" />
+        ) : (
+          <span className="flex size-[88px] flex-none items-center justify-center rounded-full bg-tlsf text-[32px] font-bold leading-none text-teal">
+            {initials(m.name)}
+          </span>
+        )}
+        <div className="min-w-0">
+          <h1 className="font-display text-[40px] font-extrabold leading-none tracking-[-0.02em] text-ink">{m.name}</h1>
+          <div className="mt-3.5 flex flex-wrap items-center gap-3">
+            <span className={`inline-flex items-center gap-2 rounded-full px-3.5 py-1.5 text-sm font-semibold leading-none ${st.pill}`}>
+              <span className={`size-2 rounded-full ${st.dot}`} /> {st.label}
+            </span>
+            <span className="text-[15px] font-medium leading-none text-mut">Member since {m.joined} · {monthsSince(m.joined)} mons</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="overflow-hidden rounded-[18px] border border-bd bg-sf shadow-[0_1px_2px_var(--shadow)]">
       <div className="h-[58px] bg-tlsf" />
@@ -146,6 +205,7 @@ function IdentityCard({ m }: { m: MemberDetail }) {
 }
 
 function BalancesCard({ m }: { m: MemberDetail }) {
+  const inPoster = useInPoster();
   const rows = [
     { l: "Pending dues", v: m.overallPending ?? "₹0", cls: m.overallPending ? "text-outfg" : "text-ink" },
     { l: "Loan taken", v: m.loanTaken, cls: "text-ink" },
@@ -153,13 +213,13 @@ function BalancesCard({ m }: { m: MemberDetail }) {
   ];
   return (
     <div className="rounded-[18px] border border-bd bg-sf px-5 pb-3.5 shadow-[0_1px_2px_var(--shadow)]">
-      <div className="pb-1 pt-3.5 text-[10px] font-semibold uppercase leading-none tracking-[0.08em] text-fnt">
+      <div className={`pb-1 pt-3.5 font-semibold uppercase leading-none tracking-[0.08em] text-fnt ${inPoster ? "text-[13px]" : "text-[10px]"}`}>
         Overall Balances
       </div>
       {rows.map((r) => (
-        <div key={r.l} className="flex items-center justify-between border-t border-hr2 py-[13px]">
-          <span className="text-[13px] font-medium leading-none text-mut">{r.l}</span>
-          <span className={`font-mono text-[17px] font-bold leading-none ${r.cls}`}>{r.v}</span>
+        <div key={r.l} className={`flex items-center justify-between border-t border-hr2 ${inPoster ? "py-[18px]" : "py-[13px]"}`}>
+          <span className={`font-medium leading-none text-mut ${inPoster ? "text-[16px]" : "text-[13px]"}`}>{r.l}</span>
+          <span className={`font-mono font-bold leading-none ${r.cls} ${inPoster ? "text-[26px]" : "text-[17px]"}`}>{r.v}</span>
         </div>
       ))}
     </div>
@@ -196,7 +256,7 @@ function RejoinCard({ m }: { m: MemberDetail }) {
           </div>
           <div className="mt-[11px] font-mono text-[19px] font-bold leading-none">{r.depDue}</div>
           <div className="mt-2 text-[10px] font-medium leading-[1.45] text-white/50">
-            {r.scheduled} scheduled − {r.paid} already paid
+            Full monthly deposit owed from the club&apos;s start
           </div>
         </div>
         <div className="rounded-[13px] border border-white/[0.13] bg-white/[0.07] px-4 py-3.5">

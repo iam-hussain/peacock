@@ -3,18 +3,24 @@ import { prisma } from "@/server/db";
 import { formatPaise, formatLakh } from "@/lib/money";
 import { daysBetween } from "@/lib/date";
 import { getTransactions } from "./transactions";
-
-export interface NotificationsData {
-  approvals: { id: string; who: string; type: string; sub: string; amt: string; dir: string; creator: string; treasurer: string; method: string; txn: string; created: string }[];
-  alerts: { title: string; sub: string }[];
-  events: { title: string; sub: string; time: string; amt: string; dir: string }[];
-  summary: { label: string; v: string; color: string }[];
+import { getCurrentUser } from "./session";
+import { ACTIVITY_PAGE, type ActivityEvent, type NotificationsData } from "@/features/notifications/types";
+export async function getActivity(offset = 0, limit = ACTIVITY_PAGE): Promise<ActivityEvent[]> {
+  const recent = await getTransactions(limit, offset);
+  return recent.map((r) => ({
+    title: `${r.what} · ${r.dir === "out" ? r.to.name : r.from.name}`,
+    sub: `by ${r.dir === "out" ? r.from.name : r.to.name}`,
+    time: r.entered,
+    amt: r.amount,
+    dir: r.dir,
+  }));
 }
 
-/** Bell badge count = what the notifications page surfaces as needing attention. */
+/** Bell badge count = stored unread notifications for the signed-in member (cleared by "Mark all read"). */
 export async function getUnreadCount(): Promise<number> {
-  const { approvals, alerts } = await getNotifications();
-  return approvals.length + alerts.length;
+  const me = await getCurrentUser();
+  if (!me) return 0;
+  return prisma.notification.count({ where: { recipientId: me.id, isRead: false } });
 }
 
 export async function getNotifications(): Promise<NotificationsData> {
@@ -48,15 +54,8 @@ export async function getNotifications(): Promise<NotificationsData> {
     alerts.push({ title: `${c.vendor.name} installment due soon`, sub: `${formatPaise(c.marginInstallment)} · monthly chit` });
   }
 
-  // Events ← recent ledger activity.
-  const recent = await getTransactions(6);
-  const events = recent.map((r) => ({
-    title: `${r.what} · ${r.dir === "out" ? r.to.name : r.from.name}`,
-    sub: `by ${r.dir === "out" ? r.from.name : r.to.name}`,
-    time: r.entered,
-    amt: r.amount,
-    dir: r.dir,
-  }));
+  // Events ← recent ledger activity (first page; "Load more" fetches the rest).
+  const events = await getActivity(0);
 
   return {
     approvals,

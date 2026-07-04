@@ -39,14 +39,14 @@ export function SettleDialog({
 
   const submit = () => {
     const n = Number(amount);
-    if (!amount.trim() || !(n > 0)) return setErr("Enter the final amount paid out.");
+    if (!amount.trim() || Number.isNaN(n) || n < 0) return setErr("Enter the final amount paid out.");
     if (!treasurer) return setErr("Pick the treasurer paying the member out.");
     start(async () => {
       const fd = new FormData();
       fd.set("memberId", memberId);
       fd.set("party", memberName);
       fd.set("amount", amount);
-      fd.set("treasurer", treasurer.name);
+      fd.set("treasurerId", treasurer.id);
       fd.set("date", date);
       const res = await formAction("settle", fd);
       if (res.ok) {

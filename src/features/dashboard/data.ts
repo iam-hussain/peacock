@@ -4,4 +4,8 @@ export const CHART_DEFAULT = "1Y";
 
 export const DASH_TABS = ["Transactions", "Vendors", "Trends"] as const;
 
+// Recent-activity feed length: full on web, trimmed on mobile.
+export const DASH_ACTIVITY_WEB = 14;
+export const DASH_ACTIVITY_MOBILE = 8;
+
 export type Dir = "in" | "out" | "neutral";

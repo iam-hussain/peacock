@@ -30,14 +30,27 @@ function pct(profit: bigint, invested: bigint): string {
   return `${p >= 0 ? "+" : "−"}${Math.abs(p).toFixed(1)}%`;
 }
 
+// Vendor status → badge tone + label. Chits show their own lifecycle (Running/Paid out/Completed).
+function vendorStatus(v: { type: "GENERAL" | "CHIT"; status: string; chit: { status?: string } | null }): { status: Status; label: string } {
+  if (v.type === "CHIT") {
+    const cs = v.chit?.status ?? "RUNNING";
+    if (cs === "PAID_OUT") return { status: "settled", label: "Paid out" };
+    if (cs === "COMPLETED") return { status: "settled", label: "Completed" };
+    return { status: "active", label: "Running" };
+  }
+  if (v.status === "CLOSED") return { status: "settled", label: "Closed" };
+  if (v.status === "INACTIVE") return { status: "inactive", label: "Inactive" };
+  return { status: "active", label: "Active" };
+}
+
 function toDTO(
-  v: { id: string; name: string; type: "GENERAL" | "CHIT"; category: string | null; status: string; startedAt: Date; chit: { durationMonths: number } | null },
+  v: { id: string; name: string; type: "GENERAL" | "CHIT"; category: string | null; status: string; startedAt: Date; chit: { durationMonths: number; status?: string } | null },
   invested: bigint,
   profit: bigint, // net: realized − obligation
   obligation: bigint = 0n,
 ): VendorDTO {
   const isChit = v.type === "CHIT";
-  const statusLabel = v.status === "CLOSED" ? "Closed" : isChit ? "Running" : "Active";
+  const { status, label: statusLabel } = vendorStatus(v);
   return {
     id: v.id,
     name: v.name,
@@ -45,7 +58,7 @@ function toDTO(
     type: isChit ? "chit" : "general",
     typeLabel: isChit ? "CHIT" : (v.category ?? "General").toUpperCase(),
     category: v.category ?? (isChit ? "Chit" : "General"),
-    status: v.status === "CLOSED" ? "settled" : "active",
+    status,
     statusLabel,
     cycle: isChit ? `${v.chit?.durationMonths ?? 0}-month chit` : `since ${monthYear(v.startedAt)}`,
     invested: formatLakh(invested),
@@ -97,20 +110,26 @@ async function lifetimeInvested(vendorId: string): Promise<bigint> {
   return r._sum.amount ?? 0n;
 }
 
-const CHIT_TERMS = { select: { chitValue: true, durationMonths: true, marginInstallment: true } } as const;
+const CHIT_TERMS = { select: { chitValue: true, durationMonths: true, marginInstallment: true, status: true } } as const;
 
-// Chit obligation = installments still owed (margin × months not yet paid), per PRODUCT.md §10/§11.
-// Zero for general vendors and for fully-paid chits ("all months covered"). Reduces profit.
-async function vendorObligation(v: { id: string; type: string; chit: { chitValue: bigint; durationMonths: number; marginInstallment: bigint } | null }): Promise<bigint> {
-  if (v.type !== "CHIT" || !v.chit) return 0n;
-  return (await chitLedger(v.id, v.chit)).obligation;
+type ChitFin = { profit: bigint; obligation: bigint };
+
+// Chit P/L (PRODUCT.md §10/§11): eventual receipt − everything paid or still owed.
+//   receipt   = payout if taken, else the chit's face value (still to be received)
+//   obligation = installments still owed = margin × months not yet paid (0 once fully covered)
+// A general vendor has no obligation; its profit is the realized VENDOR_PROFIT.
+async function vendorFin(v: { id: string; type: string; accounts: { kind: string; balance: bigint }[]; chit: { chitValue: bigint; durationMonths: number; marginInstallment: bigint } | null }): Promise<ChitFin> {
+  if (v.type !== "CHIT" || !v.chit) return { profit: profitOf(v.accounts), obligation: 0n };
+  const s = await chitLedger(v.id, v.chit);
+  const receipt = s.taken ? s.payout : v.chit.chitValue;
+  return { profit: receipt - (s.totalPaid + s.obligation), obligation: s.obligation };
 }
 
-/** Club-wide chit obligation still owed (paise). */
-export async function totalChitObligation(): Promise<bigint> {
-  const chits = await prisma.vendor.findMany({ where: { type: "CHIT" }, select: { id: true, type: true, chit: CHIT_TERMS } });
-  const obs = await Promise.all(chits.map(vendorObligation));
-  return obs.reduce((s, o) => s + o, 0n);
+/** Club-wide vendor profit (chit P/L + general realized) and chit obligation still owed (paise). */
+export async function vendorProfitAndObligation(): Promise<ChitFin> {
+  const vendors = await prisma.vendor.findMany({ select: { id: true, type: true, accounts: { select: { kind: true, balance: true } }, chit: CHIT_TERMS } });
+  const fins = await Promise.all(vendors.map(vendorFin));
+  return { profit: fins.reduce((s, f) => s + f.profit, 0n), obligation: fins.reduce((s, f) => s + f.obligation, 0n) };
 }
 
 const LIST_SELECT = {
@@ -119,29 +138,25 @@ const LIST_SELECT = {
   chit: CHIT_TERMS,
 } as const;
 
-// List rows: lifetime invested + net profit (realized − obligation) + the obligation still owed.
+// List rows: lifetime invested + P/L (chit projects the face value if no payout yet) + obligation owed.
 export async function getVendors(): Promise<VendorDTO[]> {
   const vendors = await prisma.vendor.findMany({ orderBy: { name: "asc" }, select: LIST_SELECT });
   return Promise.all(vendors.map(async (v) => {
-    const [invested, obligation] = await Promise.all([lifetimeInvested(v.id), vendorObligation(v)]);
-    return toDTO(v, invested, profitOf(v.accounts) - obligation, obligation);
+    const [invested, fin] = await Promise.all([lifetimeInvested(v.id), vendorFin(v)]);
+    return toDTO(v, invested, fin.profit, fin.obligation);
   }));
 }
 
-// Club-wide vendor position: holding (money still out), net profit (realized − obligation),
-// the obligation itself, and ROI on lifetime invested.
-export async function getVendorTotals(): Promise<{ holding: bigint; invested: bigint; realized: bigint; obligation: bigint; profit: bigint; roi: number }> {
-  const [holdingA, profitA, investedA, obligation] = await Promise.all([
+// Club-wide vendor position: holding (money still out), P/L, obligation owed, ROI on lifetime invested.
+export async function getVendorTotals(): Promise<{ holding: bigint; invested: bigint; obligation: bigint; profit: bigint; roi: number }> {
+  const [holdingA, investedA, fin] = await Promise.all([
     prisma.ledgerAccount.aggregate({ _sum: { balance: true }, where: { kind: "VENDOR_RECEIVABLE" } }),
-    prisma.ledgerAccount.aggregate({ _sum: { balance: true }, where: { kind: "VENDOR_PROFIT" } }),
     prisma.entry.aggregate({ _sum: { amount: true }, where: { amount: { gt: 0 }, account: { kind: "VENDOR_RECEIVABLE" } } }),
-    totalChitObligation(),
+    vendorProfitAndObligation(),
   ]);
   const holding = holdingA._sum.balance ?? 0n;
-  const realized = -(profitA._sum.balance ?? 0n);
   const invested = investedA._sum.amount ?? 0n;
-  const profit = realized - obligation;
-  return { holding, invested, realized, obligation, profit, roi: invested > 0n ? (Number(profit) / Number(invested)) * 100 : 0 };
+  return { holding, invested, obligation: fin.obligation, profit: fin.profit, roi: invested > 0n ? (Number(fin.profit) / Number(invested)) * 100 : 0 };
 }
 
 export async function getVendorStats(): Promise<{ label: string; value: string; tone?: "in" | "teal" }[]> {
@@ -185,8 +200,9 @@ export async function getChitDetail(id: string): Promise<ChitDetailDTO | null> {
   const margin = c.marginInstallment;
   const s = await chitLedger(id, c);
   const { paidCount, totalPaid, payout, taken, payoutMonth, obligation, paidInstallments } = s;
-  // Summary (invested/profit/roi) = ledger truth, profit net of obligation; schedule stays projection-based.
-  const base = toDTO(v, await lifetimeInvested(id), profitOf(v.accounts) - obligation, obligation);
+  // Summary P/L = eventual receipt (payout if taken, else face value) − (paid to date + obligation).
+  const receipt = taken ? payout : c.chitValue;
+  const base = toDTO(v, await lifetimeInvested(id), receipt - (totalPaid + obligation), obligation);
 
   return {
     ...base,
@@ -218,7 +234,10 @@ export async function getGeneralDetail(id: string): Promise<GeneralDetailDTO | n
   const profit = profitOf(v.accounts);
   const base = toDTO({ ...v, chit: null }, invested, profit);
   const returns = await prisma.transaction.findMany({
-    where: { vendorId: id, type: "VENDOR_RETURN", NOT: { description: { contains: "opening" } } },
+    // Hide opening-balance reconciliation rows, but KEEP null-description returns: in SQL
+    // `NOT (description LIKE '%opening%')` is NULL (→ excluded) for a null description, so the
+    // opening filter must explicitly allow nulls or every real un-described return vanishes.
+    where: { vendorId: id, type: "VENDOR_RETURN", OR: [{ description: null }, { description: { not: { contains: "opening" } } }] },
     orderBy: { occurredAt: "desc" },
     take: 6,
     select: { occurredAt: true, entries: { where: { account: { kind: "TREASURY_CASH" } }, select: { amount: true } } },

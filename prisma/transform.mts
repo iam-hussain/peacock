@@ -224,6 +224,7 @@ await prisma.clubConfig.create({
 });
 
 // ---------------------------------------------------------------- members + auth users
+const ADMIN_USERNAMES = new Set(["zakir", "cibi"]); // force admins regardless of backup role
 const members = backup.account.filter((a) => a.type === "MEMBER");
 const vendors = backup.account.filter((a) => a.type === "VENDOR");
 const credentials: { name: string; email: string; password: string }[] = [];
@@ -246,7 +247,7 @@ for (let i = 0; i < members.length; i++) {
 
   memberCreates.push({
     id: a.id, firstName: a.firstName || a.username, lastName: a.lastName || null, phone, email,
-    username: a.username, avatarUrl: avatarDataUrl(a.avatarUrl), role: a.role === "ADMIN" ? "ADMIN" : "MEMBER",
+    username: a.username, avatarUrl: avatarDataUrl(a.avatarUrl), role: a.role === "ADMIN" || ADMIN_USERNAMES.has(a.username) ? "ADMIN" : "MEMBER",
     userId: signUp.user.id, mustChangePassword: true, customerSince: new Date(a.startedAt),
     archivedAt: a.active ? null : a.endedAt ? new Date(a.endedAt) : null,
   });

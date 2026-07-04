@@ -69,7 +69,7 @@ export function RejoinDialog({
               <span className="font-mono text-[17px] font-bold leading-none text-ink">{rejoin.depDue}</span>
             </div>
             <p className="mt-1.5 text-[11px] font-medium leading-[1.4] text-fnt">
-              {rejoin.scheduled} scheduled − {rejoin.paid} already paid · paid down over time as normal deposits.
+              Full monthly deposits since the club started · paid down over time as normal deposits.
             </p>
           </div>
 

@@ -3,9 +3,9 @@
 import { useState, useTransition } from "react";
 import { Check, TriangleAlert } from "lucide-react";
 import { initials } from "@/lib/avatar";
-import { decideSubmission, markAllRead } from "@/server/actions";
+import { decideSubmission, loadActivity, markAllRead } from "@/server/actions";
 import { useIsAdmin } from "@/lib/admin";
-import type { NotificationsData } from "@/server/queries/notifications";
+import { ACTIVITY_PAGE, type ActivityEvent, type NotificationsData } from "@/features/notifications/types";
 
 const CHIPS = ["All", "Approvals", "Alerts", "Activity"] as const;
 
@@ -15,14 +15,19 @@ const DOT: Record<string, string> = { in: "bg-in", out: "bg-out", neutral: "bg-f
 type Approval = NotificationsData["approvals"][number];
 
 export function Notifications({ approvals, alerts, events, summary }: NotificationsData) {
+  const isAdmin = useIsAdmin();
   const [chip, setChip] = useState<string>("All");
   const show = (k: string) => chip === "All" || chip === k;
+  const showApprovals = isAdmin && approvals.length > 0;
+  const chips = isAdmin ? CHIPS : CHIPS.filter((c) => c !== "Approvals");
   return (
     <div className="mx-auto max-w-[1280px] p-4 pb-[78px] md:p-[26px] md:pb-[26px]">
       <div className="mb-5 flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold leading-none tracking-[-0.02em] text-ink">Notifications</h1>
-          <p className="mt-[7px] text-[13px] font-medium leading-[1.4] text-mut">{approvals.length} approvals · {alerts.length} alerts need attention</p>
+          <p className="mt-[7px] text-[13px] font-medium leading-[1.4] text-mut">
+            {showApprovals ? `${approvals.length} approvals · ` : ""}{alerts.length} alerts need attention
+          </p>
         </div>
         <MarkAllReadButton />
       </div>
@@ -30,7 +35,7 @@ export function Notifications({ approvals, alerts, events, summary }: Notificati
       <div className="grid items-start gap-[22px] lg:grid-cols-[minmax(0,1fr)_300px]">
         <div>
           <div className="flex gap-2">
-            {CHIPS.map((c) => (
+            {chips.map((c) => (
               <button
                 key={c}
                 onClick={() => setChip(c)}
@@ -43,30 +48,23 @@ export function Notifications({ approvals, alerts, events, summary }: Notificati
             ))}
           </div>
 
-          {show("Approvals") && (
+          {show("Approvals") && showApprovals && (
             <>
               <div className="mb-[11px] mt-[22px] flex items-center gap-2">
                 <span className="text-[11px] font-bold uppercase leading-none tracking-[0.07em] text-wfg">Needs your action</span>
                 <span className="flex h-[18px] min-w-[18px] items-center justify-center rounded-[9px] bg-out px-1.5 font-mono text-[10px] font-bold text-white">{approvals.length}</span>
               </div>
-              {approvals.length === 0 ? (
-                <EmptyState />
-              ) : (
-                <div className="flex flex-col gap-[11px]">
-                  {approvals.map((a) => (
-                    <ApprovalCard key={a.id} a={a} />
-                  ))}
-                </div>
-              )}
+              <div className="flex flex-col gap-[11px]">
+                {approvals.map((a) => (
+                  <ApprovalCard key={a.id} a={a} />
+                ))}
+              </div>
             </>
           )}
 
-          {show("Alerts") && (
+          {show("Alerts") && alerts.length > 0 && (
             <>
               <div className="mb-[11px] mt-[22px] text-[11px] font-bold uppercase leading-none tracking-[0.07em] text-fnt">Alerts</div>
-              {alerts.length === 0 ? (
-                <EmptyState />
-              ) : (
               <div className="flex flex-col gap-[9px]">
                 {alerts.map((al) => (
                   <div key={al.title} className="flex items-start gap-3 rounded-[13px] border border-wbd bg-wbg px-[15px] py-3.5">
@@ -78,31 +76,10 @@ export function Notifications({ approvals, alerts, events, summary }: Notificati
                   </div>
                 ))}
               </div>
-              )}
             </>
           )}
 
-          {show("Activity") && (
-            <>
-              <div className="mb-[11px] mt-[22px] text-[11px] font-bold uppercase leading-none tracking-[0.07em] text-fnt">Activity</div>
-              {events.length === 0 ? (
-                <EmptyState />
-              ) : (
-              <div className="overflow-hidden rounded-2xl border border-bd bg-sf shadow-[0_1px_2px_var(--shadow)]">
-                {events.map((n) => (
-                  <div key={n.title} className="flex items-center gap-3 border-b border-hr2 px-4 py-3.5 last:border-b-0">
-                    <span className={`size-[9px] flex-none rounded-full ${DOT[n.dir]}`} />
-                    <div className="min-w-0 flex-1">
-                      <div className="text-[13px] font-semibold leading-[1.35] text-ink">{n.title}</div>
-                      <div className="mt-1 text-[11px] font-medium leading-[1.35] text-fnt">{n.sub} · {n.time}</div>
-                    </div>
-                    {n.amt && <div className={`font-mono text-sm font-bold leading-none ${AMT[n.dir]}`}>{n.amt}</div>}
-                  </div>
-                ))}
-              </div>
-              )}
-            </>
-          )}
+          {show("Activity") && events.length > 0 && <ActivitySection initial={events} />}
         </div>
 
         {/* sidebar */}
@@ -142,18 +119,6 @@ export function Notifications({ approvals, alerts, events, summary }: Notificati
   );
 }
 
-function EmptyState() {
-  return (
-    <div className="flex flex-col items-center justify-center px-6 py-10 text-center">
-      <span className="flex size-[58px] items-center justify-center rounded-full bg-tlsf">
-        <Check className="size-6 text-teal" strokeWidth={2.2} />
-      </span>
-      <div className="mt-3.5 text-base font-bold leading-none text-ink">You&apos;re all caught up</div>
-      <div className="mt-2 text-xs font-medium leading-[1.4] text-mut">Nothing needs your attention here.</div>
-    </div>
-  );
-}
-
 function MarkAllReadButton() {
   const [pending, start] = useTransition();
   return (
@@ -167,8 +132,45 @@ function MarkAllReadButton() {
   );
 }
 
+function ActivitySection({ initial }: { initial: ActivityEvent[] }) {
+  const [items, setItems] = useState(initial);
+  const [done, setDone] = useState(initial.length < ACTIVITY_PAGE);
+  const [pending, start] = useTransition();
+  const loadMore = () =>
+    start(async () => {
+      const next = await loadActivity(items.length);
+      setItems((cur) => [...cur, ...next]);
+      if (next.length < ACTIVITY_PAGE) setDone(true);
+    });
+  return (
+    <>
+      <div className="mb-[11px] mt-[22px] text-[11px] font-bold uppercase leading-none tracking-[0.07em] text-fnt">Activity</div>
+      <div className="overflow-hidden rounded-2xl border border-bd bg-sf shadow-[0_1px_2px_var(--shadow)]">
+        {items.map((n, i) => (
+          <div key={i} className="flex items-center gap-3 border-b border-hr2 px-4 py-3.5 last:border-b-0">
+            <span className={`size-[9px] flex-none rounded-full ${DOT[n.dir]}`} />
+            <div className="min-w-0 flex-1">
+              <div className="text-[13px] font-semibold leading-[1.35] text-ink">{n.title}</div>
+              <div className="mt-1 text-[11px] font-medium leading-[1.35] text-fnt">{n.sub} · {n.time}</div>
+            </div>
+            {n.amt && <div className={`font-mono text-sm font-bold leading-none ${AMT[n.dir]}`}>{n.amt}</div>}
+          </div>
+        ))}
+      </div>
+      {!done && (
+        <button
+          onClick={loadMore}
+          disabled={pending}
+          className="mt-3 w-full rounded-[10px] border border-bd2 py-2.5 text-xs font-semibold leading-none text-teal hover:bg-tlsf disabled:opacity-60"
+        >
+          {pending ? "Loading…" : "Load more"}
+        </button>
+      )}
+    </>
+  );
+}
+
 function ApprovalCard({ a }: { a: Approval }) {
-  const isAdmin = useIsAdmin();
   const [pending, start] = useTransition();
   const [err, setErr] = useState<string | null>(null);
   const decide = (decision: "approve" | "reject") =>
@@ -203,24 +205,22 @@ function ApprovalCard({ a }: { a: Approval }) {
           </div>
         ))}
       </div>
-      {isAdmin && (
-        <div className="mt-3 flex gap-[9px]">
-          <button
-            onClick={() => decide("approve")}
-            disabled={pending}
-            className="flex-1 rounded-[9px] bg-teal p-[11px] text-center text-[13px] font-semibold leading-none text-white hover:opacity-90 disabled:opacity-60"
-          >
-            Approve
-          </button>
-          <button
-            onClick={() => decide("reject")}
-            disabled={pending}
-            className="flex-1 rounded-[9px] border border-outbd bg-sf p-[11px] text-center text-[13px] font-semibold leading-none text-out hover:bg-outbg disabled:opacity-60"
-          >
-            Reject
-          </button>
-        </div>
-      )}
+      <div className="mt-3 flex gap-[9px]">
+        <button
+          onClick={() => decide("approve")}
+          disabled={pending}
+          className="flex-1 rounded-[9px] bg-teal p-[11px] text-center text-[13px] font-semibold leading-none text-white hover:opacity-90 disabled:opacity-60"
+        >
+          Approve
+        </button>
+        <button
+          onClick={() => decide("reject")}
+          disabled={pending}
+          className="flex-1 rounded-[9px] border border-outbd bg-sf p-[11px] text-center text-[13px] font-semibold leading-none text-out hover:bg-outbg disabled:opacity-60"
+        >
+          Reject
+        </button>
+      </div>
       {err && <p className="mt-2 text-[12px] font-medium leading-[1.4] text-out">{err}</p>}
     </div>
   );

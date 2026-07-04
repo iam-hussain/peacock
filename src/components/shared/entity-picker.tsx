@@ -4,10 +4,31 @@ import { useMemo, useState } from "react";
 import { Search, ChevronLeft, HelpCircle } from "lucide-react";
 import { Avatar } from "./avatar";
 
+export type PickBadgeTone = "eligible" | "high" | "med" | "low" | "warn";
 export interface PickOption {
   id: string;
   name: string;
   sub?: string;
+  avatar?: string | null; // member photo (data URL); falls back to initials when absent
+  badge?: string; // small chip beside the name (e.g. loan priority / eligibility)
+  badgeTone?: PickBadgeTone;
+}
+
+const BADGE_TONES: Record<PickBadgeTone, string> = {
+  eligible: "bg-tlsf text-teal",
+  high: "bg-tlsf text-teal",
+  med: "bg-bg2 text-mut",
+  low: "bg-nbg text-nfg",
+  warn: "bg-wbg text-wfg",
+};
+
+/** Small pill for a PickOption's priority / eligibility hint. */
+export function PickBadge({ text, tone = "med" }: { text: string; tone?: PickBadgeTone }) {
+  return (
+    <span className={`flex-none rounded-md px-[7px] py-[3px] text-[9px] font-bold uppercase leading-none tracking-[0.04em] ${BADGE_TONES[tone]}`}>
+      {text}
+    </span>
+  );
 }
 
 /** A "choose an entity" card — dashed placeholder, or the selected entity with a Change link. */
@@ -29,7 +50,7 @@ export function SelectorCard({
       className="flex w-full items-center gap-3 rounded-xl border border-dashed border-bd2 px-3.5 py-3 text-left transition-colors hover:border-teal"
     >
       {selected ? (
-        <Avatar name={selected.name} size={38} muted />
+        <Avatar name={selected.name} src={selected.avatar} size={38} muted />
       ) : (
         <span className="flex size-[38px] flex-none items-center justify-center rounded-full border border-dashed border-bd2 text-fnt">
           <HelpCircle className="size-[18px]" strokeWidth={2} />
@@ -102,9 +123,12 @@ export function PickerSheet({
             onClick={() => onPick(o)}
             className="flex w-full items-center gap-3 border-b border-hr2 py-3 text-left last:border-b-0 hover:bg-bg2"
           >
-            <Avatar name={o.name} size={38} muted />
+            <Avatar name={o.name} src={o.avatar} size={38} muted />
             <div className="min-w-0 flex-1">
-              <div className="truncate text-sm font-bold leading-tight text-ink">{o.name}</div>
+              <div className="flex items-center gap-2">
+                <span className="truncate text-sm font-bold leading-tight text-ink">{o.name}</span>
+                {o.badge && <PickBadge text={o.badge} tone={o.badgeTone} />}
+              </div>
               {o.sub && <div className="mt-0.5 truncate text-[12px] font-medium leading-tight text-fnt">{o.sub}</div>}
             </div>
           </button>

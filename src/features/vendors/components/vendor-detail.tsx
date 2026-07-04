@@ -4,6 +4,7 @@ import { StatCard } from "@/components/shared/stat-card";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { FormModalButton } from "@/components/shared/form-modal-button";
 import { AdminOnly } from "@/lib/admin";
+import { RecordReturnButton } from "./record-vendor-button";
 import type { ChitDetail, GeneralDetail } from "../data";
 
 function EditVendorButton({
@@ -28,7 +29,12 @@ function EditVendorButton({
             ]
           : [
               { name: "name", label: "Vendor name", defaultValue: name, required: true },
-              { name: "category", label: "Category", options: ["Bank", "Stocks", "Gold", "Other"], defaultValue: category },
+              { name: "category", label: "Type", options: [
+                { value: "Stocks", label: "Stocks" }, { value: "Bank", label: "Bank deposit" },
+                { value: "Mutual fund", label: "Mutual fund" }, { value: "Bonds", label: "Bonds" },
+                { value: "Gold", label: "Gold" }, { value: "Trading firm", label: "Trading firm" },
+                { value: "Other", label: "Other" },
+              ], defaultValue: category },
               { name: "status", label: "Status", options: ["Active", "Inactive", "Closed"], defaultValue: statusLabel },
             ]
       }
@@ -189,12 +195,13 @@ export function GeneralDetailView({ g }: { g: GeneralDetail }) {
             </p>
           </div>
         </div>
-        <AdminOnly>
-          <div className="flex items-center gap-2 md:flex-none">
+        <div className="flex items-center gap-2 md:flex-none">
+          <RecordReturnButton vendorId={g.id} vendorName={g.name} />
+          <AdminOnly>
             <WriteOffButton id={g.id} name={g.name} />
             <EditVendorButton id={g.id} name={g.name} category={g.category} statusLabel={g.statusLabel} />
-          </div>
-        </AdminOnly>
+          </AdminOnly>
+        </div>
       </div>
 
       <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-3.5">
@@ -228,7 +235,11 @@ export function GeneralDetailView({ g }: { g: GeneralDetail }) {
             <div className="text-[10px] font-semibold uppercase leading-none tracking-[0.05em] text-fnt">Status</div>
             <div className="mt-[11px] text-[22px] font-bold leading-none text-ink">{g.statusLabel}</div>
             <p className="mt-[9px] text-xs font-medium leading-[1.5] text-mut">
-              Capital is placed and earning. Record each return as it comes in.
+              {g.status === "settled"
+                ? "Closed — capital fully returned. Kept for the record."
+                : g.status === "inactive"
+                  ? "Paused — no new capital placed. Reactivate to record returns again."
+                  : "Capital is placed and earning. Record each return as it comes in."}
             </p>
           </div>
         </div>

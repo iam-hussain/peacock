@@ -26,8 +26,8 @@ export function DashActivityTabs({ activity }: { activity: DashboardData["activi
       </div>
       <div className="rounded-[14px] border border-hair bg-sf p-[15px]">
         <h2 className="mb-2 text-[15px] font-bold leading-none text-ink">Recent activity</h2>
-        {activity.map((a) => (
-          <ActivityRow key={a.who + a.what} {...a} compact />
+        {activity.map((a, i) => (
+          <ActivityRow key={i} {...a} compact />
         ))}
       </div>
     </div>

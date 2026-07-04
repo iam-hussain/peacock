@@ -1,12 +1,14 @@
 import { cn } from "@/lib/utils";
 
+// Shared with the add-entry / catch-up dialogs so every modal form reads as one system:
+// rounded-xl, px-4 py-3, teal focus ring.
 const fieldCls =
-  "w-full rounded-[11px] border border-bd2 bg-sf px-3 py-2.5 text-sm font-medium text-ink outline-none placeholder:text-fnt focus:border-teal";
+  "w-full rounded-xl border border-bd2 bg-transparent px-4 py-3 text-sm font-medium text-ink outline-none placeholder:text-fnt focus:border-teal";
 
 export function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
     <label className="block">
-      <span className="mb-1.5 block text-[11px] font-semibold uppercase leading-none tracking-[0.04em] text-fnt">{label}</span>
+      <span className="mb-2 block text-[11px] font-bold uppercase leading-none tracking-[0.05em] text-fnt">{label}</span>
       {children}
       {hint && <span className="mt-1.5 block text-[11px] font-medium leading-[1.4] text-fnt">{hint}</span>}
     </label>
@@ -21,19 +23,24 @@ export function Textarea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement
   return <textarea {...props} className={cn(fieldCls, "min-h-[80px] resize-y", props.className)} />;
 }
 
-export function Select({ options, ...props }: React.SelectHTMLAttributes<HTMLSelectElement> & { options: string[] }) {
+export type SelectOption = string | { value: string; label: string };
+
+export function Select({ options, ...props }: React.SelectHTMLAttributes<HTMLSelectElement> & { options: SelectOption[] }) {
   return (
     <select {...props} className={cn(fieldCls, "appearance-none bg-[right_0.75rem_center] bg-no-repeat pr-9", props.className)}>
-      {options.map((o) => (
-        <option key={o} value={o}>
-          {o}
-        </option>
-      ))}
+      {options.map((o) => {
+        const { value, label } = typeof o === "string" ? { value: o, label: o } : o;
+        return (
+          <option key={value} value={value}>
+            {label}
+          </option>
+        );
+      })}
     </select>
   );
 }
 
 /** Two fields side by side on desktop, stacked on mobile. */
 export function FieldRow({ children }: { children: React.ReactNode }) {
-  return <div className="grid gap-3 sm:grid-cols-2">{children}</div>;
+  return <div className="grid gap-4 sm:grid-cols-2">{children}</div>;
 }

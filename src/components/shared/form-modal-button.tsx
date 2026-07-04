@@ -2,24 +2,40 @@
 
 import { useId, useState, useTransition } from "react";
 import { Modal, ModalActions } from "./modal";
-import { Field, TextInput, Textarea, Select } from "./form";
+import { Field, TextInput, Textarea, Select, FieldRow, type SelectOption } from "./form";
 import { SelectorCard, PickerSheet, type PickOption } from "./entity-picker";
 import { formAction } from "@/server/actions";
 
 export interface FieldDef {
   name: string;
   label: string;
-  type?: "text" | "tel" | "email" | "date" | "password" | "number" | "textarea";
-  options?: string[];
+  type?: "text" | "tel" | "email" | "date" | "month" | "password" | "number" | "textarea";
+  options?: SelectOption[];
   placeholder?: string;
   hint?: string;
   defaultValue?: string;
   required?: boolean;
+  half?: boolean; // renders half-width; two consecutive half fields sit side by side
   // when set, the field renders as a selector-card that opens an entity picker
   pickerOptions?: PickOption[];
   pickerTitle?: string;
   pickerSubtitle?: string;
   pickerSearch?: string;
+}
+
+// Group fields into rows: two consecutive `half` fields pair into one 2-col row; everything else
+// is its own full-width row.
+function groupHalves(fields: FieldDef[]): FieldDef[][] {
+  const rows: FieldDef[][] = [];
+  for (let i = 0; i < fields.length; i++) {
+    if (fields[i].half && fields[i + 1]?.half) {
+      rows.push([fields[i], fields[i + 1]]);
+      i++;
+    } else {
+      rows.push([fields[i]]);
+    }
+  }
+  return rows;
 }
 
 /**
@@ -37,6 +53,7 @@ export function FormModalButton({
   submitLabel = "Save",
   destructive = false,
   intro,
+  outro,
   hiddenFields,
 }: {
   children: React.ReactNode;
@@ -49,6 +66,7 @@ export function FormModalButton({
   submitLabel?: string;
   destructive?: boolean;
   intro?: React.ReactNode;
+  outro?: React.ReactNode;
   hiddenFields?: Record<string, string>;
 }) {
   const [open, setOpen] = useState(false);
@@ -82,6 +100,34 @@ export function FormModalButton({
   const pickingField = picking ? fields.find((f) => f.name === picking) : null;
   const today = new Date().toISOString().slice(0, 10); // date fields default to today
 
+  const renderField = (f: FieldDef) => (
+    <Field key={f.name} label={f.label} hint={f.hint}>
+      {f.pickerOptions ? (
+        <>
+          <SelectorCard
+            selected={picked[f.name] ?? null}
+            placeholder={f.placeholder ?? "Nothing selected"}
+            hint="Tap to choose"
+            onOpen={() => setPicking(f.name)}
+          />
+          <input type="hidden" name={f.name} value={picked[f.name]?.name ?? ""} />
+        </>
+      ) : f.options ? (
+        <Select name={f.name} options={f.options} defaultValue={f.defaultValue} />
+      ) : f.type === "textarea" ? (
+        <Textarea name={f.name} placeholder={f.placeholder} defaultValue={f.defaultValue} required={f.required} />
+      ) : (
+        <TextInput
+          name={f.name}
+          type={f.type ?? "text"}
+          placeholder={f.placeholder}
+          defaultValue={f.defaultValue ?? (f.type === "date" ? today : undefined)}
+          required={f.required}
+        />
+      )}
+    </Field>
+  );
+
   return (
     <>
       <button type="button" onClick={() => setOpen(true)} className={buttonClassName} aria-label={buttonAriaLabel}>
@@ -111,36 +157,17 @@ export function FormModalButton({
         ) : (
           <>
             {intro}
-            <form id={id} onSubmit={onSubmit} className="flex flex-col gap-3.5">
+            <form id={id} onSubmit={onSubmit} className="flex flex-col gap-5">
               {hiddenFields &&
                 Object.entries(hiddenFields).map(([k, v]) => <input key={k} type="hidden" name={k} value={v} />)}
-              {fields.map((f) => (
-                <Field key={f.name} label={f.label} hint={f.hint}>
-                  {f.pickerOptions ? (
-                    <>
-                      <SelectorCard
-                        selected={picked[f.name] ?? null}
-                        placeholder={f.placeholder ?? "Nothing selected"}
-                        hint="Tap to choose"
-                        onOpen={() => setPicking(f.name)}
-                      />
-                      <input type="hidden" name={f.name} value={picked[f.name]?.name ?? ""} />
-                    </>
-                  ) : f.options ? (
-                    <Select name={f.name} options={f.options} defaultValue={f.defaultValue} />
-                  ) : f.type === "textarea" ? (
-                    <Textarea name={f.name} placeholder={f.placeholder} defaultValue={f.defaultValue} required={f.required} />
-                  ) : (
-                    <TextInput
-                      name={f.name}
-                      type={f.type ?? "text"}
-                      placeholder={f.placeholder}
-                      defaultValue={f.defaultValue ?? (f.type === "date" ? today : undefined)}
-                      required={f.required}
-                    />
-                  )}
-                </Field>
-              ))}
+              {groupHalves(fields).map((row) =>
+                row.length === 2 ? (
+                  <FieldRow key={row[0].name}>{row.map(renderField)}</FieldRow>
+                ) : (
+                  <div key={row[0].name}>{renderField(row[0])}</div>
+                ),
+              )}
+              {outro}
               {error && <p className="text-[13px] font-medium leading-[1.4] text-out">{error}</p>}
             </form>
           </>

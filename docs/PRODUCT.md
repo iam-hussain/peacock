@@ -442,10 +442,27 @@ dividend may be added in the future — the capability exists but is **switched 
 Crucially, a member's profit share is **proportional to how fully they've paid their deposits**, not
 a flat equal slice. If a member is behind on deposits, they earn proportionally less profit.
 
-> Example: if everyone's expected deposit so far is **₹30,000** but a member has only paid
-> **₹20,000**, they've paid **two-thirds** — so they receive **two-thirds** of a full profit share.
-> The missing one-third of profit is the natural consequence of underpaying. **The UI shows both**
-> the full share (if they were fully paid) and their actual reduced share, so the gap is clear.
+The share is measured against the **expected** deposit base — *what everyone should have paid* — not
+against what has actually been collected. Concretely, the **full share** is the shareable profit
+split equally per member (the dashboard's profit-per-member), and each member earns that full share
+**times the fraction of their own deposits they've paid**. This has three consequences that matter:
+
+- **A member who has paid in full is never affected by anyone else.** They always earn their full
+  per-head share, no matter how far behind other members are.
+- **Each underpaying member alone bears their own shortfall.** The profit they forfeit by being
+  behind is *not* handed to the members who paid — it simply **stays in the pool**, unearned, until
+  that member catches up (at which point they earn it).
+- **The club never shares out more profit than it has earned.** Because every share is capped at the
+  full per-head share and reduced for underpayment, the sum of all members' shares can never exceed
+  the shareable profit. So even if **every member settled and left at once**, the club's value would
+  **never go negative** — the un-earned remainder is retained, not owed.
+
+> Example: everyone's expected deposit so far is **₹30,000** and the full per-head profit share is
+> **₹9,000**. A member who has paid only **₹20,000** has paid **two-thirds**, so they earn
+> **two-thirds of ₹9,000 = ₹6,000**. The missing **₹3,000** isn't given to anyone — it stays pooled
+> until they pay up. A member who paid the full ₹30,000 still earns the full **₹9,000**, unchanged by
+> the first member being behind. **The UI shows both** the full share and the actual reduced share,
+> so the gap is clear.
 
 ---
 
@@ -486,7 +503,9 @@ flowchart LR
 A person whose membership is closed can come back — this **opens a fresh membership (#N+1)**. The
 **Rejoin** flow shows what it takes to return to **equal value**:
 
-- **Back deposits** — the monthly deposits they'd owe since the club's start.
+- **Back deposits** — the **full** monthly deposits they'd owe since the club's start. A prior
+  membership's deposits were paid back when they settled and left, so the new membership starts at
+  **zero paid** — they owe the whole baseline afresh (no credit for the closed stint).
 - **Catch-up** — **auto-added** (suggested from per-member profit), and **admin-editable**. It's
   posted to the member's ledger as a **charge tagged "Rejoin"** that they pay down (counts as their
   own value).

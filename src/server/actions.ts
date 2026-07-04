@@ -7,9 +7,12 @@ import { rupeesToPaise } from "@/lib/money";
 import { headers } from "next/headers";
 import { approveSubmission, rejectSubmission } from "@/server/ledger/approve";
 import { postIntent } from "@/server/ledger/intents";
+import { settleMembership } from "@/server/ledger/settle";
 import { reverseTransaction, editTransactionAmount } from "@/server/ledger/reverse";
 import { auth } from "@/server/auth";
 import { getCurrentUser } from "@/server/queries/session";
+import { shareableClubProfit } from "@/server/queries/members";
+import { getActivity } from "@/server/queries/notifications";
 import { quarterBounds } from "@/lib/quarter";
 import { quarterFigures } from "@/server/queries/close-quarter";
 
@@ -35,11 +38,18 @@ export async function decideSubmission(id: string, decision: "approve" | "reject
   }
 }
 
+// One more page of activity for the notifications feed ("Load more").
+export async function loadActivity(offset: number) {
+  return getActivity(offset);
+}
+
 // Clear the bell: mark every unread notification read.
 export async function markAllRead(): Promise<ActionResult> {
   try {
-    await prisma.notification.updateMany({ where: { isRead: false }, data: { isRead: true } });
-    revalidatePath("/notifications");
+    const me = await getCurrentUser();
+    if (!me) return { ok: false, error: "Not signed in." };
+    await prisma.notification.updateMany({ where: { recipientId: me.id, isRead: false }, data: { isRead: true } });
+    revalidatePath("/", "layout");
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Could not mark all read." };
@@ -51,6 +61,11 @@ export async function markAllRead(): Promise<ActionResult> {
 export type ActionResult = { ok: boolean; error?: string; deferred?: boolean };
 
 const str = (fd: FormData, k: string) => (fd.get(k) ?? "").toString().trim();
+// Parse a form date/month string ("2026-06-01" or "2026-06") to a Date; empty/invalid → now.
+const parseFormDate = (s: string): Date => {
+  const d = s ? new Date(s) : new Date();
+  return Number.isNaN(d.getTime()) ? new Date() : d;
+};
 const splitName = (full: string) => {
   const [first, ...rest] = full.trim().split(/\s+/);
   return { firstName: first, lastName: rest.length ? rest.join(" ") : null };
@@ -62,7 +77,9 @@ const splitName = (full: string) => {
  * Submission (approval workflow) rather than posting to the ledger directly.
  */
 // Self-service kinds any signed-in member may run; everything else is admin-gated (fail-closed).
-const SELF_SERVICE = new Set(["changePassword", "editProfile", "entry"]);
+// Money entries (entry, recordPayment) are self-service too, but `postOrSubmit` still splits admin
+// (posts directly) from member (pending submission) per PRODUCT.md §15.
+const SELF_SERVICE = new Set(["changePassword", "editProfile", "entry", "recordPayment"]);
 
 export async function formAction(kind: string, fd: FormData): Promise<ActionResult> {
   try {
@@ -126,53 +143,93 @@ const memberSchema = z.object({
   username: z.string().optional(),
 });
 
+// First/last name captured separately; phone required (default password); joined date drives
+// customerSince + the first-join catch-up date; status toggle sets the opening membership state.
+const addMemberSchema = z.object({
+  firstName: z.string().min(1, "First name is required"),
+  lastName: z.string().optional(),
+  phone: z.string().min(3, "Phone is required"),
+  email: z.string().email().or(z.literal("")).optional(),
+  username: z.string().optional(),
+});
+
 async function addMember(fd: FormData): Promise<ActionResult> {
-  const p = memberSchema.safeParse({
-    name: str(fd, "name"),
+  const p = addMemberSchema.safeParse({
+    firstName: str(fd, "firstName"),
+    lastName: str(fd, "lastName"),
     phone: str(fd, "phone"),
     email: str(fd, "email"),
     username: str(fd, "username"),
   });
   if (!p.success) return { ok: false, error: p.error.issues[0].message };
-  const { firstName, lastName } = splitName(p.data.name);
+
+  const avatar = str(fd, "avatar");
+  if (avatar && !/^data:image\/(png|jpeg|webp);base64,/.test(avatar)) return { ok: false, error: "Unsupported image." };
+  if (avatar.length > 400_000) return { ok: false, error: "Photo is too large — crop smaller." };
+  const active = str(fd, "status") !== "Inactive"; // toggle: on = Active (default)
+  const joinedAt = parseFormDate(str(fd, "joined"));
 
   const existing = await prisma.member.findUnique({ where: { phone: p.data.phone } });
   if (existing) return { ok: false, error: "A member with that phone already exists." };
 
-  await prisma.member.create({
-    data: {
-      firstName,
-      lastName,
-      phone: p.data.phone,
-      email: p.data.email || null,
-      username: p.data.username || null,
-      customerSince: new Date(),
-      memberships: {
-        create: {
-          seq: 1,
-          status: "ACTIVE",
-          joinedAt: new Date(),
-          accounts: { create: { kind: "MEMBER_EQUITY", balance: 0n } },
+  // Catch-up auto-added at first join (§7): equalise the newcomer to the club's average
+  // per-member profit (their own profit is 0). Uses shareableClubProfit — the same base as the
+  // dashboard's "profit per member" and the rejoin catch-up (members.ts) — so all three agree.
+  const [pooledProfit, activeCount] = await Promise.all([
+    shareableClubProfit(),
+    prisma.membership.count({ where: { status: "ACTIVE" } }),
+  ]);
+  const catchup = activeCount > 0 && pooledProfit > 0n ? pooledProfit / BigInt(activeCount) : 0n;
+
+  await prisma.$transaction(async (tx) => {
+    const ms = await tx.membership.create({
+      data: {
+        seq: 1,
+        // "Inactive" members are a CLOSED opening membership with no archive date (memberStatus →
+        // "inactive"); the admin later reactivates them via Rejoin. Active is the normal path.
+        status: active ? "ACTIVE" : "CLOSED",
+        joinedAt,
+        member: {
+          create: {
+            firstName: p.data.firstName,
+            lastName: p.data.lastName || null,
+            phone: p.data.phone,
+            email: p.data.email || null,
+            username: p.data.username || null,
+            avatarUrl: avatar || null,
+            customerSince: joinedAt,
+          },
         },
+        accounts: { create: { kind: "MEMBER_EQUITY", balance: 0n } },
       },
-    },
+    });
+    if (catchup > 0n) {
+      await tx.charge.create({
+        data: { membershipId: ms.id, kind: "CATCHUP", reason: "FIRST_TIME_JOIN", amount: catchup, occurredAt: joinedAt, note: null },
+      });
+    }
   });
   revalidatePath("/members");
+  revalidatePath("/dashboard");
   return { ok: true };
 }
 
 async function editMember(fd: FormData): Promise<ActionResult> {
   const id = str(fd, "id");
   if (!id) return { ok: false, error: "Missing member id." };
-  const { firstName, lastName } = splitName(str(fd, "name") || "—");
+  const p = memberSchema.safeParse({ name: str(fd, "name"), phone: str(fd, "phone"), email: str(fd, "email"), username: str(fd, "username") });
+  if (!p.success) return { ok: false, error: p.error.issues[0].message };
+  const { firstName, lastName } = splitName(p.data.name);
+  const clash = await prisma.member.findFirst({ where: { phone: p.data.phone, id: { not: id } }, select: { id: true } });
+  if (clash) return { ok: false, error: "Another member already uses that phone." };
   await prisma.member.update({
     where: { id },
     data: {
       firstName,
       lastName,
-      phone: str(fd, "phone") || undefined,
-      email: str(fd, "email") || null,
-      username: str(fd, "username") || null,
+      phone: p.data.phone,
+      email: p.data.email || null,
+      username: p.data.username || null,
     },
   });
   revalidatePath("/members");
@@ -183,13 +240,14 @@ async function editMember(fd: FormData): Promise<ActionResult> {
 async function newVendor(fd: FormData): Promise<ActionResult> {
   const name = str(fd, "name");
   if (!name) return { ok: false, error: "Vendor name is required." };
+  // Capital & returns come from ledger entries later, so the vendor opens with a zero receivable.
   await prisma.vendor.create({
     data: {
       name,
       type: "GENERAL",
       category: str(fd, "category") || null,
-      startedAt: new Date(),
-      accounts: { create: { kind: "VENDOR_RECEIVABLE", balance: rupeesToPaise(str(fd, "invested")) } },
+      startedAt: parseFormDate(str(fd, "cycle")),
+      accounts: { create: { kind: "VENDOR_RECEIVABLE", balance: 0n } },
     },
   });
   revalidatePath("/vendors");
@@ -201,18 +259,19 @@ async function newChit(fd: FormData): Promise<ActionResult> {
   if (!name) return { ok: false, error: "Chit name is required." };
   const months = Number(str(fd, "months")) || 20;
   const value = rupeesToPaise(str(fd, "value"));
+  const startedAt = parseFormDate(str(fd, "start"));
   await prisma.vendor.create({
     data: {
       name,
       type: "CHIT",
       category: "Chit",
-      startedAt: new Date(),
+      startedAt,
       chit: {
         create: {
           chitValue: value,
           durationMonths: months,
           marginInstallment: rupeesToPaise(str(fd, "margin")) || (months ? value / BigInt(months) : 0n),
-          startedAt: new Date(),
+          startedAt,
         },
       },
       accounts: { create: { kind: "VENDOR_RECEIVABLE", balance: 0n } },
@@ -611,19 +670,23 @@ async function vendorWriteOff(fd: FormData): Promise<ActionResult> {
   return { ok: true };
 }
 
-// Settle up & leave (PRODUCT.md §12): admin pays the member out in cash from a treasurer and
-// closes their membership. Posts the WITHDRAW intent (TREASURY −A, MEMBER_EQUITY +A; membership
-// → CLOSED with leave date + settled amount). Profit zeroes out once they're no longer active.
+// Settle up & leave (PRODUCT.md §12): admin pays the member out in cash from a treasurer and closes
+// their membership. Posts the settlement as REAL split legs — interest collected, loan repaid,
+// capital returned, profit paid to PROFIT_DISTRIBUTED — grouped under one reference, and snapshots
+// the guide on the membership (see settleMembership). Profit zeroes out once they're no longer active.
 async function settle(fd: FormData): Promise<ActionResult> {
   const memberId = str(fd, "memberId");
   try {
-    await postIntent({
-      intent: "Member leaves (settle up)",
-      party: str(fd, "party"),
-      amount: str(fd, "amount"),
-      treasurer: str(fd, "treasurer"),
-      date: str(fd, "date"),
-      note: str(fd, "note"),
+    const ms = await prisma.membership.findFirst({ where: { memberId, status: "ACTIVE" }, orderBy: { seq: "desc" }, select: { id: true } });
+    if (!ms) return { ok: false, error: "This member has no active membership to settle." };
+    const treasurerId = str(fd, "treasurerId");
+    if (!treasurerId) return { ok: false, error: "Pick the treasurer paying the member out." };
+    await settleMembership({
+      membershipId: ms.id,
+      treasurerMemberId: treasurerId,
+      finalPaise: rupeesToPaise(str(fd, "amount") || "0"),
+      occurredAt: str(fd, "date") ? new Date(str(fd, "date")) : new Date(),
+      note: str(fd, "note") || null,
     });
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Could not settle the member." };
@@ -633,24 +696,43 @@ async function settle(fd: FormData): Promise<ActionResult> {
   return { ok: true };
 }
 
-// Record a catch-up / penalty pay-down → posts a balanced ledger transaction directly (§8).
+/**
+ * The submit → approve split (PRODUCT.md §15). An admin's own money entry posts to the ledger
+ * immediately; a member's entry becomes a PENDING submission that reaches every admin's inbox and
+ * only posts on approval. Shared by every money-entry surface (top-bar entry, catch-up/penalty
+ * payment, vendor return, …) so the rule is enforced in exactly one place.
+ */
+async function postOrSubmit(intent: string, payload: Record<string, string>, revalidate: () => void): Promise<ActionResult> {
+  const me = await getCurrentUser();
+  if (!me) return { ok: false, error: "Not signed in." };
+  const clean: Record<string, string> = {};
+  for (const [k, v] of Object.entries(payload)) if (v) clean[k] = v;
+
+  if (me.isAdmin) {
+    await postIntent({ intent, ...clean }, me.id);
+    revalidate();
+    return { ok: true };
+  }
+  // Member: queue a pending request for an admin to approve.
+  const submission = await prisma.submission.create({ data: { intent, payload: clean, status: "PENDING", submittedById: me.id } });
+  const admins = await prisma.member.findMany({ where: { role: "ADMIN" }, select: { id: true } });
+  const body = clean.party ? `${clean.party} · ${clean.amount ?? ""}`.trim() : null;
+  await prisma.notification.createMany({
+    data: admins.map((a) => ({ recipientId: a.id, kind: "APPROVAL" as const, type: "submission.pending", title: intent, body, link: "/notifications", submissionId: submission.id })),
+  });
+  revalidatePath("/notifications");
+  return { ok: true };
+}
+
+// Record a catch-up / penalty pay-down → admin posts directly, member submits for approval (§15).
 async function recordPayment(fd: FormData): Promise<ActionResult> {
   const memberId = str(fd, "memberId");
   const isPenalty = str(fd, "type").toLowerCase().startsWith("pen");
-  try {
-    await postIntent({
-      intent: isPenalty ? "Delayed-payment penalty" : "Catch-up payment",
-      party: str(fd, "party"),
-      amount: str(fd, "amount"),
-      treasurer: str(fd, "treasurer"),
-      date: str(fd, "date"),
-      note: str(fd, "note"),
-    });
-  } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : "Could not record the payment." };
-  }
-  revalidatePath(`/members/${memberId}`);
-  return { ok: true };
+  return postOrSubmit(
+    isPenalty ? "Delayed-payment penalty" : "Catch-up payment",
+    { party: str(fd, "party"), amount: str(fd, "amount"), treasurer: str(fd, "treasurer"), date: str(fd, "date"), note: str(fd, "note") },
+    () => revalidatePath(`/members/${memberId}`),
+  );
 }
 
 // Edit a recorded payment's amount / date by re-scaling its (balanced) 2-leg posting.
@@ -678,35 +760,14 @@ async function editPayment(fd: FormData): Promise<ActionResult> {
   return { ok: true };
 }
 
-// Money entries don't post to the ledger directly — they create a PENDING submission
-// that an admin approves (approval workflow). Posting happens on approval (ledger phase).
+// Top-bar "Add entry": admin posts to the ledger immediately, member queues a pending request (§15).
 async function submitEntry(fd: FormData): Promise<ActionResult> {
-  const me = await getCurrentUser();
-  if (!me) return { ok: false, error: "Not signed in." };
   const intent = str(fd, "intent");
   if (!intent) return { ok: false, error: "Pick what happened." };
   const payload: Record<string, string> = {};
-  for (const key of ["party", "amount", "date", "treasurer", "note"]) {
+  for (const key of ["party", "amount", "date", "treasurer", "note", "principal"]) {
     const v = str(fd, key);
     if (v) payload[key] = v;
   }
-  const submission = await prisma.submission.create({
-    data: { intent, payload, status: "PENDING", submittedById: me.id },
-  });
-  // Approval goes to every admin's inbox.
-  const admins = await prisma.member.findMany({ where: { role: "ADMIN" }, select: { id: true } });
-  const body = payload.party ? `${payload.party} · ${payload.amount ?? ""}`.trim() : null;
-  await prisma.notification.createMany({
-    data: admins.map((a) => ({
-      recipientId: a.id,
-      kind: "APPROVAL" as const,
-      type: "submission.pending",
-      title: intent,
-      body,
-      link: "/notifications",
-      submissionId: submission.id,
-    })),
-  });
-  revalidatePath("/notifications");
-  return { ok: true };
+  return postOrSubmit(intent, payload, revalidateLedger);
 }

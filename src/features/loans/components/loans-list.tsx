@@ -6,12 +6,16 @@ import { Eye, EyeOff } from "lucide-react";
 import { Avatar } from "@/components/shared/avatar";
 import { StatCard } from "@/components/shared/stat-card";
 import { StatusBadge } from "@/components/shared/status-badge";
-import { LOAN_FILTERS, type Loan, type LoanStat } from "../data";
+import { Modal } from "@/components/shared/modal";
+import { useInPoster } from "@/lib/poster";
+import { LOAN_FILTERS, type Loan, type LoanStat, type LoanEligibility, type LoanPriority } from "../data";
 
-export function LoansList({ loans, stats, rate }: { loans: Loan[]; stats: LoanStat[]; rate: string }) {
+export function LoansList({ loans, stats, rate, eligibility }: { loans: Loan[]; stats: LoanStat[]; rate: string; eligibility: LoanEligibility[] }) {
   const [filter, setFilter] = useState<string>("Pending");
   const [showClosedMembers, setShowClosedMembers] = useState(false);
-  const rows = loans.filter((l) => {
+  const inPoster = useInPoster();
+  // In the poster the rows are pre-filtered by the share toggles and there's no filter UI, so show all.
+  const rows = inPoster ? loans : loans.filter((l) => {
     if (!showClosedMembers && l.memberClosed) return false;
     if (filter === "All") return true;
     if (filter === "Pending") return l.pendingInterest;
@@ -21,31 +25,35 @@ export function LoansList({ loans, stats, rate }: { loans: Loan[]; stats: LoanSt
 
   return (
     <div className="mx-auto max-w-[1280px] p-4 pb-[78px] md:p-[26px] md:pb-[26px]">
-      {/* Title — desktop only (mobile top-bar already shows "Loans") */}
-      <div className="mb-4 hidden flex-wrap items-baseline gap-3 md:flex">
+      {/* Title — desktop only (forced in the poster regardless of viewport) */}
+      <div className={`mb-4 flex-wrap items-baseline gap-3 ${inPoster ? "flex" : "hidden md:flex"}`}>
         <h1 className="text-2xl font-bold leading-none tracking-[-0.02em] text-ink">Loans</h1>
         <span className="text-[13px] font-medium leading-none text-fnt">
           Current rate <span className="font-semibold text-teal">{rate}</span>
         </span>
       </div>
 
-      {/* KPIs — desktop: full tiles with sub */}
-      <div className="mb-4 hidden grid-cols-4 gap-3.5 md:grid">
+      {/* KPIs — desktop: full tiles with sub (forced in the poster) */}
+      <div className={`mb-4 grid-cols-4 gap-3.5 ${inPoster ? "grid" : "hidden md:grid"}`}>
         {stats.map((s) => (
           <StatCard key={s.label} label={s.label} value={s.value} sub={s.sub} tone={s.tone ?? "ink"} />
         ))}
       </div>
 
       {/* KPIs — mobile: compact, no sub, overdue count inline */}
-      <div className="mb-4 grid grid-cols-2 gap-2.5 md:hidden">
-        {stats.map((s) => (
-          <StatCard key={s.label} label={s.label} value={s.value} inlineNote={s.count} tone={s.tone ?? "ink"} compact />
-        ))}
-      </div>
+      {!inPoster && (
+        <div className="mb-4 grid grid-cols-2 gap-2.5 md:hidden">
+          {stats.map((s) => (
+            <StatCard key={s.label} label={s.label} value={s.value} inlineNote={s.count} tone={s.tone ?? "ink"} compact />
+          ))}
+        </div>
+      )}
 
-      {/* Desktop: single card with rows */}
-      <div className="hidden overflow-hidden rounded-2xl border border-bd bg-sf shadow-[0_1px_2px_var(--shadow)] md:block">
-        <Filters filter={filter} onChange={setFilter} showClosedMembers={showClosedMembers} onToggleClosedMembers={() => setShowClosedMembers((v) => !v)} className="border-b border-hair px-[18px] py-3.5" />
+      {!inPoster && <EligibilityPanel members={eligibility} />}
+
+      {/* Desktop: single card with rows (forced in the poster) */}
+      <div className={`overflow-hidden rounded-2xl border border-bd bg-sf shadow-[0_1px_2px_var(--shadow)] ${inPoster ? "block" : "hidden md:block"}`}>
+        {!inPoster && <Filters filter={filter} onChange={setFilter} showClosedMembers={showClosedMembers} onToggleClosedMembers={() => setShowClosedMembers((v) => !v)} className="border-b border-hair px-[18px] py-3.5" />}
         {rows.map((l) => (
           <LoanRowDesktop key={l.id} l={l} />
         ))}
@@ -53,6 +61,7 @@ export function LoansList({ loans, stats, rate }: { loans: Loan[]; stats: LoanSt
       </div>
 
       {/* Mobile: filter chips + separate loan cards */}
+      {!inPoster && (
       <div className="md:hidden">
         <Filters filter={filter} onChange={setFilter} showClosedMembers={showClosedMembers} onToggleClosedMembers={() => setShowClosedMembers((v) => !v)} className="pb-1" />
         <div className="mt-3 flex flex-col gap-3">
@@ -66,6 +75,56 @@ export function LoansList({ loans, stats, rate }: { loans: Loan[]; stats: LoanSt
           )}
         </div>
       </div>
+      )}
+    </div>
+  );
+}
+
+const PRIORITY_CHIP: Record<LoanPriority, string> = {
+  High: "text-teal",
+  Medium: "text-mut",
+  Low: "text-fnt",
+};
+
+/** "Who can borrow next" — a compact bar (title + eligible count); "View" opens the full list in
+ * a modal with each member's next-loan eligibility + priority hint (PRODUCT.md §8). */
+function EligibilityPanel({ members }: { members: LoanEligibility[] }) {
+  const [open, setOpen] = useState(false);
+  if (members.length === 0) return null;
+  const eligibleCount = members.filter((m) => m.eligible).length;
+
+  return (
+    <div className="mb-4 flex items-center justify-between gap-3 rounded-2xl border border-bd bg-sf px-[18px] py-3.5 shadow-[0_1px_2px_var(--shadow)]">
+      <span className="text-[13px] font-bold leading-none text-ink">Who can borrow next</span>
+      <div className="flex items-center gap-3">
+        <span className="text-[11px] font-medium leading-none text-fnt">{eligibleCount} eligible · priority is a hint</span>
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="rounded-[8px] border border-bd2 bg-sf px-3.5 py-2 text-[12px] font-semibold leading-none text-teal hover:bg-sf2"
+        >
+          View
+        </button>
+      </div>
+
+      <Modal open={open} onClose={() => setOpen(false)} title="Who can borrow next" subtitle="Priority is a hint — the admin decides who actually borrows.">
+        <div className="flex flex-col">
+          {members.map((m) => (
+            <Link
+              key={m.memberId}
+              href={`/members/${m.memberId}`}
+              className="flex items-center gap-2.5 border-b border-hr2 py-2.5 leading-none last:border-b-0 hover:opacity-70"
+            >
+              <span className={`size-[8px] flex-none rounded-full ${m.eligible ? "bg-teal" : "bg-bd2"}`} />
+              <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-ink">{m.member}</span>
+              <span className={`flex-none text-[9px] font-bold uppercase tracking-[0.04em] ${PRIORITY_CHIP[m.priority]}`}>{m.priority}</span>
+              <span className={`flex-none whitespace-nowrap text-right text-[11px] font-medium ${m.eligible ? "text-teal" : "text-fnt"}`}>
+                {m.eligible ? "Eligible" : m.reason}
+              </span>
+            </Link>
+          ))}
+        </div>
+      </Modal>
     </div>
   );
 }

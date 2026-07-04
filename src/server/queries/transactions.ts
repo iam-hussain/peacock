@@ -21,6 +21,7 @@ const WHAT: Record<TxnType, string> = {
   LOAN_TAKEN: "Give a loan", LOAN_REPAY: "Record repayment", LOAN_INTEREST: "Collect interest",
   VENDOR_INVEST: "Vendor investment", VENDOR_RETURN: "Vendor return", VENDOR_WRITEOFF: "Vendor write-off",
   CHIT_PAYMENT: "Chit installment", CHIT_PAYOUT: "Chit payout", REVERSAL: "Reversal",
+  PROFIT_WITHDRAW: "Profit withdrawal",
 };
 const METHODS = ["Cash", "UPI", "Bank"];
 const methodFor = (id: string) => METHODS[[...id].reduce((s, c) => s + c.charCodeAt(0), 0) % METHODS.length];
@@ -62,7 +63,7 @@ function partiesFor(type: TxnType, entries: EntryRow[]): { from: Party; to: Part
 
 /** The ledger feed — real postings only. Opening-import scaffolding, reversal entries, and any
  *  posting that has since been reversed (§16) are all excluded so a deleted/edited row drops out. */
-export async function getTransactions(limit?: number): Promise<TxnDTO[]> {
+export async function getTransactions(limit?: number, offset?: number): Promise<TxnDTO[]> {
   const reversed = await prisma.transaction.findMany({
     where: { type: "REVERSAL", reversesId: { not: null } },
     select: { reversesId: true },
@@ -77,6 +78,7 @@ export async function getTransactions(limit?: number): Promise<TxnDTO[]> {
     },
     orderBy: { occurredAt: "desc" },
     take: limit,
+    skip: offset,
     select: {
       id: true, type: true, occurredAt: true, createdAt: true,
       entries: { select: { amount: true, account: { select: { kind: true, member: { select: { firstName: true, lastName: true } }, membership: { select: { member: { select: { firstName: true, lastName: true } } } }, vendor: { select: { name: true } } } } } },

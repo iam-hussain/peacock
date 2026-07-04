@@ -1,6 +1,7 @@
 import { prisma } from "@/server/db";
 import type { TxnType } from "@prisma/client";
 import { rupeesToPaise, formatPaise } from "@/lib/money";
+import { addMonths } from "@/lib/date";
 import { ensureTreasury, ensureEquity, ensureIncome, ensureVendorAccount, ensureLoanReceivable } from "./accounts";
 import { postTransaction } from "./post-transaction";
 
@@ -126,7 +127,9 @@ export async function postIntent(payload: EntryPayload, actorId?: string): Promi
       const P = payload.principal ? rupeesToPaise(payload.principal) : 0n;
       if (P > A) throw new Error("Principal returned can't exceed the amount received.");
       const [t, r, pf] = [await treasuryId(), await ensureVendorAccount(v.id, "VENDOR_RECEIVABLE"), await ensureVendorAccount(v.id, "VENDOR_PROFIT")];
-      return postTransaction({ type, occurredAt, description: note, vendorId: v.id, lines: [ { accountId: t, amount: A }, { accountId: r, amount: -P }, { accountId: pf, amount: -(A - P) } ], actorId });
+      // Drop any zero leg: P=0 (pure interest) → no receivable leg; P=A (capital only) → no profit leg.
+      const lines = [ { accountId: t, amount: A }, { accountId: r, amount: -P }, { accountId: pf, amount: -(A - P) } ].filter((l) => l.amount !== 0n);
+      return postTransaction({ type, occurredAt, description: note, vendorId: v.id, lines, actorId });
     }
     // Give a loan (§8/§14): TREASURY −A (cash to borrower), LOAN_RECEIVABLE +A. First hand-out
     // opens a Loan (rate snapshot); later hand-outs before it closes attach as further tranches.
@@ -140,6 +143,11 @@ export async function postIntent(payload: EntryPayload, actorId?: string): Promi
       const requestedAfter = (loan?.requestedAmount ?? 0n) + A;
       if (limit > 0n && requestedAfter > limit) throw new Error(`Loan limit is ${formatPaise(limit)} — this would reach ${formatPaise(requestedAfter)}.`);
       if (!loan) {
+        // Cooldown (§8): a NEW loan is blocked until loanCooldownMonths after the last one closed.
+        const cooldownUntil = await cooldownEndsAt(ms.id);
+        if (cooldownUntil && occurredAt < cooldownUntil) {
+          throw new Error(`This member is in the post-loan cooldown until ${cooldownUntil.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}.`);
+        }
         loan = await prisma.loan.create({ data: { membershipId: ms.id, requestedAmount: A, principalOutstanding: 0n, monthlyRateBps: await currentLoanRateBps(), startedAt: occurredAt, status: "ACTIVE" } });
       } else {
         await prisma.loan.update({ where: { id: loan.id }, data: { requestedAmount: requestedAfter } });
@@ -187,5 +195,14 @@ async function loanLimitPaise(): Promise<bigint> {
   return cfg?.maxLoanPaise ?? 0n;
 }
 
-// ponytail: 1-month cooldown after full repay (§8) not enforced here — a policy nicety, not a
-// money-correctness rule; add a guard on the last CLOSED loan's closedAt if the club wants it hard.
+// End of the post-loan cooldown for a membership (§8): loanCooldownMonths after the most recent
+// loan closed. Null when the member has never had a closed loan (nothing to wait on).
+async function cooldownEndsAt(membershipId: string): Promise<Date | null> {
+  const [cfg, last] = await Promise.all([
+    prisma.clubConfig.findUnique({ where: { id: "singleton" }, select: { loanCooldownMonths: true } }),
+    prisma.loan.findFirst({ where: { membershipId, status: "CLOSED", closedAt: { not: null } }, orderBy: { closedAt: "desc" }, select: { closedAt: true } }),
+  ]);
+  const months = cfg?.loanCooldownMonths ?? 0;
+  if (!last?.closedAt || months <= 0) return null;
+  return addMonths(last.closedAt, months);
+}

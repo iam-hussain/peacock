@@ -1,7 +1,7 @@
 import { MembersList } from "@/features/members/components/members-list";
-import { getMembers, getMemberSummary } from "@/server/queries/members";
+import { getMembers, getMemberSummary, getJoinPreview } from "@/server/queries/members";
 
 export default async function MembersPage() {
-  const [members, summary] = await Promise.all([getMembers(), getMemberSummary()]);
-  return <MembersList members={members} summary={summary} />;
+  const [members, summary, joinPreview] = await Promise.all([getMembers(), getMemberSummary(), getJoinPreview()]);
+  return <MembersList members={members} summary={summary} joinPreview={joinPreview} />;
 }

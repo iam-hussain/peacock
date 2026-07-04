@@ -1,6 +1,8 @@
 export type {
   LoanDTO as Loan,
   LoanStatusKey as LoanStatus,
+  LoanEligibilityDTO as LoanEligibility,
+  LoanPriority,
 } from "@/server/queries/loans";
 
 export interface LoanStat {

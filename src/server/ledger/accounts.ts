@@ -40,3 +40,12 @@ export async function ensureIncome(kind: "INTEREST_INCOME" | "OTHER_INCOME"): Pr
   const c = await prisma.ledgerAccount.create({ data: { kind: kind as LedgerAccountKind, balance: 0n } });
   return c.id;
 }
+
+/** Singleton contra-income account holding profit paid out to leavers (§12). Debit balance
+ *  (positive); shareable profit subtracts it so distributed profit leaves the active pool. */
+export async function ensureProfitDistributed(): Promise<string> {
+  const a = await prisma.ledgerAccount.findFirst({ where: { kind: "PROFIT_DISTRIBUTED", memberId: null, membershipId: null, vendorId: null } });
+  if (a) return a.id;
+  const c = await prisma.ledgerAccount.create({ data: { kind: "PROFIT_DISTRIBUTED", balance: 0n } });
+  return c.id;
+}

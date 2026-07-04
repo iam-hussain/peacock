@@ -4,6 +4,31 @@
  * vs profit vs pending splits) lands with the query layer.
  */
 
+/** Round paise to the nearest whole rupee (100 paise). Loan interest is reported in whole
+ * rupees (IMPLEMENTATION_PLAN §14.3); ties round up. Sign-preserving. */
+export function roundToWholeRupee(paise: bigint): bigint {
+  const sign = paise < 0n ? -1n : 1n;
+  const abs = paise < 0n ? -paise : paise;
+  const rem = abs % 100n;
+  const rounded = rem >= 50n ? abs - rem + 100n : abs - rem;
+  return sign * rounded;
+}
+
+/**
+ * A member's profit share (PRODUCT.md §11). Pooled club profit is split against the EXPECTED
+ * deposit base — `members × expectedPerMember` — NOT what members have actually paid in. Properties:
+ *   • a fully-paid member (deposits = expectedPerMember) always gets the full per-head share
+ *     `clubProfit ÷ members`, unaffected by how far behind anyone else is;
+ *   • an underpaid member gets `paidRatio ×` that, bearing their own shortfall alone;
+ *   • Σ over all members = clubProfit × (totalPaid / totalExpected) ≤ clubProfit — the club never
+ *     distributes more profit than it earned, so it can't go negative even if everyone settles.
+ * The un-earned remainder stays pooled until the underpayer catches up.
+ */
+export function profitShare(clubProfit: bigint, deposits: bigint, members: number, expectedPerMember: bigint): bigint {
+  const base = BigInt(members) * expectedPerMember;
+  return base > 0n ? (clubProfit * deposits) / base : 0n;
+}
+
 /** Parse a user-entered rupee string ("₹4,20,000", "5.5L", "25000") to integer paise. */
 export function rupeesToPaise(input: string | number): bigint {
   if (typeof input === "number") return BigInt(Math.round(input * 100));

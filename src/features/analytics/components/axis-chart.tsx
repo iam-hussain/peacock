@@ -2,9 +2,11 @@
 
 import { useState } from "react";
 
-export function AxisChart({ data, months }: { data: number[]; months: string[] }) {
+export function AxisChart({ data, labels, unit, rotated = false }: { data: number[]; labels: string[]; unit: "money" | "count"; rotated?: boolean }) {
   const W = 1000;
   const H = 280;
+  // money points are ₹ lakhs; counts are raw. Format axis + tooltip to match.
+  const fmt = (v: number) => (unit === "money" ? `₹${v.toFixed(v < 10 ? 1 : 0)}L` : Math.round(v).toString());
   const max = Math.max(...data);
   const min = Math.min(...data);
   const range = max - min || 1;
@@ -14,19 +16,21 @@ export function AxisChart({ data, months }: { data: number[]; months: string[] }
   const area = `${line} L${W} ${H} L0 ${H} Z`;
   const yTicks = [0, 1, 2, 3].map((i) => {
     const val = max - (range / 3) * i;
-    return { topPct: (i / 3) * 100, label: `₹${val.toFixed(0)}L` };
+    return { topPct: (i / 3) * 100, label: fmt(val) };
   });
-  const step = Math.ceil(months.length / 6);
-  const xTicks = months
+  const step = Math.ceil(labels.length / 6);
+  const xTicks = labels
     .map((m, i) => ({ m, i }))
     .filter(({ i }) => i % step === 0)
-    .map(({ m, i }) => ({ label: m, leftPct: (i / (months.length - 1)) * 100 }));
+    .map(({ m, i }) => ({ label: m, leftPct: (i / (labels.length - 1)) * 100 }));
 
   const [hover, setHover] = useState<number | null>(null);
 
-  function pick(clientX: number, rect: DOMRect) {
-    const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
-    setHover(Math.round(ratio * (n - 1)));
+  // In the rotated (portrait-fullscreen) chart the time axis runs top→bottom on screen, so scrub the
+  // pointer's Y against the box height; otherwise the usual left→right against width.
+  function pick(clientX: number, clientY: number, rect: DOMRect) {
+    const ratio = rotated ? (clientY - rect.top) / rect.height : (clientX - rect.left) / rect.width;
+    setHover(Math.round(Math.min(1, Math.max(0, ratio)) * (n - 1)));
   }
 
   const hx = hover != null ? (hover / (n - 1)) * 100 : 0;
@@ -48,10 +52,10 @@ export function AxisChart({ data, months }: { data: number[]; months: string[] }
         </div>
         <div
           className="relative h-[300px] flex-1 touch-none"
-          onMouseMove={(e) => pick(e.clientX, e.currentTarget.getBoundingClientRect())}
+          onMouseMove={(e) => pick(e.clientX, e.clientY, e.currentTarget.getBoundingClientRect())}
           onMouseLeave={() => setHover(null)}
-          onTouchStart={(e) => pick(e.touches[0].clientX, e.currentTarget.getBoundingClientRect())}
-          onTouchMove={(e) => pick(e.touches[0].clientX, e.currentTarget.getBoundingClientRect())}
+          onTouchStart={(e) => pick(e.touches[0].clientX, e.touches[0].clientY, e.currentTarget.getBoundingClientRect())}
+          onTouchMove={(e) => pick(e.touches[0].clientX, e.touches[0].clientY, e.currentTarget.getBoundingClientRect())}
           onTouchEnd={() => setHover(null)}
         >
           {yTicks.map((t, i) => (
@@ -88,9 +92,9 @@ export function AxisChart({ data, months }: { data: number[]; months: string[] }
                 className="pointer-events-none absolute -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-lg bg-ink px-2.5 py-1.5 shadow-[0_8px_20px_var(--shadow)]"
                 style={{ left: `${hx}%`, top: `calc(${hy}% - 12px)` }}
               >
-                <div className="text-[10px] font-semibold leading-none text-sf/70">{months[hover]}</div>
+                <div className="text-[10px] font-semibold leading-none text-sf/70">{labels[hover]}</div>
                 <div className="mt-1 font-mono text-[13px] font-semibold leading-none text-sf">
-                  ₹{data[hover].toFixed(1)}L
+                  {fmt(data[hover])}
                 </div>
               </div>
             </>

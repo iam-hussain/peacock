@@ -2,16 +2,17 @@
 
 import { useState } from "react";
 import { Plus } from "lucide-react";
-import { FormModalButton } from "@/components/shared/form-modal-button";
+import { AddMemberDialog } from "./add-member-dialog";
 import { AdminOnly } from "@/lib/admin";
 import { ViewToggle, type ListView } from "@/components/shared/view-toggle";
 import type { Member } from "../data";
-import { ADD_MEMBER_FIELDS, type MemberSummary } from "./members-list";
+import { type MemberSummary } from "./members-list";
+import type { JoinPreviewDTO } from "@/server/queries/members";
 import { MemberCard } from "./member-card";
 import { MembersTable } from "./members-table";
 
 /** Members — mobile: header (summary + add + view toggle), then card or table view. */
-export function MembersMobile({ members, summary }: { members: Member[]; summary: MemberSummary }) {
+export function MembersMobile({ members, summary, joinPreview }: { members: Member[]; summary: MemberSummary; joinPreview: JoinPreviewDTO }) {
   const [view, setView] = useState<ListView>("table");
 
   return (
@@ -22,17 +23,13 @@ export function MembersMobile({ members, summary }: { members: Member[]; summary
         </span>
         <div className="flex flex-none items-center gap-2">
           <AdminOnly>
-            <FormModalButton
-              title="Add member"
-              subtitle="Create a new member profile."
-              kind="addMember"
-              submitLabel="Add member"
-              fields={ADD_MEMBER_FIELDS}
+            <AddMemberDialog
+              preview={joinPreview}
               buttonAriaLabel="Add member"
               buttonClassName="flex size-9 flex-none items-center justify-center rounded-[9px] bg-teal text-white"
             >
               <Plus className="size-4" strokeWidth={2.5} />
-            </FormModalButton>
+            </AddMemberDialog>
           </AdminOnly>
           <ViewToggle value={view} onChange={setView} />
         </div>

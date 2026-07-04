@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { Check, Plus, Pencil, Trash2, ChevronDown } from "lucide-react";
 import { FormModalButton } from "@/components/shared/form-modal-button";
-import { AdminOnly } from "@/lib/admin";
+import { AdminOnly, useIsAdmin } from "@/lib/admin";
+import { useInPoster } from "@/lib/poster";
 import { AddChargeDialog, RecordPaymentDialog, DeleteEntryDialog } from "./catchup-penalty-modals";
 import type { MemberDetailDTO as MemberDetail, LedgerEntryDTO, ChargeSuggest } from "@/server/queries/members";
 
@@ -28,6 +29,38 @@ export function CatchupPenaltyCard({ m }: { m: MemberDetail }) {
   };
   const cur = B[tab];
   const hidden = { membershipId: m.membershipId, memberId: m.id };
+  const inPoster = useInPoster();
+  const isAdmin = useIsAdmin();
+
+  // Poster: split the tabbed card into two side-by-side cards (both buckets fully shown).
+  if (inPoster) {
+    return (
+      <div className="grid grid-cols-2 gap-4">
+        {(["catchup", "penalty"] as Bucket[]).map((b) => {
+          const d = B[b];
+          return (
+            <div key={b} className="overflow-hidden rounded-[18px] border border-bd bg-sf p-[18px] shadow-[0_1px_2px_var(--shadow)]">
+              <div className="mb-3 flex items-center gap-2.5">
+                <span className={`size-2.5 rounded-[3px] ${d.bar}`} />
+                <h2 className="text-[15px] font-bold leading-none text-ink">{b === "catchup" ? "Catch-up" : "Penalty"}</h2>
+              </div>
+              <p className="mb-3 text-[11px] font-medium leading-[1.4] text-fnt">{d.subtitle}</p>
+              <div className="mb-[11px] flex items-center gap-[18px]">
+                <LedgerStat label="Assigned" value={d.assigned} />
+                <LedgerStat label="Paid" value={d.paid} accent />
+                <LedgerStat label="Remaining" value={d.remaining} accentClass={d.amt} />
+              </div>
+              <div className="mb-[7px] h-1.5 overflow-hidden rounded-md bg-bg2">
+                <div className={`h-full rounded-md ${d.bar}`} style={{ width: `${d.pct}%` }} />
+              </div>
+              <div className="text-[11px] font-medium leading-none text-fnt">{d.pct}% paid · {d.remaining} remaining</div>
+              <EntriesList entries={d.entries} bucket={b} styles={d} hidden={hidden} memberName={m.name} />
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
 
   return (
     <div className="overflow-hidden rounded-[18px] border border-bd bg-sf shadow-[0_1px_2px_var(--shadow)]">
@@ -67,36 +100,40 @@ export function CatchupPenaltyCard({ m }: { m: MemberDetail }) {
         <EntriesList entries={cur.entries} bucket={tab} styles={cur} hidden={hidden} memberName={m.name} />
       </div>
 
-      <AdminOnly>
-        <RecordPaymentDialog
-          bucket={tab}
-          memberName={m.name}
-          party={m.name}
-          hidden={hidden}
-          remainingLabel={cur.remaining}
-          remainingRupees={cur.remainingRupees}
-          treasurers={m.treasurerOptions}
-          className={`flex w-full items-center justify-center gap-2 ${cur.bar} px-[22px] py-[15px] text-[15px] font-semibold leading-none text-white`}
-        >
-          <Plus className="size-[17px]" strokeWidth={2.5} /> Record {tab === "penalty" ? "penalty" : "catch-up"} payment
-        </RecordPaymentDialog>
-      </AdminOnly>
+      {/* Any signed-in member may record a payment: admins post it, members submit for approval (§15). */}
+      <RecordPaymentDialog
+        bucket={tab}
+        memberName={m.name}
+        party={m.name}
+        hidden={hidden}
+        remainingLabel={cur.remaining}
+        remainingRupees={cur.remainingRupees}
+        treasurers={m.treasurerOptions}
+        submitLabel={isAdmin ? "Confirm payment" : "Submit for approval"}
+        className={`flex w-full items-center justify-center gap-2 ${cur.bar} px-[22px] py-[15px] text-[15px] font-semibold leading-none text-white`}
+      >
+        <Plus className="size-[17px]" strokeWidth={2.5} /> {isAdmin ? "Record" : "Request"} {tab === "penalty" ? "penalty" : "catch-up"} payment
+      </RecordPaymentDialog>
     </div>
   );
 }
 
 function EntriesList({ entries, bucket, styles, hidden, memberName }: { entries: LedgerEntryDTO[]; bucket: Bucket; styles: { chargeIcon: string; amt: string; suggest: ChargeSuggest }; hidden: Record<string, string>; memberName: string }) {
+  const inPoster = useInPoster();
   const [open, setOpen] = useState(true);
   if (!entries.length) {
     return <p className="mt-4 border-t border-hr2 pt-4 text-center text-[13px] font-medium leading-[1.5] text-fnt">No charges or payments yet.</p>;
   }
   return (
     <div className="mt-4 border-t border-hr2 pt-3.5">
-      <button type="button" onClick={() => setOpen((o) => !o)} className="mb-1 flex w-full items-center justify-between text-[13px] font-semibold leading-none text-ink">
-        {open ? "Hide" : "Show"} {entries.length} {entries.length === 1 ? "entry" : "entries"}
-        <ChevronDown className={`size-[18px] text-fnt transition-transform ${open ? "" : "-rotate-90"}`} strokeWidth={2} />
-      </button>
-      {open && entries.map((e) => <EntryRow key={e.id} e={e} bucket={bucket} styles={styles} hidden={hidden} memberName={memberName} />)}
+      {/* Poster: no collapse — always show every entry. */}
+      {!inPoster && (
+        <button type="button" onClick={() => setOpen((o) => !o)} className="mb-1 flex w-full items-center justify-between text-[13px] font-semibold leading-none text-ink">
+          {open ? "Hide" : "Show"} {entries.length} {entries.length === 1 ? "entry" : "entries"}
+          <ChevronDown className={`size-[18px] text-fnt transition-transform ${open ? "" : "-rotate-90"}`} strokeWidth={2} />
+        </button>
+      )}
+      {(inPoster || open) && entries.map((e) => <EntryRow key={e.id} e={e} bucket={bucket} styles={styles} hidden={hidden} memberName={memberName} />)}
     </div>
   );
 }

@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { ChevronDown, Check, Search } from "lucide-react";
-import { AN_METRIC, AN_METRIC_GROUPS } from "../data";
+import { AN_METRIC_GROUPS, groupOf } from "../data";
 
 export function MetricPicker({
   metric,
@@ -42,7 +42,7 @@ export function MetricPicker({
         </span>
       </button>
       <div className="mt-[11px] text-[11px] font-semibold uppercase leading-none tracking-[0.07em] text-fnt">
-        {AN_METRIC.group}
+        {groupOf(metric)}
       </div>
       {open && (
         <>

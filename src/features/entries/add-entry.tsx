@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, Suspense, use, useContext, useMemo, useState, useTransition } from "react";
-import { ArrowDown, ArrowUp, ArrowLeftRight, ChevronRight, Plus, Minus, type LucideIcon } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowLeftRight, ChevronRight, type LucideIcon } from "lucide-react";
 import { Modal } from "@/components/shared/modal";
 import { SelectorCard, PickerSheet, type PickOption } from "@/components/shared/entity-picker";
 import { formAction } from "@/server/actions";
@@ -46,11 +46,9 @@ const GROUPS: { name: string; items: Intent[] }[] = [
   },
 ];
 
-const ADVANCED: Intent[] = [
-  { label: "Catch-up payment", desc: "Join-time equalisation a member pays", dir: "in" },
-  { label: "Delayed-payment penalty", desc: "Charge a chronically-late member — club income", dir: "in" },
-  { label: "Vendor write-off", desc: "Mark vendor capital as unrecoverable", dir: "out" },
-];
+// Note: catch-up & penalty are recorded from the member's own page (they need the member's
+// remaining balance + suggested amount), and vendor write-off from the vendor page — so none of
+// them appear in this top-bar picker (§15).
 
 const DIR_META: Record<Dir, { Icon: LucideIcon; badge: string; tile: string; color: string }> = {
   in: { Icon: ArrowDown, badge: "IN", tile: "bg-in/10", color: "text-in" },
@@ -59,9 +57,16 @@ const DIR_META: Record<Dir, { Icon: LucideIcon; badge: string; tile: string; col
 };
 
 const INTENT_DIR: Record<string, Dir> = Object.fromEntries(
-  [...GROUPS.flatMap((g) => g.items), ...ADVANCED].map((it) => [it.label, it.dir]),
+  GROUPS.flatMap((g) => g.items).map((it) => [it.label, it.dir]),
 );
-const VENDOR_INTENTS = new Set(["Vendor investment", "Vendor return", "Vendor write-off", "Chit installment", "Chit payout"]);
+const VENDOR_INTENTS = new Set(["Vendor investment", "Vendor return", "Chit installment", "Chit payout"]);
+
+// Which member figure to show under each name in the picker (context-aware sub-line).
+const MEMBER_CTX_KEY: Record<string, "dues" | "loan" | "interest"> = {
+  "Member paid deposit": "dues",
+  "Record repayment": "loan",
+  "Collect interest": "interest",
+};
 
 /** Prefill the dialog straight into step 2 for a fixed intent/party (e.g. the member
  * detail's "Record catch-up/penalty payment" reusing this flow). */
@@ -96,17 +101,22 @@ export function AddEntryProvider({ children, optionsPromise }: { children: React
 
 function AddEntryDialog({ optionsPromise, preset, onClose }: { optionsPromise: Promise<EntryPickerOptions>; preset: AddEntryPreset | null; onClose: () => void }) {
   const options = use(optionsPromise);
-  const MEMBER_OPTS: PickOption[] = options.members;
-  const VENDOR_OPTS: PickOption[] = options.vendors;
-  const TREASURER_OPTS: PickOption[] = options.treasurers;
+  const MEMBER_OPTS = options.members;
+  const VENDOR_OPTS = options.vendors;
+  const TREASURER_OPTS = options.treasurers;
+  const LOAN_OPTS = options.loanCandidates;
   const today = new Date().toISOString().slice(0, 10);
   const [intent, setIntent] = useState<string | null>(preset?.intent ?? null);
-  const [showMore, setShowMore] = useState(false);
   const [picking, setPicking] = useState<"party" | "holder" | null>(null);
   const [party, setParty] = useState<PickOption | null>(preset?.party ?? null);
   const [holder, setHolder] = useState<PickOption | null>(null);
   const [amount, setAmount] = useState("");
+  const [principal, setPrincipal] = useState("");
   const [txnDate, setTxnDate] = useState(today);
+  const [note, setNote] = useState("");
+  // Vendor return / chit payout can split the receipt into returned-capital vs profit; the rest
+  // (or all of it, when blank) books as profit. Reduces the vendor receivable by the principal part.
+  const needsPrincipal = intent === "Vendor return" || intent === "Chit payout";
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
 
@@ -115,7 +125,14 @@ function AddEntryDialog({ optionsPromise, preset, onClose }: { optionsPromise: P
   const dir = intent ? INTENT_DIR[intent] : "in";
   const partyMeta = useMemo(() => getPartyMeta(intent), [intent]);
   const holderMeta = useMemo(() => getHolderMeta(dir), [dir]);
-  const partyOpts = partyMeta.kind === "vendor" ? VENDOR_OPTS : partyMeta.kind === "treasurer" ? TREASURER_OPTS : MEMBER_OPTS;
+  // The member picker's sub-line is context-aware: it shows the figure relevant to the action being
+  // recorded (dues for a deposit, loan for a repayment, …). Give-a-loan uses the eligibility list (§8).
+  const memberOpts = useMemo(() => {
+    if (intent === "Give a loan") return LOAN_OPTS;
+    const key = intent ? MEMBER_CTX_KEY[intent] : undefined;
+    return key ? MEMBER_OPTS.map((o) => ({ ...o, sub: o.ctx?.[key] ?? o.sub })) : MEMBER_OPTS;
+  }, [intent, LOAN_OPTS, MEMBER_OPTS]);
+  const partyOpts = partyMeta.kind === "vendor" ? VENDOR_OPTS : partyMeta.kind === "treasurer" ? TREASURER_OPTS : memberOpts;
   const canSave = !!party && !!holder && amount.trim() !== "";
 
   const submit = () => {
@@ -125,8 +142,10 @@ function AddEntryDialog({ optionsPromise, preset, onClose }: { optionsPromise: P
       fd.set("intent", intent ?? "");
       fd.set("party", party?.name ?? "");
       fd.set("amount", amount);
+      if (needsPrincipal && principal.trim() !== "") fd.set("principal", principal);
       fd.set("treasurer", holder?.name ?? "");
       fd.set("date", txnDate || today);
+      if (note.trim() !== "") fd.set("note", note.trim());
       const res = await formAction("entry", fd);
       if (res.ok) close();
       else setError(res.error ?? "Something went wrong.");
@@ -150,22 +169,30 @@ function AddEntryDialog({ optionsPromise, preset, onClose }: { optionsPromise: P
             "What happened?"
           )
         }
-        subtitle={!intent ? "Choose in plain language. Step 1 of 2" : picking ? undefined : "Fill the details. Step 2 of 2"}
         footer={
           intent && !picking ? (
-            <button
-              type="button"
-              onClick={submit}
-              disabled={!canSave || pending}
-              className="w-full rounded-xl bg-teal py-3.5 text-center text-[15px] font-semibold leading-none text-white transition-opacity disabled:opacity-50"
-            >
-              {pending ? "Saving…" : "Save entry"}
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={submit}
+                disabled={!canSave || pending}
+                className="flex-1 rounded-xl bg-teal py-3.5 text-center text-[15px] font-semibold leading-none text-white transition-opacity disabled:opacity-50"
+              >
+                {pending ? "Saving…" : "Save entry"}
+              </button>
+              <button
+                type="button"
+                onClick={close}
+                className="rounded-xl border border-bd2 bg-sf px-6 py-3.5 text-[15px] font-semibold leading-none text-ink hover:bg-bg2"
+              >
+                Cancel
+              </button>
+            </>
           ) : undefined
         }
       >
         {!intent ? (
-          <IntentPicker showMore={showMore} onToggleMore={() => setShowMore((o) => !o)} onPick={setIntent} />
+          <IntentPicker onPick={setIntent} />
         ) : picking ? (
           <PickerSheet
             title={picking === "party" ? partyMeta.pickerTitle : "Cash holder"}
@@ -186,38 +213,75 @@ function AddEntryDialog({ optionsPromise, preset, onClose }: { optionsPromise: P
               <SelectorCard selected={party} placeholder={partyMeta.ph} hint={partyMeta.hint} onOpen={() => setPicking("party")} />
             </div>
 
-            <div>
-              <SectionLabel>Amount</SectionLabel>
-              <div
-                className={`flex items-center gap-2 rounded-xl border px-4 py-3 transition-colors focus-within:border-teal ${
-                  amount ? "border-teal" : "border-bd2"
-                }`}
-              >
-                <span className="font-mono text-[22px] font-semibold leading-none text-mut">₹</span>
+            {/* Amount + date sit side by side on desktop, stack on mobile. */}
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <SectionLabel>Amount</SectionLabel>
+                <div
+                  className={`flex items-center gap-2 rounded-xl border px-4 py-3 transition-colors focus-within:border-teal ${
+                    amount ? "border-teal" : "border-bd2"
+                  }`}
+                >
+                  <span className="font-mono text-[22px] font-semibold leading-none text-mut">₹</span>
+                  <input
+                    value={amount}
+                    onChange={(e) => setAmount(e.target.value)}
+                    inputMode="numeric"
+                    placeholder="0"
+                    className="w-full min-w-0 bg-transparent font-mono text-[22px] font-semibold leading-none text-ink outline-none placeholder:text-fnt"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <SectionLabel>Date</SectionLabel>
                 <input
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  inputMode="numeric"
-                  placeholder="0"
-                  className="w-full bg-transparent font-mono text-[22px] font-semibold leading-none text-ink outline-none placeholder:text-fnt"
+                  type="date"
+                  value={txnDate}
+                  onChange={(e) => setTxnDate(e.target.value)}
+                  className="h-[48px] w-full rounded-xl border border-bd2 bg-transparent px-4 text-sm font-medium text-ink outline-none focus:border-teal"
                 />
               </div>
             </div>
 
-            <div>
-              <SectionLabel>Transaction date (optional)</SectionLabel>
-              <input
-                type="date"
-                value={txnDate}
-                onChange={(e) => setTxnDate(e.target.value)}
-                className="w-full rounded-xl border border-bd2 bg-transparent px-4 py-3 text-sm font-medium text-ink outline-none focus:border-teal"
-              />
-            </div>
+            {needsPrincipal && (
+              <div>
+                <SectionLabel>Principal returned (optional)</SectionLabel>
+                <div
+                  className={`flex items-center gap-2 rounded-xl border px-4 py-3 transition-colors focus-within:border-teal ${
+                    principal ? "border-teal" : "border-bd2"
+                  }`}
+                >
+                  <span className="font-mono text-[18px] font-semibold leading-none text-mut">₹</span>
+                  <input
+                    value={principal}
+                    onChange={(e) => setPrincipal(e.target.value)}
+                    inputMode="numeric"
+                    placeholder="0"
+                    className="w-full min-w-0 bg-transparent font-mono text-[18px] font-semibold leading-none text-ink outline-none placeholder:text-fnt"
+                  />
+                </div>
+                <p className="mb-0 mt-2 text-[12px] font-medium leading-[1.4] text-fnt">
+                  How much of this is your capital coming back (reduces the vendor balance). Leave blank for pure
+                  interest/profit — the rest books as profit.
+                </p>
+              </div>
+            )}
 
             <div>
               <SectionLabel>{holderMeta.label}</SectionLabel>
               <p className="mb-2 mt-1 text-[12px] font-medium leading-[1.4] text-fnt">{holderMeta.desc}</p>
               <SelectorCard selected={holder} placeholder={holderMeta.ph} hint={holderMeta.hint} onOpen={() => setPicking("holder")} />
+            </div>
+
+            <div>
+              <SectionLabel>Note <span className="font-medium normal-case text-fnt">optional</span></SectionLabel>
+              <input
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder="Add a note…"
+                className="w-full rounded-xl border border-bd2 bg-transparent px-4 py-3 text-sm font-medium text-ink outline-none placeholder:text-fnt focus:border-teal"
+              />
             </div>
 
             {error && <p className="text-[13px] font-medium leading-[1.4] text-out">{error}</p>}
@@ -252,7 +316,7 @@ function DirBadge({ dir }: { dir: Dir }) {
   return <span className={`rounded-md px-2 py-1 text-[11px] font-bold uppercase leading-none tracking-[0.04em] ${m.tile} ${m.color}`}>{m.badge}</span>;
 }
 
-function IntentPicker({ showMore, onToggleMore, onPick }: { showMore: boolean; onToggleMore: () => void; onPick: (label: string) => void }) {
+function IntentPicker({ onPick }: { onPick: (label: string) => void }) {
   return (
     <div className="flex flex-col gap-5">
       {GROUPS.map((g) => (
@@ -268,24 +332,6 @@ function IntentPicker({ showMore, onToggleMore, onPick }: { showMore: boolean; o
           </div>
         </div>
       ))}
-
-      <button
-        type="button"
-        onClick={onToggleMore}
-        className="flex w-full items-center justify-between rounded-xl border border-dashed border-bd2 px-4 py-3 text-[13px] font-semibold leading-none text-mut transition-colors hover:bg-bg2"
-        aria-expanded={showMore}
-      >
-        <span>{showMore ? "Fewer transaction types" : `More transaction types · ${ADVANCED.length} more`}</span>
-        {showMore ? <Minus className="size-4" strokeWidth={2.2} /> : <Plus className="size-4" strokeWidth={2.2} />}
-      </button>
-
-      {showMore && (
-        <div className="-mt-2 flex flex-col gap-2">
-          {ADVANCED.map((it) => (
-            <IntentRow key={it.label} it={it} onPick={() => onPick(it.label)} />
-          ))}
-        </div>
-      )}
     </div>
   );
 }

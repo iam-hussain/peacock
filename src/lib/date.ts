@@ -1,23 +1,43 @@
 const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-/** "Jan 2020" */
+// The club runs on IST (fixed UTC+5:30, no DST). DB stores UTC instants; all display & calendar
+// bucketing reads the IST wall-clock by shifting +5:30 and reading UTC parts of the shifted value.
+const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+export const ist = (d: Date): Date => new Date(d.getTime() + IST_OFFSET_MS);
+
+/** "2025-06-28" (IST) — default for <input type="date"> so it doesn't slip a day near midnight */
+export function isoDate(d: Date = new Date()): string {
+  return ist(d).toISOString().slice(0, 10);
+}
+
+/** "Jan 2020" (IST) */
 export function monthYear(d: Date): string {
-  return `${MON[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+  const i = ist(d);
+  return `${MON[i.getUTCMonth()]} ${i.getUTCFullYear()}`;
 }
 
-/** "28 Jun 2025" */
+/** "28 Jun 2025" (IST) */
 export function dayMonthYear(d: Date): string {
-  return `${String(d.getUTCDate()).padStart(2, "0")} ${MON[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+  const i = ist(d);
+  return `${String(i.getUTCDate()).padStart(2, "0")} ${MON[i.getUTCMonth()]} ${i.getUTCFullYear()}`;
 }
 
-/** "28 Jun" */
+/** "28 Jun" (IST) */
 export function dayMonth(d: Date): string {
-  return `${String(d.getUTCDate()).padStart(2, "0")} ${MON[d.getUTCMonth()]}`;
+  const i = ist(d);
+  return `${String(i.getUTCDate()).padStart(2, "0")} ${MON[i.getUTCMonth()]}`;
 }
 
 /** whole days between two dates (b − a), floored at 0 */
 export function daysBetween(a: Date, b: Date): number {
   return Math.max(0, Math.floor((b.getTime() - a.getTime()) / 86_400_000));
+}
+
+/** Date shifted by n whole calendar months (used for loan term-end / cooldown windows). */
+export function addMonths(d: Date, n: number): Date {
+  const r = new Date(d);
+  r.setUTCMonth(r.getUTCMonth() + n);
+  return r;
 }
 
 /** "4 months 5 days" from a whole-day count (30-day months for display). */
@@ -32,7 +52,8 @@ export function monthsDays(days: number): string {
 
 /** "5 yrs 6 mos" style tenure from a start date to now */
 export function tenure(from: Date, to = new Date()): string {
-  let months = (to.getUTCFullYear() - from.getUTCFullYear()) * 12 + (to.getUTCMonth() - from.getUTCMonth());
+  const f = ist(from), t = ist(to);
+  let months = (t.getUTCFullYear() - f.getUTCFullYear()) * 12 + (t.getUTCMonth() - f.getUTCMonth());
   if (months < 0) months = 0;
   const y = Math.floor(months / 12);
   const m = months % 12;

@@ -5,6 +5,7 @@ import { Sparkles } from "lucide-react";
 import { Modal, ModalActions } from "@/components/shared/modal";
 import { SelectorCard, PickerSheet, type PickOption } from "@/components/shared/entity-picker";
 import { formAction } from "@/server/actions";
+import { isoDate } from "@/lib/date";
 import type { ChargeSuggest } from "@/server/queries/members";
 
 type Bucket = "catchup" | "penalty";
@@ -26,7 +27,7 @@ const REASONS: Record<Bucket, [string, string][]> = {
   ],
 };
 
-export const today = () => new Date().toISOString().slice(0, 10);
+export const today = () => isoDate();
 const round = (n: number) => String(Math.round(n));
 
 function Trigger({ onOpen, className, ariaLabel, children }: { onOpen: () => void; className: string; ariaLabel?: string; children: React.ReactNode }) {
@@ -59,7 +60,7 @@ export function SectionLabel({ children }: { children: React.ReactNode }) {
 
 /** Add / edit a catch-up or penalty CHARGE. Matches the "Add catch-up charge" design. */
 export function AddChargeDialog({
-  bucket, memberName, hidden, suggest, editId, defaults, className, ariaLabel, children,
+  bucket, hidden, suggest, editId, defaults, className, ariaLabel, children,
 }: {
   bucket: Bucket;
   memberName: string;
@@ -235,7 +236,7 @@ export function DeleteEntryDialog({
 
 /** Record a catch-up / penalty PAYMENT. Matches the "Record penalty payment" design. */
 export function RecordPaymentDialog({
-  bucket, memberName, party, hidden, remainingLabel, remainingRupees, treasurers, className, children,
+  bucket, memberName, party, hidden, remainingLabel, remainingRupees, treasurers, className, children, submitLabel = "Confirm payment",
 }: {
   bucket: Bucket;
   memberName: string;
@@ -246,6 +247,7 @@ export function RecordPaymentDialog({
   treasurers: PickOption[];
   className: string;
   children: React.ReactNode;
+  submitLabel?: string;
 }) {
   const formId = useId();
   const [open, setOpen] = useState(false);
@@ -287,7 +289,7 @@ export function RecordPaymentDialog({
         title={`Record ${noun} payment`}
         subtitle={memberName}
         hideHeader={picking}
-        footer={picking ? undefined : <ModalActions onCancel={() => setOpen(false)} submitLabel="Confirm payment" pending={pending} formId={formId} />}
+        footer={picking ? undefined : <ModalActions onCancel={() => setOpen(false)} submitLabel={submitLabel} pending={pending} formId={formId} />}
       >
         {picking ? (
           <PickerSheet

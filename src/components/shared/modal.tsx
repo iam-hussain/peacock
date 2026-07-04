@@ -54,18 +54,16 @@ export function Modal({
         } rounded-t-[20px] sm:rounded-2xl`}
       >
         {!hideHeader && (
-          <div className="flex items-start gap-3 border-b border-hair px-5 py-4">
-            <div className="min-w-0 flex-1">
-              <h2 className="text-base font-bold leading-tight text-ink">{title}</h2>
-              {subtitle && <p className="mt-1 text-xs font-medium leading-[1.4] text-fnt">{subtitle}</p>}
-            </div>
-            <button onClick={onClose} aria-label="Close" className="flex size-8 flex-none items-center justify-center rounded-lg text-mut hover:bg-bg2">
+          <div className="relative flex flex-col items-center gap-1 px-12 py-4 text-center">
+            <h2 className="text-base font-bold leading-tight text-ink">{title}</h2>
+            {subtitle && <p className="text-xs font-medium leading-[1.4] text-fnt">{subtitle}</p>}
+            <button onClick={onClose} aria-label="Close" className="absolute right-3 top-3 flex size-8 items-center justify-center rounded-lg text-mut hover:bg-bg2">
               <X className="size-[18px]" strokeWidth={2} />
             </button>
           </div>
         )}
         <div className="flex-1 overflow-y-auto px-5 py-4">{children}</div>
-        {footer && <div className="flex gap-2.5 border-t border-hair px-5 py-4">{footer}</div>}
+        {footer && <div className="flex gap-2.5 px-5 py-4">{footer}</div>}
       </div>
     </div>,
     document.body,
@@ -90,25 +88,27 @@ export function ModalActions({
   formId?: string;
   onSubmit?: () => void; // imperative submit (modals without a native <form>)
 }) {
+  // Primary action fills the row (left); Cancel is a compact button on the right — matches the
+  // add-entry footer so every modal's actions read identically.
   return (
     <>
-      <button
-        type="button"
-        onClick={onCancel}
-        className="flex-1 rounded-xl border border-bd2 bg-sf py-3 text-sm font-semibold leading-none text-ink hover:bg-bg2"
-      >
-        {cancelLabel}
-      </button>
       <button
         type={onSubmit ? "button" : "submit"}
         form={onSubmit ? undefined : formId}
         onClick={onSubmit}
         disabled={pending}
-        className={`flex-1 rounded-xl py-3 text-sm font-semibold leading-none text-white disabled:opacity-60 ${
+        className={`flex-1 rounded-xl py-3.5 text-[15px] font-semibold leading-none text-white transition-opacity disabled:opacity-60 ${
           destructive ? "bg-out" : "bg-teal"
         }`}
       >
         {pending ? "Saving…" : submitLabel}
+      </button>
+      <button
+        type="button"
+        onClick={onCancel}
+        className="rounded-xl border border-bd2 bg-sf px-6 py-3.5 text-[15px] font-semibold leading-none text-ink hover:bg-bg2"
+      >
+        {cancelLabel}
       </button>
     </>
   );

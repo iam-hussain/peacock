@@ -1,9 +1,9 @@
 import "server-only";
 import { prisma } from "@/server/db";
-import { formatLakh, formatPaise } from "@/lib/money";
+import { formatLakh, formatPaise, profitShare } from "@/lib/money";
 import { monthYear, monthsDays, tenure, daysBetween, dayMonthYear } from "@/lib/date";
-import { loanEvents, reconstructCycles } from "./loans";
-import { totalChitObligation } from "./vendors";
+import { loanEvents, reconstructCycles, loanConfig, isOverdue, interestOwedTotal } from "./loans";
+import { vendorProfitAndObligation } from "./vendors";
 import { getCashHolderOptions } from "./entries";
 import type { Status } from "@/components/shared/status-badge";
 
@@ -47,7 +47,7 @@ async function outstandingCharge(membershipId: string, kind: "CATCHUP" | "PENALT
   return (raised._sum.amount ?? 0n) + (paid._sum.amount ?? 0n);
 }
 
-type Stage = { amountPaise: number; startDate: string };
+export type Stage = { amountPaise: number; startDate: string };
 
 const monthIdx = (d: Date) => d.getUTCFullYear() * 12 + d.getUTCMonth();
 
@@ -117,12 +117,14 @@ export async function getMembers(): Promise<MemberDTO[]> {
   );
 
   // Profit isn't posted to member equity in this ledger — it pools in the club
-  // (interest + vendor returns). Share it proportionally to deposits among ACTIVE
-  // members (§ PRODUCT.md: profit shared proportionally to deposits paid).
-  const clubProfit = await realizedClubProfit();
-  const totalActiveDeposits = rows.filter((r) => r.active).reduce((s, r) => s + r.deposits, 0n);
+  // (interest + vendor returns). Split it over the EXPECTED deposit base (active members ×
+  // expected-per-member) so a fully-paid member always earns their full share regardless of others,
+  // each underpayer bears their own shortfall, and the club never distributes more than it earned
+  // (PRODUCT.md §11 — see `profitShare`).
+  const clubProfit = await shareableClubProfit();
+  const activeCount = rows.filter((r) => r.active).length;
   const shareOf = (deposits: bigint, active: boolean) =>
-    active && totalActiveDeposits > 0n ? (clubProfit * deposits) / totalActiveDeposits : 0n;
+    active ? profitShare(clubProfit, deposits, activeCount, expectedDeposit) : 0n;
 
   return rows
     .map(({ m, active, value, deposits, pending, adjustment, charged }) => ({
@@ -153,14 +155,33 @@ export async function getMembers(): Promise<MemberDTO[]> {
     .sort((a, b) => Number(b.status === "active") - Number(a.status === "active") || a.name.localeCompare(b.name));
 }
 
-/** Shareable club profit = loan interest + vendor profit + other income − chit obligations still
- *  owed (PRODUCT.md §11: the money the club must still pay into chits reduces shareable profit). */
+/** Shareable club profit = loan interest + other income + vendor P/L. Vendor P/L already nets chit
+ *  obligations still owed and projects un-taken chit face value (PRODUCT.md §10/§11). */
 export async function realizedClubProfit(): Promise<bigint> {
   const income = await prisma.ledgerAccount.aggregate({
     _sum: { balance: true },
-    where: { kind: { in: ["INTEREST_INCOME", "VENDOR_PROFIT", "OTHER_INCOME"] }, id: { not: "club-opening" } },
+    where: { kind: { in: ["INTEREST_INCOME", "OTHER_INCOME"] }, id: { not: "club-opening" } },
   });
-  return -(income._sum.balance ?? 0n) - (await totalChitObligation()); // credit accounts hold negative balances
+  return -(income._sum.balance ?? 0n) + (await vendorProfitAndObligation()).profit; // credit accounts hold negative balances
+}
+
+/** Pooled profit that ACTIVE members share (PRODUCT.md §11):
+ *    realized (net of chit obligation) + pending loan interest − profit already withdrawn by leavers.
+ *  Pending interest counts because the club will collect it. The withdrawn term matters because a
+ *  WITHDRAW only moves cash → the leaver's equity (intents.ts) — it never debits the income
+ *  accounts, so a leaver's profit lingers inside `realizedClubProfit`. Without subtracting it, active
+ *  members would be credited profit that has already left the club as cash, and the club would fall
+ *  exactly that short if everyone settled at once. Mirrors the dashboard's `currentProfit`. */
+export async function shareableClubProfit(): Promise<bigint> {
+  return (await realizedClubProfit()) + (await interestOwedTotal()) - (await profitWithdrawnTotal());
+}
+
+/** Profit already paid out to members who left (§12). Settlement posts the profit leg as a
+ *  PROFIT_WITHDRAW into the PROFIT_DISTRIBUTED contra-income account, so the total distributed is
+ *  just that account's (debit, positive) balance — exact, no reconstruction from netted payouts. */
+export async function profitWithdrawnTotal(): Promise<bigint> {
+  const a = await prisma.ledgerAccount.aggregate({ _sum: { balance: true }, where: { kind: "PROFIT_DISTRIBUTED" } });
+  return a._sum.balance ?? 0n;
 }
 
 /** Raw active-member fund aggregates for the dashboard (paise). Same deposit + pending
@@ -214,6 +235,23 @@ export async function getMemberIds(): Promise<string[]> {
   return rows.map((r) => r.id);
 }
 
+// What a brand-new member is expected to bring in on joining (mirrors addMember, §6/§7): the
+// full-club-life deposit baseline plus the first-join catch-up (average per-member profit).
+export interface JoinPreviewDTO {
+  deposits: string; // monthly deposits expected since club start
+  profit: string; // catch-up = equal per-member profit share
+  total: string;
+}
+export async function getJoinPreview(): Promise<JoinPreviewDTO> {
+  const cfg = await prisma.clubConfig.findUnique({ where: { id: "singleton" }, select: { stages: true } });
+  const deposits = expectedClubDeposit((cfg?.stages as Stage[] | undefined) ?? []);
+  // shareableClubProfit ÷ active members — matches the dashboard "profit per member" and the
+  // catch-up addMember actually raises, so the preview and the real charge agree.
+  const [pooled, activeCount] = await Promise.all([shareableClubProfit(), prisma.membership.count({ where: { status: "ACTIVE" } })]);
+  const profit = activeCount > 0 && pooled > 0n ? pooled / BigInt(activeCount) : 0n;
+  return { deposits: formatPaise(deposits), profit: formatPaise(profit), total: formatPaise(deposits + profit) };
+}
+
 // ---------------- detail ----------------
 export interface LoanCycleDTO {
   n: number;
@@ -265,10 +303,8 @@ export interface LedgerEntryDTO {
 // What an inactive member must settle to return to equal value (PRODUCT.md §12).
 export interface RejoinDTO {
   total: string; // back deposits + catch-up
-  depDue: string; // back deposits owed = scheduled − paid
+  depDue: string; // back deposits owed = full monthly deposits since club start
   depDueRupees: number; // same, raw rupees (modal recomputes the live total)
-  scheduled: string; // monthly deposits scheduled since club start
-  paid: string; // deposits already paid on the (now closed) membership
   profit: string; // catch-up = equal per-member profit share
   profitRupees: number; // same, raw rupees (prefills the editable catch-up field)
 }
@@ -284,10 +320,26 @@ export interface SettleDTO {
   owes: boolean; // has a loan / interest to subtract → show the minus rows
 }
 
+// Frozen settlement guide for a CLOSED membership (§12) — the breakdown shown at leave + what was paid.
+export interface SettledGuideDTO {
+  capital: string; // paid-in capital returned
+  profit: string; // profit share paid
+  loan: string; // loan principal cleared
+  interest: string; // unpaid interest cleared
+  suggested: string; // guide total
+  paid: string; // final amount actually paid out
+  owes: boolean; // had loan/interest deducted → show the minus rows
+  date: string; // leave date
+}
+
 export interface MemberDetailDTO extends MemberDTO {
   membershipId: string;
+  phone: string;
+  email: string;
+  username: string;
   rejoin: RejoinDTO | null;
   settle: SettleDTO | null;
+  settledGuide: SettledGuideDTO | null;
   tenure: string;
   managing: string | null;
   loanTaken: string;
@@ -330,6 +382,9 @@ export async function getMemberDetail(id: string): Promise<MemberDetailDTO | nul
       id: true,
       firstName: true,
       lastName: true,
+      phone: true,
+      email: true,
+      username: true,
       avatarUrl: true,
       customerSince: true,
       archivedAt: true,
@@ -339,6 +394,8 @@ export async function getMemberDetail(id: string): Promise<MemberDetailDTO | nul
         select: {
           id: true,
           status: true,
+          leftAt: true,
+          settledGuide: true,
           accounts: { select: { id: true, kind: true, balance: true } },
           loans: { orderBy: { startedAt: "desc" }, select: { id: true, requestedAmount: true, principalOutstanding: true, monthlyRateBps: true, startedAt: true, closedAt: true, status: true } },
           charges: { orderBy: { occurredAt: "desc" }, select: { id: true, kind: true, reason: true, amount: true, occurredAt: true, note: true } },
@@ -354,11 +411,8 @@ export async function getMemberDetail(id: string): Promise<MemberDetailDTO | nul
   const value = -(equity?.balance ?? 0n);
   const dep = equity ? await prisma.entry.aggregate({ _sum: { amount: true }, where: { accountId: equity.id, transaction: { type: { in: ["PERIODIC_DEPOSIT", "CATCHUP"] } } } }) : { _sum: { amount: null } };
   const deposits = -(dep._sum.amount ?? 0n);
-  // proportional share of pooled club profit (same model as the members list)
-  const clubProfit = await realizedClubProfit();
-  const allDep = await prisma.entry.aggregate({ _sum: { amount: true }, where: { transaction: { type: { in: ["PERIODIC_DEPOSIT", "CATCHUP"] } }, account: { kind: "MEMBER_EQUITY", membership: { status: "ACTIVE" } } } });
-  const totalActiveDeposits = -(allDep._sum.amount ?? 0n);
-  const profit = active && totalActiveDeposits > 0n ? (clubProfit * deposits) / totalActiveDeposits : 0n;
+  // proportional share of pooled club profit (same model as the members list; see `profitShare`)
+  const clubProfit = await shareableClubProfit();
 
   const assigned = ms ? (ms.charges.filter((c) => c.kind === "CATCHUP").reduce((s, c) => s + c.amount, 0n)) : 0n;
   const penaltyAssigned = ms ? (ms.charges.filter((c) => c.kind === "PENALTY").reduce((s, c) => s + c.amount, 0n)) : 0n;
@@ -429,27 +483,30 @@ export async function getMemberDetail(id: string): Promise<MemberDetailDTO | nul
   const expectedDeposit = expectedClubDeposit(stages);
   const depositPending = active && expectedDeposit > deposits ? expectedDeposit - deposits : 0n;
   const overallPending = depositPending + pendingCharge + penaltyCharge;
-  // Profit share the member would earn if they'd paid the full expected baseline (profit ∝
-  // deposits paid). `returnsActual` = share on what they've actually paid = fullShare × paidPct.
-  const fullShare = active && totalActiveDeposits > 0n ? (clubProfit * expectedDeposit) / totalActiveDeposits : 0n;
+  const activeCount = await prisma.membership.count({ where: { status: "ACTIVE" } });
+  // Profit is split over the EXPECTED base (members × expected), so `fullShare` is the fair full
+  // per-head share (clubProfit ÷ members) and `returnsActual` = fullShare × paidPct. A fully-paid
+  // member is unaffected by others being behind; each underpayer bears their own shortfall; the sum
+  // over members never exceeds clubProfit (PRODUCT.md §11 — see `profitShare`).
+  const profit = active ? profitShare(clubProfit, deposits, activeCount, expectedDeposit) : 0n;
+  const fullShare = active ? profitShare(clubProfit, expectedDeposit, activeCount, expectedDeposit) : 0n;
   const paidRatioPct = pct(deposits, expectedDeposit);
 
   // Auto-suggested charge amounts (FORMS_AND_FIELDS §Add charge):
   //   catch-up = avg per-member profit − this member's profit;  penalty = 2% of pending dues.
-  const activeCount = await prisma.membership.count({ where: { status: "ACTIVE" } });
   const avgProfit = activeCount > 0 ? clubProfit / BigInt(activeCount) : 0n;
   const suggest = (paise: bigint, hint: string): ChargeSuggest => ({ rupees: String(Number(paise) / 100), label: formatPaise(paise), hint });
   const catchupSuggest = suggest(avgProfit > profit ? avgProfit - profit : 0n, "avg per-member profit minus this member's profit");
-  // Rejoin quote (inactive members only): back deposits since club start + equal per-member profit.
-  const backDeposits = expectedDeposit > deposits ? expectedDeposit - deposits : 0n;
+  // Rejoin quote (inactive members only): the FULL monthly deposits since club start + equal
+  // per-member profit. A prior stint's deposits were paid back at settlement, so the new membership
+  // starts at 0 paid — they owe the whole baseline afresh (PRODUCT.md §12).
+  const backDeposits = expectedDeposit;
   const rejoin: RejoinDTO | null = active
     ? null
     : {
         total: formatPaise(backDeposits + avgProfit),
         depDue: formatPaise(backDeposits),
         depDueRupees: Number(backDeposits) / 100,
-        scheduled: formatPaise(expectedDeposit),
-        paid: formatPaise(deposits),
         profit: formatPaise(avgProfit),
         profitRupees: Number(avgProfit) / 100,
       };
@@ -469,12 +526,13 @@ export async function getMemberDetail(id: string): Promise<MemberDetailDTO | nul
   // balance change opens a new cycle (PRODUCT.md §9), numbered 1..N oldest→newest, then
   // shown most-recent first.
   const now = new Date();
+  const loanCfg = await loanConfig();
   const cycles: LoanCycleDTO[] = [];
   let interestGen = 0n;
   for (const l of [...loans].reverse()) {
     const events = await loanEvents(l.id);
-    const overdueLoan = l.status === "ACTIVE" && daysBetween(l.startedAt, now) > 150;
-    for (const c of reconstructCycles(events, l.monthlyRateBps, now)) {
+    const overdueLoan = l.status === "ACTIVE" && isOverdue(l.startedAt, loanCfg, now);
+    for (const c of reconstructCycles(events, l.monthlyRateBps, now, loanCfg.dayInterestFrom)) {
       interestGen += c.interest;
       const status = !c.open ? "closed" : overdueLoan ? "overdue" : "active";
       cycles.push({
@@ -510,6 +568,9 @@ export async function getMemberDetail(id: string): Promise<MemberDetailDTO | nul
   return {
     id: m.id,
     membershipId: ms?.id ?? "",
+    phone: m.phone ?? "",
+    email: m.email ?? "",
+    username: m.username ?? "",
     rejoin,
     settle,
     name: [m.firstName, m.lastName].filter(Boolean).join(" "),

@@ -1,14 +1,16 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Search, ChevronRight, Info } from "lucide-react";
+import { Search, ChevronRight, Info, Eye, EyeOff } from "lucide-react";
 import { initials } from "@/lib/avatar";
 import { cn } from "@/lib/utils";
 import { PeacockLockup } from "@/components/shared/peacock-logo";
 import { signIn } from "@/lib/auth-client";
 import type { LoginProfile } from "../queries";
+
+const LAST_PROFILE_KEY = "peacock:lastProfileId";
 
 export function LoginCard({ profiles }: { profiles: LoginProfile[] }) {
   const [selected, setSelected] = useState<LoginProfile | null>(null);
@@ -34,10 +36,21 @@ export function LoginCard({ profiles }: { profiles: LoginProfile[] }) {
 
 function PickStep({ profiles, onPick }: { profiles: LoginProfile[]; onPick: (p: LoginProfile) => void }) {
   const [query, setQuery] = useState("");
+  const [lastId, setLastId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setLastId(localStorage.getItem(LAST_PROFILE_KEY));
+  }, []);
+
   const list = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return q ? profiles.filter((p) => p.name.toLowerCase().includes(q)) : profiles;
-  }, [query, profiles]);
+    const filtered = q ? profiles.filter((p) => p.name.toLowerCase().includes(q)) : profiles;
+    if (!lastId) return filtered;
+    // float the last-used profile to the top (server order otherwise: most-recent login first)
+    const idx = filtered.findIndex((p) => p.id === lastId);
+    if (idx <= 0) return filtered;
+    return [filtered[idx], ...filtered.slice(0, idx), ...filtered.slice(idx + 1)];
+  }, [query, profiles, lastId]);
 
   return (
     <>
@@ -67,7 +80,14 @@ function PickStep({ profiles, onPick }: { profiles: LoginProfile[]; onPick: (p: 
           >
             <LoginAvatar name={p.name} teal={/treasurer|admin/i.test(p.tag)} />
             <div className="min-w-0 flex-1">
-              <div className="text-sm font-semibold leading-none text-ink">{p.name}</div>
+              <div className="flex items-center gap-1.5">
+                <span className="text-sm font-semibold leading-none text-ink">{p.name}</span>
+                {p.id === lastId && (
+                  <span className="rounded-md bg-nbg px-[6px] py-[3px] text-[9px] font-bold leading-none tracking-[0.05em] text-nfg">
+                    LAST USED
+                  </span>
+                )}
+              </div>
               <div className="mt-1 text-[11px] font-medium leading-[1.3] text-fnt">{p.tag}</div>
             </div>
             <StatusIndicator status={p.status} />
@@ -121,6 +141,8 @@ function StatusIndicator({ status }: { status: LoginProfile["status"] }) {
 function PasswordStep({ profile, onBack }: { profile: LoginProfile; onBack: () => void }) {
   const router = useRouter();
   const [pw, setPw] = useState("");
+  const [show, setShow] = useState(false);
+  const [remember, setRemember] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
 
@@ -131,9 +153,18 @@ function PasswordStep({ profile, onBack }: { profile: LoginProfile; onBack: () =
       return;
     }
     start(async () => {
-      const res = await signIn.email({ email: profile.email, password: pw });
-      if (res.error) setError(res.error.message ?? "Incorrect password. Try again.");
-      else router.push("/dashboard");
+      // Stored default password is the full phone incl. +91. If a bare 10-digit number
+      // fails, retry once with +91 prepended so both forms work (see hint below).
+      const attempts = /^\d{10}$/.test(pw.trim()) ? [pw, `+91${pw.trim()}`] : [pw];
+      for (const password of attempts) {
+        const res = await signIn.email({ email: profile.email, password, rememberMe: remember });
+        if (!res.error) {
+          localStorage.setItem(LAST_PROFILE_KEY, profile.id);
+          router.push("/dashboard");
+          return;
+        }
+        setError(res.error.message ?? "Incorrect password. Try again.");
+      }
     });
   }
 
@@ -150,21 +181,44 @@ function PasswordStep({ profile, onBack }: { profile: LoginProfile; onBack: () =
       <label className="mb-2 block text-[11px] font-semibold uppercase leading-none tracking-[0.04em] text-fnt">
         Password
       </label>
-      <input
-        type="password"
-        value={pw}
-        onChange={(e) => setPw(e.target.value)}
-        onKeyDown={(e) => e.key === "Enter" && onSubmit()}
-        placeholder="Enter your password"
-        autoFocus
-        className="mb-2.5 w-full rounded-[12px] border border-bd2 bg-sf p-[15px] text-[15px] font-medium text-ink outline-none focus:border-teal md:rounded-[11px] md:p-[13px] md:text-sm"
-      />
+      <div className="relative mb-2.5">
+        <input
+          type={show ? "text" : "password"}
+          value={pw}
+          onChange={(e) => setPw(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && onSubmit()}
+          placeholder="Enter your password"
+          autoFocus
+          className="w-full rounded-[12px] border border-bd2 bg-sf p-[15px] pr-11 text-[15px] font-medium text-ink outline-none focus:border-teal md:rounded-[11px] md:p-[13px] md:pr-11 md:text-sm"
+        />
+        <button
+          type="button"
+          onClick={() => setShow((s) => !s)}
+          aria-label={show ? "Hide password" : "Show password"}
+          className="absolute inset-y-0 right-0 flex items-center px-3.5 text-fnt transition-colors hover:text-ink"
+        >
+          {show ? <EyeOff className="size-[18px]" strokeWidth={2} /> : <Eye className="size-[18px]" strokeWidth={2} />}
+        </button>
+      </div>
+
+      <label className="mb-2.5 flex cursor-pointer select-none items-center gap-2 text-[13px] font-medium text-fnt">
+        <input
+          type="checkbox"
+          checked={remember}
+          onChange={(e) => setRemember(e.target.checked)}
+          className="size-4 accent-teal"
+        />
+        Remember me on this device
+      </label>
 
       <div className="mb-3.5 flex gap-2 rounded-[9px] bg-bg2 px-[11px] py-[9px]">
         <Info className="mt-px size-3.5 flex-none text-mut" strokeWidth={2} />
         <p className="text-[11px] font-medium leading-[1.45] text-mut">
           First time, or just reset? Try your{" "}
-          <span className="font-semibold text-ink">registered phone number</span> as the password.
+          <span className="font-semibold text-ink">registered phone number</span> as the password —
+          with or without <span className="font-semibold text-ink">+91</span> (e.g.{" "}
+          <span className="font-semibold text-ink">+919876543210</span> or{" "}
+          <span className="font-semibold text-ink">9876543210</span>).
         </p>
       </div>
 

@@ -14,6 +14,7 @@ export interface PostInput {
   loanId?: string;
   vendorId?: string;
   reversesId?: string;
+  reference?: string; // groups related postings (e.g. all legs of one settlement share a settlementId)
   lines: PostLine[]; // must sum to 0, ≥2 legs, none zero
   actorId?: string;
 }
@@ -53,6 +54,7 @@ export async function postTransaction(input: PostInput): Promise<{ id: string }>
         loanId: input.loanId,
         vendorId: input.vendorId,
         reversesId: input.reversesId,
+        reference: input.reference,
         createdById: input.actorId,
       },
     });

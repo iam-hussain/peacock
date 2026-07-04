@@ -119,7 +119,7 @@ noted). Direction: **IN** = club gains cash, **OUT** = club pays cash, **neutral
 | Transaction | Dir | Fields collected |
 |-------------|:---:|------------------|
 | **Member leaves (settle up)** | OUT | Member (R); Settlement amount (R, **guide auto-computed**: capital + profit share − loan − unpaid interest; admin enters final); Treasury paying (R). Freezes the member afterward. |
-| **Member rejoins** | — | Shows **back deposits** (missed monthly since club start) + a **catch-up charge** that is **auto-added** (suggested from per-member profit, **admin-editable**) = **total to rejoin**. On confirm, the catch-up charge (reason `REJOIN`) is recorded and the account → Active; the member then **pays the dues down** over time via *Pay catch-up*. |
+| **Member rejoins** | — | Shows **back deposits** (the **full** monthly deposits since club start — a prior stint was settled on exit, so the new membership starts at zero paid) + a **catch-up charge** that is **auto-added** (suggested from per-member profit, **admin-editable**) = **total to rejoin**. On confirm, the catch-up charge (reason `REJOIN`) is recorded and the account → Active; the member then **pays the dues down** over time via *Pay catch-up*. |
 
 ### 3.1 Catch-up & penalty charges (dues)
 
