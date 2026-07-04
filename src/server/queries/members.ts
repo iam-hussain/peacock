@@ -565,6 +565,22 @@ export async function getMemberDetail(id: string): Promise<MemberDetailDTO | nul
       }
     : null;
 
+  // Frozen guide for a closed stint (§12): read the snapshot taken at settlement (paise as strings).
+  const sg = ms?.settledGuide as Record<string, string> | null | undefined;
+  const settledGuide: SettledGuideDTO | null =
+    !active && sg
+      ? {
+          capital: formatPaise(BigInt(sg.capital ?? "0")),
+          profit: formatPaise(BigInt(sg.profit ?? "0")),
+          loan: formatPaise(BigInt(sg.loan ?? "0")),
+          interest: formatPaise(BigInt(sg.interest ?? "0")),
+          suggested: formatPaise(BigInt(sg.suggested ?? "0")),
+          paid: formatPaise(BigInt(sg.paid ?? "0")),
+          owes: BigInt(sg.loan ?? "0") > 0n || BigInt(sg.interest ?? "0") > 0n,
+          date: ms?.leftAt ? dayMonthYear(ms.leftAt) : "—",
+        }
+      : null;
+
   return {
     id: m.id,
     membershipId: ms?.id ?? "",
@@ -573,6 +589,7 @@ export async function getMemberDetail(id: string): Promise<MemberDetailDTO | nul
     username: m.username ?? "",
     rejoin,
     settle,
+    settledGuide,
     name: [m.firstName, m.lastName].filter(Boolean).join(" "),
     avatarUrl: m.avatarUrl,
     joined: monthYear(m.customerSince),
