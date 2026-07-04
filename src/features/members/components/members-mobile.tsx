@@ -1,19 +1,24 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Plus } from "lucide-react";
 import { AddMemberDialog } from "./add-member-dialog";
 import { AdminOnly } from "@/lib/admin";
 import { ViewToggle, type ListView } from "@/components/shared/view-toggle";
 import type { Member } from "../data";
+import { filterMembers, type MemberFilter } from "../filter";
 import { type MemberSummary } from "./members-list";
 import type { JoinPreviewDTO } from "@/server/queries/members";
 import { MemberCard } from "./member-card";
 import { MembersTable } from "./members-table";
+import { MemberStatusFilter } from "./member-status-filter";
 
-/** Members — mobile: header (summary + add + view toggle), then card or table view. */
+/** Members — mobile: header (summary + add + view toggle), status filter, then card or table view. */
 export function MembersMobile({ members, summary, joinPreview }: { members: Member[]; summary: MemberSummary; joinPreview: JoinPreviewDTO }) {
   const [view, setView] = useState<ListView>("table");
+  const [filter, setFilter] = useState<MemberFilter>("active");
+
+  const rows = useMemo(() => filterMembers(members, "", filter), [members, filter]);
 
   return (
     <div className="pb-[78px] md:hidden">
@@ -22,6 +27,7 @@ export function MembersMobile({ members, summary, joinPreview }: { members: Memb
           {summary.text} · {summary.totalDeposits} deposits
         </span>
         <div className="flex flex-none items-center gap-2">
+          <MemberStatusFilter value={filter} onChange={setFilter} />
           <AdminOnly>
             <AddMemberDialog
               preview={joinPreview}
@@ -35,9 +41,11 @@ export function MembersMobile({ members, summary, joinPreview }: { members: Memb
         </div>
       </div>
 
-      {view === "cards" ? (
+      {rows.length === 0 ? (
+        <div className="px-4 py-14 text-center text-[13px] font-medium text-fnt">No members match.</div>
+      ) : view === "cards" ? (
         <div className="flex flex-col gap-3 px-4">
-          {members.map((m) => (
+          {rows.map((m) => (
             <MemberCard key={m.id} m={m} />
           ))}
         </div>
@@ -45,7 +53,7 @@ export function MembersMobile({ members, summary, joinPreview }: { members: Memb
         <div className="px-4">
           <div className="overflow-x-auto rounded-2xl border border-bd bg-sf">
             <div className="min-w-[720px]">
-              <MembersTable members={members} />
+              <MembersTable members={rows} />
             </div>
           </div>
         </div>
