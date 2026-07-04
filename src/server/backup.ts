@@ -10,6 +10,15 @@ const TABLES = [
   "periodClose", "auditLog", "session", "account", "verification",
 ] as const;
 
+// Minimal shape we invoke on each model delegate. Keyed by the exact TABLES names
+// (camelCased Prisma delegate keys) so dynamic dispatch stays checked, not `any`.
+type ModelDelegate = {
+  findMany: () => Promise<unknown[]>;
+  deleteMany: (args: object) => Promise<unknown>;
+  createMany: (args: object) => Promise<unknown>;
+};
+type ModelClient = Record<(typeof TABLES)[number], ModelDelegate>;
+
 // BigInt isn't JSON-serialisable; tag it so import can revive it losslessly.
 const replacer = (_k: string, v: unknown) => (typeof v === "bigint" ? { __big: v.toString() } : v);
 const reviver = (_k: string, v: unknown) =>
@@ -20,9 +29,9 @@ export async function exportBackup(): Promise<{ ok: boolean; json?: string; erro
   const me = await getCurrentUser();
   if (!me?.isAdmin) return { ok: false, error: "Only an admin can export a backup." };
   const data: Record<string, unknown[]> = {};
+  const models = prisma as unknown as ModelClient;
   for (const t of TABLES) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    data[t] = await (prisma as any)[t].findMany();
+    data[t] = await models[t].findMany();
   }
   return { ok: true, json: JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), data }, replacer) };
 }
@@ -45,11 +54,12 @@ export async function importBackup(json: string): Promise<{ ok: boolean; error?:
   try {
     await prisma.$transaction(
       async (tx) => {
+        const txModels = tx as unknown as ModelClient;
         // Wipe children-first (reverse order), then repopulate parents-first.
-        for (const t of [...TABLES].reverse()) await (tx as never as Record<string, { deleteMany: (a: object) => Promise<unknown> }>)[t].deleteMany({});
+        for (const t of [...TABLES].reverse()) await txModels[t].deleteMany({});
         for (const t of TABLES) {
           const rows = data[t] as object[];
-          if (rows.length) await (tx as never as Record<string, { createMany: (a: object) => Promise<unknown> }>)[t].createMany({ data: rows });
+          if (rows.length) await txModels[t].createMany({ data: rows });
           counts[t] = rows.length;
         }
       },

@@ -33,10 +33,16 @@ export function daysBetween(a: Date, b: Date): number {
   return Math.max(0, Math.floor((b.getTime() - a.getTime()) / 86_400_000));
 }
 
-/** Date shifted by n whole calendar months (used for loan term-end / cooldown windows). */
+/** Date shifted by n whole calendar months (used for loan term-end / cooldown windows).
+ * Clamps to month-end so a month-end start doesn't overflow: Jan 31 + 1 → Feb 28, not Mar 3.
+ * Anchor from the original day each call (don't step a clamped value) to avoid drift. */
 export function addMonths(d: Date, n: number): Date {
+  const day = d.getUTCDate();
   const r = new Date(d);
+  r.setUTCDate(1);
   r.setUTCMonth(r.getUTCMonth() + n);
+  const lastDay = new Date(Date.UTC(r.getUTCFullYear(), r.getUTCMonth() + 1, 0)).getUTCDate();
+  r.setUTCDate(Math.min(day, lastDay));
   return r;
 }
 
