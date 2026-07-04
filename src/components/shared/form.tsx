@@ -8,9 +8,9 @@ const fieldCls =
 export function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
     <label className="block">
-      <span className="mb-2 block text-[11px] font-bold uppercase leading-none tracking-[0.05em] text-fnt">{label}</span>
+      <span className="mb-2 block text-11 font-bold uppercase leading-none tracking-5 text-fnt">{label}</span>
       {children}
-      {hint && <span className="mt-1.5 block text-[11px] font-medium leading-[1.4] text-fnt">{hint}</span>}
+      {hint && <span className="mt-1.5 block text-11 font-medium leading-140 text-fnt">{hint}</span>}
     </label>
   );
 }

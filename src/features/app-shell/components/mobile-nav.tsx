@@ -30,11 +30,11 @@ export function MobileTopBar({ user, unread = 0 }: { user: CurrentUser; unread?:
   const pathname = usePathname();
   const title = sectionTitle(pathname);
   return (
-    <header className="sticky top-0 z-10 flex items-center gap-2.5 border-b border-hair bg-sf px-4 py-[15px] md:hidden">
+    <header className="sticky top-0 z-10 flex items-center gap-2.5 border-b border-hair bg-sf px-4 py-3.75 md:hidden">
       <BrandLockup href="/dashboard" markPx={42} wordSize={19} />
       {title && (
         <>
-          <span className="h-[15px] w-px flex-none bg-bd" />
+          <span className="h-3.75 w-px flex-none bg-bd" />
           <span className="min-w-0 truncate text-sm font-semibold text-mut">{title}</span>
         </>
       )}
@@ -42,23 +42,23 @@ export function MobileTopBar({ user, unread = 0 }: { user: CurrentUser; unread?:
       <Link
         href="/share"
         aria-label="Share"
-        className="flex size-[34px] flex-none items-center justify-center rounded-full border border-bd text-mut"
+        className="flex size-8.5 flex-none items-center justify-center rounded-full border border-bd text-mut"
       >
         <Upload className="size-4" strokeWidth={2} />
       </Link>
       <Link
         href="/notifications"
         aria-label="Notifications"
-        className="relative flex size-[34px] flex-none items-center justify-center rounded-full border border-bd text-mut"
+        className="relative flex size-8.5 flex-none items-center justify-center rounded-full border border-bd text-mut"
       >
         <Bell className="size-4" strokeWidth={2} />
         {unread > 0 && (
-          <span className="absolute -right-[3px] -top-[3px] flex h-4 min-w-4 items-center justify-center rounded-lg border-2 border-sf bg-out px-[3px] font-mono text-[9px] font-bold text-white">
+          <span className="absolute -right-0.75 -top-0.75 flex h-4 min-w-4 items-center justify-center rounded-lg border-2 border-sf bg-out px-0.75 font-mono text-9 font-bold text-white">
             {unread}
           </span>
         )}
       </Link>
-      <UserAvatar initials={user.initials} avatarUrl={user.avatarUrl} className="size-[34px] bg-nbg text-xs font-bold text-nfg" />
+      <UserAvatar initials={user.initials} avatarUrl={user.avatarUrl} className="size-8.5 bg-nbg text-xs font-bold text-nfg" />
     </header>
   );
 }
@@ -86,7 +86,7 @@ export function MobileBottomNav() {
         <button
           aria-label="Add entry"
           onClick={() => addEntry.open()}
-          className="-mt-5 flex size-[52px] items-center justify-center rounded-full bg-teal text-white shadow-[0_8px_18px_rgba(14,140,130,0.35)] ring-4 ring-sf"
+          className="-mt-5 flex size-13 items-center justify-center rounded-full bg-teal text-white shadow-[0_8px_18px_rgba(14,140,130,0.35)] ring-4 ring-sf"
         >
           <Plus className="size-6" strokeWidth={2.5} />
         </button>
@@ -102,7 +102,7 @@ function Tab({ label, href, icon: Icon, active }: { label: string; href: string;
   return (
     <Link href={href} className={`flex flex-1 flex-col items-center gap-1 py-2.5 ${active ? "text-teal" : "text-mut"}`}>
       <Icon className="size-5" strokeWidth={active ? 2.4 : 2} />
-      <span className="text-[10px] font-semibold leading-none">{label}</span>
+      <span className="text-10 font-semibold leading-none">{label}</span>
     </Link>
   );
 }

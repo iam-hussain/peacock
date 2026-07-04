@@ -21,13 +21,13 @@ export function RangeTabs({
   const active = value ?? internal;
   const set = onChange ?? setInternal;
   return (
-    <div className={`flex rounded-lg bg-bg2 p-[3px] ${compact ? "gap-[3px]" : "gap-1"}`}>
+    <div className={`flex rounded-lg bg-bg2 p-0.75 ${compact ? "gap-0.75" : "gap-1"}`}>
       {ranges.map((r) => (
         <button
           key={r}
           onClick={() => set(r)}
           className={`rounded-md font-semibold leading-none transition-colors ${
-            compact ? "px-2 py-1.5 text-[10px]" : "px-[9px] py-1.5 text-[11px]"
+            compact ? "px-2 py-1.5 text-10" : "px-2.25 py-1.5 text-11"
           } ${active === r ? "bg-sf text-ink shadow-sm" : "text-mut"}`}
         >
           {r}

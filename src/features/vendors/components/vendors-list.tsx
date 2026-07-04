@@ -38,7 +38,7 @@ export function VendorsList({ vendors, stats }: { vendors: Vendor[]; stats: Vend
   const inPoster = useInPoster();
   const cycles = quarterOptions();
   return (
-    <div className="mx-auto max-w-[1280px] p-4 pb-[78px] md:p-[26px] md:pb-[26px]">
+    <div className="mx-auto max-w-320 p-4 pb-19.5 md:p-6.5 md:pb-6.5">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         {/* Title — desktop only (forced in the poster regardless of viewport) */}
         <h1 className={`text-2xl font-bold leading-none tracking-[-0.02em] text-ink ${inPoster ? "block" : "hidden md:block"}`}>Vendors &amp; chits</h1>
@@ -50,7 +50,7 @@ export function VendorsList({ vendors, stats }: { vendors: Vendor[]; stats: Vend
             kind="newVendor"
             submitLabel="Add vendor"
             outro={
-              <p className="rounded-[11px] bg-sf2 px-3.5 py-3 text-[12px] font-medium leading-[1.5] text-mut">
+              <p className="rounded-11 bg-sf2 px-3.5 py-3 text-12 font-medium leading-150 text-mut">
                 Invested capital and returns are tracked automatically from <span className="font-semibold text-ink">transactions</span> — record a vendor investment or return entry, no amount is set here.
               </p>
             }
@@ -59,11 +59,11 @@ export function VendorsList({ vendors, stats }: { vendors: Vendor[]; stats: Vend
               { name: "category", label: "Type", options: VENDOR_TYPES, half: true },
               { name: "cycle", label: "Cycle", options: cycles, half: true },
             ]}
-            buttonClassName="flex-1 rounded-[9px] border border-bd2 bg-sf px-[15px] py-[11px] text-center text-[13px] font-semibold leading-none text-teal hover:bg-sf2 md:flex-none md:py-2.5"
+            buttonClassName="flex-1 rounded-9 border border-bd2 bg-sf px-3.75 py-2.75 text-center text-13 font-semibold leading-none text-teal hover:bg-sf2 md:flex-none md:py-2.5"
           >
             + New vendor
           </FormModalButton>
-          <NewChitDialog buttonClassName="flex-1 rounded-[9px] bg-teal px-4 py-[11px] text-center text-[13px] font-semibold leading-none text-white md:flex-none">
+          <NewChitDialog buttonClassName="flex-1 rounded-9 bg-teal px-4 py-2.75 text-center text-13 font-semibold leading-none text-white md:flex-none">
             + New chit
           </NewChitDialog>
         </div>
@@ -76,7 +76,7 @@ export function VendorsList({ vendors, stats }: { vendors: Vendor[]; stats: Vend
         ))}
       </div>
 
-      <div className="overflow-hidden rounded-2xl border border-bd bg-sf shadow-[0_1px_2px_var(--shadow)]">
+      <div className="overflow-hidden rounded-2xl border border-bd bg-sf shadow-card">
         {vendors.map((v) => (
           <VendorRow key={v.id} v={v} />
         ))}
@@ -89,16 +89,16 @@ function VendorRow({ v }: { v: Vendor }) {
   return (
     <Link
       href={`/vendors/${v.id}`}
-      className="flex items-center gap-3.5 border-b border-hr2 px-[18px] py-4 transition-colors last:border-b-0 hover:bg-sf2"
+      className="flex items-center gap-3.5 border-b border-hr2 px-4.5 py-4 transition-colors last:border-b-0 hover:bg-sf2"
     >
-      <span className="flex size-9 flex-none items-center justify-center rounded-[10px] bg-teal-dark text-xs font-bold text-white">
+      <span className="flex size-9 flex-none items-center justify-center rounded-10 bg-teal-dark text-xs font-bold text-white">
         {v.ini}
       </span>
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 items-center gap-2">
           <span className="min-w-0 truncate text-sm font-semibold leading-none text-ink">{v.name}</span>
           <span
-            className={`rounded-md px-[7px] py-[3px] text-[8px] font-bold uppercase leading-none tracking-[0.05em] ${
+            className={`rounded-md px-1.75 py-0.75 text-8 font-bold uppercase leading-none tracking-5 ${
               v.type === "chit" ? "bg-wbg text-wfg" : "bg-tlsf text-teal"
             }`}
           >
@@ -106,7 +106,7 @@ function VendorRow({ v }: { v: Vendor }) {
           </span>
           <StatusBadge status={v.status} label={v.statusLabel} />
         </div>
-        <div className="mt-1.5 text-[11px] font-medium leading-[1.3] text-fnt">
+        <div className="mt-1.5 text-11 font-medium leading-130 text-fnt">
           {v.cycle} · invested {v.invested}
           {v.obligation && <span className="text-out"> · owes {v.obligation}</span>}
         </div>
@@ -115,7 +115,7 @@ function VendorRow({ v }: { v: Vendor }) {
         <div className={`font-mono text-base font-semibold leading-none ${v.roiPositive ? "text-in" : "text-out"}`}>
           {v.profit}
         </div>
-        <div className="mt-1 font-mono text-[11px] font-medium leading-[1.3] text-fnt">{v.roi}</div>
+        <div className="mt-1 font-mono text-11 font-medium leading-130 text-fnt">{v.roi}</div>
       </div>
       <ChevronRight className="size-4 flex-none text-fnt" strokeWidth={2} />
     </Link>

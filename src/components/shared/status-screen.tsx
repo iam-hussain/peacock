@@ -20,7 +20,7 @@ export function StatusScreen({
         {code}
       </div>
       <h1 className="mt-5 text-xl font-bold leading-tight tracking-[-0.02em] text-ink md:text-2xl">{title}</h1>
-      <p className="mt-2.5 max-w-[340px] text-sm font-medium leading-[1.5] text-fnt">{message}</p>
+      <p className="mt-2.5 max-w-[340px] text-sm font-medium leading-150 text-fnt">{message}</p>
       {children && <div className="mt-8 flex flex-wrap items-center justify-center gap-3">{children}</div>}
     </div>
   );
@@ -31,7 +31,7 @@ export function StatusPrimaryLink({ href, children }: { href: string; children: 
   return (
     <Link
       href={href}
-      className="rounded-[13px] bg-teal px-5 py-3 text-[15px] font-semibold leading-none text-white transition-opacity hover:opacity-90"
+      className="rounded-13 bg-teal px-5 py-3 text-15 font-semibold leading-none text-white transition-opacity hover:opacity-90"
     >
       {children}
     </Link>

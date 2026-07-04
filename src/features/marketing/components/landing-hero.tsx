@@ -21,32 +21,32 @@ export function LandingHero() {
             </div>
           </div>
 
-          <h1 className="max-w-[480px] font-display text-[30px] font-extrabold leading-[1.12] tracking-[-0.025em] text-ink">
+          <h1 className="max-w-120 font-display text-30 font-extrabold leading-112 tracking-[-0.025em] text-ink">
             Every rupee your club holds, in plain sight.
           </h1>
-          <p className="mt-[13px] max-w-[460px] text-[15px] font-medium leading-[1.55] text-mut">
+          <p className="mt-3.25 max-w-[460px] text-15 font-medium leading-155 text-mut">
             Deposits, loans, interest and vendor returns — recorded in seconds, transparent to every
             member.
           </p>
 
-          <div className="mt-[30px] flex gap-3">
+          <div className="mt-7.5 flex gap-3">
             <Link
               href="/login"
-              className="rounded-xl bg-teal px-[26px] py-[15px] text-[15px] font-semibold leading-none text-white"
+              className="rounded-xl bg-teal px-6.5 py-3.75 text-15 font-semibold leading-none text-white"
             >
               Sign in to your club
             </Link>
             <Link
               href="/how-it-works"
-              className="rounded-xl border border-bd2 px-6 py-[15px] text-[15px] font-semibold leading-none text-ink"
+              className="rounded-xl border border-bd2 px-6 py-3.75 text-15 font-semibold leading-none text-ink"
             >
               See how it works
             </Link>
           </div>
 
-          <div className="mt-[38px] flex items-stretch gap-[26px]">
+          <div className="mt-9.5 flex items-stretch gap-6.5">
             {STATS.map((s, i) => (
-              <div key={s.label} className="flex items-stretch gap-[26px]">
+              <div key={s.label} className="flex items-stretch gap-6.5">
                 {i > 0 && <span className="w-px bg-bd" />}
                 <div>
                   <div
@@ -54,7 +54,7 @@ export function LandingHero() {
                   >
                     {s.value}
                   </div>
-                  <div className="mt-1.5 text-xs font-medium leading-[1.3] text-fnt">{s.label}</div>
+                  <div className="mt-1.5 text-xs font-medium leading-130 text-fnt">{s.label}</div>
                 </div>
               </div>
             ))}

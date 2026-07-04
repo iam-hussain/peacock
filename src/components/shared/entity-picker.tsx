@@ -25,7 +25,7 @@ const BADGE_TONES: Record<PickBadgeTone, string> = {
 /** Small pill for a PickOption's priority / eligibility hint. */
 export function PickBadge({ text, tone = "med" }: { text: string; tone?: PickBadgeTone }) {
   return (
-    <span className={`flex-none rounded-md px-[7px] py-[3px] text-[9px] font-bold uppercase leading-none tracking-[0.04em] ${BADGE_TONES[tone]}`}>
+    <span className={`flex-none rounded-md px-1.75 py-0.75 text-9 font-bold uppercase leading-none tracking-4 ${BADGE_TONES[tone]}`}>
       {text}
     </span>
   );
@@ -52,15 +52,15 @@ export function SelectorCard({
       {selected ? (
         <Avatar name={selected.name} src={selected.avatar} size={38} muted />
       ) : (
-        <span className="flex size-[38px] flex-none items-center justify-center rounded-full border border-dashed border-bd2 text-fnt">
-          <HelpCircle className="size-[18px]" strokeWidth={2} />
+        <span className="flex size-9.5 flex-none items-center justify-center rounded-full border border-dashed border-bd2 text-fnt">
+          <HelpCircle className="size-4.5" strokeWidth={2} />
         </span>
       )}
       <div className="min-w-0 flex-1">
         <div className="truncate text-[14px] font-bold leading-tight text-ink">{selected ? selected.name : placeholder}</div>
-        <div className="mt-0.5 truncate text-[12px] font-medium leading-tight text-fnt">{selected ? selected.sub ?? "" : hint}</div>
+        <div className="mt-0.5 truncate text-12 font-medium leading-tight text-fnt">{selected ? selected.sub ?? "" : hint}</div>
       </div>
-      <span className="flex-none text-[13px] font-semibold text-teal">{selected ? "Change" : "Select"}</span>
+      <span className="flex-none text-13 font-semibold text-teal">{selected ? "Change" : "Select"}</span>
     </button>
   );
 }
@@ -94,18 +94,18 @@ export function PickerSheet({
           type="button"
           onClick={onBack}
           aria-label="Back"
-          className="flex size-9 flex-none items-center justify-center rounded-[10px] border border-bd2 text-ink hover:bg-bg2"
+          className="flex size-9 flex-none items-center justify-center rounded-10 border border-bd2 text-ink hover:bg-bg2"
         >
-          <ChevronLeft className="size-[18px]" strokeWidth={2.2} />
+          <ChevronLeft className="size-4.5" strokeWidth={2.2} />
         </button>
         <div className="min-w-0 flex-1">
           <h2 className="text-base font-bold leading-tight text-ink">{title}</h2>
-          <p className="mt-1 text-xs font-medium leading-[1.4] text-fnt">{subtitle}</p>
+          <p className="mt-1 text-xs font-medium leading-140 text-fnt">{subtitle}</p>
         </div>
       </div>
 
-      <div className="flex items-center gap-2 rounded-[11px] border border-bd2 px-3">
-        <Search className="size-[15px] flex-none text-fnt" strokeWidth={2} />
+      <div className="flex items-center gap-2 rounded-11 border border-bd2 px-3">
+        <Search className="size-3.75 flex-none text-fnt" strokeWidth={2} />
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
@@ -129,11 +129,11 @@ export function PickerSheet({
                 <span className="truncate text-sm font-bold leading-tight text-ink">{o.name}</span>
                 {o.badge && <PickBadge text={o.badge} tone={o.badgeTone} />}
               </div>
-              {o.sub && <div className="mt-0.5 truncate text-[12px] font-medium leading-tight text-fnt">{o.sub}</div>}
+              {o.sub && <div className="mt-0.5 truncate text-12 font-medium leading-tight text-fnt">{o.sub}</div>}
             </div>
           </button>
         ))}
-        {list.length === 0 && <div className="py-8 text-center text-[13px] font-medium text-fnt">No matches.</div>}
+        {list.length === 0 && <div className="py-8 text-center text-13 font-medium text-fnt">No matches.</div>}
       </div>
     </div>
   );

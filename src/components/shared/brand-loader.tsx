@@ -30,7 +30,7 @@ export function BrandLoader({
           <span className="size-1.5 rounded-full bg-teal" />
           <span className="size-1.5 rounded-full bg-teal" />
         </div>
-        <span className="text-[11px] font-bold uppercase leading-none tracking-[0.14em] text-fnt">{label}</span>
+        <span className="text-11 font-bold uppercase leading-none tracking-14 text-fnt">{label}</span>
       </div>
     </div>
   );

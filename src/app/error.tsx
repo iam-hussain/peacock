@@ -11,7 +11,7 @@ export default function Error({ reset }: { error: Error & { digest?: string }; r
     >
       <button
         onClick={reset}
-        className="rounded-[13px] border border-bd bg-sf px-5 py-3 text-[15px] font-semibold leading-none text-ink transition-colors hover:bg-sf2"
+        className="rounded-13 border border-bd bg-sf px-5 py-3 text-15 font-semibold leading-none text-ink transition-colors hover:bg-sf2"
       >
         Try again
       </button>

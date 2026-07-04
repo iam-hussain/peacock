@@ -42,6 +42,11 @@
 
   --shadow: rgba(20, 32, 30, 0.06);
 
+  /* white-alpha overlays used on the always-dark ink-surface "rejoin" card
+     (constant across themes — the card is dark in both light and dark mode) */
+  --hair-on-dark: rgba(255, 255, 255, 0.13); /* hairline border on dark card */
+  --fill-on-dark: rgba(255, 255, 255, 0.07); /* subtle fill on dark card */
+
   /* ---- shadcn semantic aliases mapped to the brand palette ---- */
   --background: var(--bg);
   --foreground: var(--ink);
@@ -190,6 +195,80 @@
   --color-outbg: var(--outbg);
   --color-outfg: var(--outfg);
   --color-outbd: var(--outbd);
+
+  /* white-alpha overlay colors (dark rejoin card) — bg-fill-on-dark, border-hair-on-dark */
+  --color-hair-on-dark: var(--hair-on-dark);
+  --color-fill-on-dark: var(--fill-on-dark);
+
+  /* ---- px-exact design scale — named tokens for recurring arbitrary utilities ----
+     These map 1:1 to the shared design's literal pixel values (no rounding). Use as
+     utilities: text-13 = 13px, rounded-11 = 11px radius, shadow-card, leading-140 = 1.40,
+     tracking-5 = 0.05em. One-off values stay as arbitrary [..] utilities by design. */
+
+  /* font sizes (font-size only; line-height set separately via leading-*) */
+  --text-8: 8px;
+  --text-9: 9px;
+  --text-10: 10px;
+  --text-11: 11px;
+  --text-12: 12px;
+  --text-13: 13px;
+  --text-15: 15px;
+  --text-17: 17px;
+  --text-19: 19px;
+  --text-21: 21px;
+  --text-22: 22px;
+  --text-25: 25px;
+  --text-26: 26px;
+  --text-28: 28px;
+  --text-30: 30px;
+  --text-32: 32px;
+  --text-38: 38px;
+
+  /* border radii (px-exact) */
+  --radius-3: 3px;
+  --radius-5: 5px;
+  --radius-7: 7px;
+  --radius-8: 8px;
+  --radius-9: 9px;
+  --radius-10: 10px;
+  --radius-11: 11px;
+  --radius-12: 12px;
+  --radius-13: 13px;
+  --radius-14: 14px;
+  --radius-15: 15px;
+  --radius-18: 18px;
+  --radius-20: 20px;
+
+  /* line-heights (unitless; token number = value x100, e.g. leading-140 = 1.40) */
+  --leading-90: 0.9;
+  --leading-103: 1.03;
+  --leading-105: 1.05;
+  --leading-106: 1.06;
+  --leading-110: 1.1;
+  --leading-112: 1.12;
+  --leading-115: 1.15;
+  --leading-120: 1.2;
+  --leading-130: 1.3;
+  --leading-135: 1.35;
+  --leading-140: 1.4;
+  --leading-145: 1.45;
+  --leading-150: 1.5;
+  --leading-155: 1.55;
+  --leading-160: 1.6;
+
+  /* letter-spacing (token number = value x100 in em, e.g. tracking-5 = 0.05em) */
+  --tracking-3: 0.03em;
+  --tracking-4: 0.04em;
+  --tracking-5: 0.05em;
+  --tracking-6: 0.06em;
+  --tracking-7: 0.07em;
+  --tracking-8: 0.08em;
+  --tracking-12: 0.12em;
+  --tracking-14: 0.14em;
+
+  /* box-shadows (reuse the existing theme-aware --shadow color var) */
+  --shadow-card: 0 1px 2px var(--shadow);
+  --shadow-pop: 0 1px 2px var(--shadow), 0 24px 60px var(--shadow);
 
   --font-sans: var(--font-sans), system-ui, sans-serif;
   --font-display: var(--font-display), system-ui, sans-serif;

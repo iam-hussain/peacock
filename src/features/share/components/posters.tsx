@@ -17,20 +17,20 @@ export interface ClubSections { club: boolean; members: boolean; loans: boolean;
 // Header/footer are a fixed light brand frame — the poster is always exported light.
 function PosterHeader({ title, asOf, subtitle }: { title: string; asOf: string; subtitle: string }) {
   return (
-    <div className="flex items-center justify-between border-b border-hair px-[56px] py-8">
+    <div className="flex items-center justify-between border-b border-hair px-14 py-8">
       <div className="flex items-center gap-4">
         <PeacockMark px={58} biasY={54} />
         <div>
-          <div className="flex items-end gap-[7px]">
-            <span className="font-display text-[38px] font-extrabold leading-[0.9] tracking-[-0.03em] text-ink">peacock</span>
-            <span className="mb-1.5 size-[9px] rounded-full bg-teal" />
+          <div className="flex items-end gap-1.75">
+            <span className="font-display text-38 font-extrabold leading-90 tracking-[-0.03em] text-ink">peacock</span>
+            <span className="mb-1.5 size-2.25 rounded-full bg-teal" />
           </div>
-          <div className="mt-2.5 text-sm font-semibold leading-none tracking-[0.05em] text-mut">INVESTMENT CLUB</div>
+          <div className="mt-2.5 text-sm font-semibold leading-none tracking-5 text-mut">INVESTMENT CLUB</div>
         </div>
       </div>
       <div className="text-right">
-        <div className="font-mono text-[13px] font-semibold leading-none tracking-[0.14em] text-teal">{title}</div>
-        <div className="mt-3 text-[15px] font-medium leading-none text-mut">{asOf}</div>
+        <div className="font-mono text-13 font-semibold leading-none tracking-14 text-teal">{title}</div>
+        <div className="mt-3 text-15 font-medium leading-none text-mut">{asOf}</div>
         <div className="mt-1.5 text-sm font-medium leading-none text-mut">{subtitle}</div>
       </div>
     </div>
@@ -38,18 +38,18 @@ function PosterHeader({ title, asOf, subtitle }: { title: string; asOf: string; 
 }
 function PosterFooter() {
   return (
-    <div className="flex items-center justify-between border-t border-hair px-[56px] pb-11 pt-7">
+    <div className="flex items-center justify-between border-t border-hair px-14 pb-11 pt-7">
       <div className="flex items-center gap-4">
         <PeacockMark px={40} />
         <div className="flex items-end gap-1.5">
-          <span className="font-display text-2xl font-extrabold leading-[0.9] tracking-[-0.03em] text-ink">peacock</span>
-          <span className="mb-1 size-[7px] rounded-full bg-teal" />
-          <span className="ml-2 text-[15px] font-semibold leading-none text-teal">Many feathers, one fortune.</span>
+          <span className="font-display text-2xl font-extrabold leading-90 tracking-[-0.03em] text-ink">peacock</span>
+          <span className="mb-1 size-1.75 rounded-full bg-teal" />
+          <span className="ml-2 text-15 font-semibold leading-none text-teal">Many feathers, one fortune.</span>
         </div>
       </div>
       <div className="text-right">
-        <div className="text-[15px] font-semibold leading-none text-ink">Peacock Investment Club</div>
-        <div className="mt-2 text-[13px] font-medium leading-none text-mut">Figures in ₹ · admin snapshot</div>
+        <div className="text-15 font-semibold leading-none text-ink">Peacock Investment Club</div>
+        <div className="mt-2 text-13 font-medium leading-none text-mut">Figures in ₹ · admin snapshot</div>
       </div>
     </div>
   );
@@ -77,12 +77,12 @@ export const ClubReportPoster = forwardRef<HTMLDivElement, { data: ShareData; se
         <Frame>
           {sections.club && <Dashboard data={data.dashboard} greeting={{ hello: "", sub: "" }} />}
           {sections.members && (
-            <div className="mx-auto max-w-[1280px] px-[26px] pb-2 pt-1">
+            <div className="mx-auto max-w-320 px-6.5 pb-2 pt-1">
               <div className="mb-3 flex items-baseline justify-between">
                 <h2 className="text-xl font-bold leading-none tracking-[-0.02em] text-ink">Members</h2>
-                <span className="text-[13px] font-medium leading-none text-fnt">{incInactive ? `${members.length} members · incl. inactive` : `${members.length} active members`}</span>
+                <span className="text-13 font-medium leading-none text-fnt">{incInactive ? `${members.length} members · incl. inactive` : `${members.length} active members`}</span>
               </div>
-              <div className="overflow-hidden rounded-2xl border border-bd bg-sf shadow-[0_1px_2px_var(--shadow)]">
+              <div className="overflow-hidden rounded-2xl border border-bd bg-sf shadow-card">
                 <MembersTable members={members} />
               </div>
             </div>

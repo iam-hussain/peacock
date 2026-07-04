@@ -39,21 +39,21 @@ export function CatchupPenaltyCard({ m }: { m: MemberDetail }) {
         {(["catchup", "penalty"] as Bucket[]).map((b) => {
           const d = B[b];
           return (
-            <div key={b} className="overflow-hidden rounded-[18px] border border-bd bg-sf p-[18px] shadow-[0_1px_2px_var(--shadow)]">
+            <div key={b} className="overflow-hidden rounded-18 border border-bd bg-sf p-4.5 shadow-card">
               <div className="mb-3 flex items-center gap-2.5">
-                <span className={`size-2.5 rounded-[3px] ${d.bar}`} />
-                <h2 className="text-[15px] font-bold leading-none text-ink">{b === "catchup" ? "Catch-up" : "Penalty"}</h2>
+                <span className={`size-2.5 rounded-3 ${d.bar}`} />
+                <h2 className="text-15 font-bold leading-none text-ink">{b === "catchup" ? "Catch-up" : "Penalty"}</h2>
               </div>
-              <p className="mb-3 text-[11px] font-medium leading-[1.4] text-fnt">{d.subtitle}</p>
-              <div className="mb-[11px] flex items-center gap-[18px]">
+              <p className="mb-3 text-11 font-medium leading-140 text-fnt">{d.subtitle}</p>
+              <div className="mb-2.75 flex items-center gap-4.5">
                 <LedgerStat label="Assigned" value={d.assigned} />
                 <LedgerStat label="Paid" value={d.paid} accent />
                 <LedgerStat label="Remaining" value={d.remaining} accentClass={d.amt} />
               </div>
-              <div className="mb-[7px] h-1.5 overflow-hidden rounded-md bg-bg2">
+              <div className="mb-1.75 h-1.5 overflow-hidden rounded-md bg-bg2">
                 <div className={`h-full rounded-md ${d.bar}`} style={{ width: `${d.pct}%` }} />
               </div>
-              <div className="text-[11px] font-medium leading-none text-fnt">{d.pct}% paid · {d.remaining} remaining</div>
+              <div className="text-11 font-medium leading-none text-fnt">{d.pct}% paid · {d.remaining} remaining</div>
               <EntriesList entries={d.entries} bucket={b} styles={d} hidden={hidden} memberName={m.name} />
             </div>
           );
@@ -63,17 +63,17 @@ export function CatchupPenaltyCard({ m }: { m: MemberDetail }) {
   }
 
   return (
-    <div className="overflow-hidden rounded-[18px] border border-bd bg-sf shadow-[0_1px_2px_var(--shadow)]">
-      <div className="p-[18px]">
+    <div className="overflow-hidden rounded-18 border border-bd bg-sf shadow-card">
+      <div className="p-4.5">
         <div className="mb-3 flex items-center justify-between gap-3">
-          <h2 className="text-[15px] font-bold leading-none text-ink">Catch-up &amp; penalties</h2>
+          <h2 className="text-15 font-bold leading-none text-ink">Catch-up &amp; penalties</h2>
           <AdminOnly>
             <AddChargeDialog
               bucket={tab}
               memberName={m.name}
               hidden={hidden}
               suggest={cur.suggest}
-              className="flex-none rounded-[9px] border border-bd2 bg-tlsf px-[11px] py-2 text-xs font-semibold leading-none text-teal"
+              className="flex-none rounded-9 border border-bd2 bg-tlsf px-2.75 py-2 text-xs font-semibold leading-none text-teal"
             >
               + Add charge
             </AddChargeDialog>
@@ -85,17 +85,17 @@ export function CatchupPenaltyCard({ m }: { m: MemberDetail }) {
           <Tab active={tab === "penalty"} onClick={() => setTab("penalty")} dot="bg-wfg" activeText="text-wfg" label="Penalty" left={m.penaltyRemaining} />
         </div>
 
-        <p className="mb-3 text-[11px] font-medium leading-[1.4] text-fnt">{cur.subtitle}</p>
+        <p className="mb-3 text-11 font-medium leading-140 text-fnt">{cur.subtitle}</p>
 
-        <div className="mb-[11px] flex items-center gap-[18px]">
+        <div className="mb-2.75 flex items-center gap-4.5">
           <LedgerStat label="Assigned" value={cur.assigned} />
           <LedgerStat label="Paid" value={cur.paid} accent />
           <LedgerStat label="Remaining" value={cur.remaining} accentClass={cur.amt} />
         </div>
-        <div className="mb-[7px] h-1.5 overflow-hidden rounded-md bg-bg2">
+        <div className="mb-1.75 h-1.5 overflow-hidden rounded-md bg-bg2">
           <div className={`h-full rounded-md ${cur.bar}`} style={{ width: `${cur.pct}%` }} />
         </div>
-        <div className="text-[11px] font-medium leading-none text-fnt">{cur.pct}% paid · {cur.remaining} remaining</div>
+        <div className="text-11 font-medium leading-none text-fnt">{cur.pct}% paid · {cur.remaining} remaining</div>
 
         <EntriesList entries={cur.entries} bucket={tab} styles={cur} hidden={hidden} memberName={m.name} />
       </div>
@@ -110,9 +110,9 @@ export function CatchupPenaltyCard({ m }: { m: MemberDetail }) {
         remainingRupees={cur.remainingRupees}
         treasurers={m.treasurerOptions}
         submitLabel={isAdmin ? "Confirm payment" : "Submit for approval"}
-        className={`flex w-full items-center justify-center gap-2 ${cur.bar} px-[22px] py-[15px] text-[15px] font-semibold leading-none text-white`}
+        className={`flex w-full items-center justify-center gap-2 ${cur.bar} px-5.5 py-3.75 text-15 font-semibold leading-none text-white`}
       >
-        <Plus className="size-[17px]" strokeWidth={2.5} /> {isAdmin ? "Record" : "Request"} {tab === "penalty" ? "penalty" : "catch-up"} payment
+        <Plus className="size-4.25" strokeWidth={2.5} /> {isAdmin ? "Record" : "Request"} {tab === "penalty" ? "penalty" : "catch-up"} payment
       </RecordPaymentDialog>
     </div>
   );
@@ -122,15 +122,15 @@ function EntriesList({ entries, bucket, styles, hidden, memberName }: { entries:
   const inPoster = useInPoster();
   const [open, setOpen] = useState(true);
   if (!entries.length) {
-    return <p className="mt-4 border-t border-hr2 pt-4 text-center text-[13px] font-medium leading-[1.5] text-fnt">No charges or payments yet.</p>;
+    return <p className="mt-4 border-t border-hr2 pt-4 text-center text-13 font-medium leading-150 text-fnt">No charges or payments yet.</p>;
   }
   return (
     <div className="mt-4 border-t border-hr2 pt-3.5">
       {/* Poster: no collapse — always show every entry. */}
       {!inPoster && (
-        <button type="button" onClick={() => setOpen((o) => !o)} className="mb-1 flex w-full items-center justify-between text-[13px] font-semibold leading-none text-ink">
+        <button type="button" onClick={() => setOpen((o) => !o)} className="mb-1 flex w-full items-center justify-between text-13 font-semibold leading-none text-ink">
           {open ? "Hide" : "Show"} {entries.length} {entries.length === 1 ? "entry" : "entries"}
-          <ChevronDown className={`size-[18px] text-fnt transition-transform ${open ? "" : "-rotate-90"}`} strokeWidth={2} />
+          <ChevronDown className={`size-4.5 text-fnt transition-transform ${open ? "" : "-rotate-90"}`} strokeWidth={2} />
         </button>
       )}
       {(inPoster || open) && entries.map((e) => <EntryRow key={e.id} e={e} bucket={bucket} styles={styles} hidden={hidden} memberName={memberName} />)}
@@ -142,14 +142,14 @@ function EntryRow({ e, bucket, styles, hidden, memberName }: { e: LedgerEntryDTO
   const isPayment = e.kind === "payment";
   return (
     <div className="flex items-center gap-3 border-t border-hr2 py-3 first:border-t-0">
-      <span className={`flex size-8 flex-none items-center justify-center rounded-[9px] ${isPayment ? "bg-tlsf text-in" : styles.chargeIcon}`}>
+      <span className={`flex size-8 flex-none items-center justify-center rounded-9 ${isPayment ? "bg-tlsf text-in" : styles.chargeIcon}`}>
         {isPayment ? <Check className="size-4" strokeWidth={2.5} /> : <Plus className="size-4" strokeWidth={2.5} />}
       </span>
       <div className="min-w-0 flex-1">
         <div className="text-sm font-bold leading-tight text-ink">{e.title}</div>
-        <div className="mt-0.5 text-[11px] font-medium leading-none text-fnt">{e.by} · {e.date}</div>
+        <div className="mt-0.5 text-11 font-medium leading-none text-fnt">{e.by} · {e.date}</div>
       </div>
-      <span className={`font-mono text-[15px] font-semibold leading-none ${isPayment ? "text-in" : styles.amt}`}>{e.amount}</span>
+      <span className={`font-mono text-15 font-semibold leading-none ${isPayment ? "text-in" : styles.amt}`}>{e.amount}</span>
       <AdminOnly>
         {isPayment ? (
           <FormModalButton
@@ -162,10 +162,10 @@ function EntryRow({ e, bucket, styles, hidden, memberName }: { e: LedgerEntryDTO
               { name: "amount", label: "Amount received", defaultValue: e.editAmount, required: true },
               { name: "date", label: "Date", type: "date", defaultValue: e.editDate },
             ]}
-            buttonClassName="flex size-7 flex-none items-center justify-center rounded-[7px] border border-bd2 bg-sf text-fnt hover:bg-sf2"
+            buttonClassName="flex size-7 flex-none items-center justify-center rounded-7 border border-bd2 bg-sf text-fnt hover:bg-sf2"
             buttonAriaLabel="Edit payment"
           >
-            <Pencil className="size-[13px]" strokeWidth={2} />
+            <Pencil className="size-3.25" strokeWidth={2} />
           </FormModalButton>
         ) : (
           <AddChargeDialog
@@ -174,10 +174,10 @@ function EntryRow({ e, bucket, styles, hidden, memberName }: { e: LedgerEntryDTO
             hidden={hidden}
             editId={e.id}
             defaults={{ amount: e.editAmount, reason: e.editReason ?? "OTHER", date: e.editDate, note: e.editNote }}
-            className="flex size-7 flex-none items-center justify-center rounded-[7px] border border-bd2 bg-sf text-fnt hover:bg-sf2"
+            className="flex size-7 flex-none items-center justify-center rounded-7 border border-bd2 bg-sf text-fnt hover:bg-sf2"
             ariaLabel="Edit charge"
           >
-            <Pencil className="size-[13px]" strokeWidth={2} />
+            <Pencil className="size-3.25" strokeWidth={2} />
           </AddChargeDialog>
         )}
         <DeleteEntryDialog
@@ -188,10 +188,10 @@ function EntryRow({ e, bucket, styles, hidden, memberName }: { e: LedgerEntryDTO
           entryLabel={e.title}
           entryAmount={e.amount}
           entryDate={e.date}
-          className="flex size-7 flex-none items-center justify-center rounded-[7px] border border-bd2 bg-sf text-fnt hover:bg-wbg hover:text-out"
+          className="flex size-7 flex-none items-center justify-center rounded-7 border border-bd2 bg-sf text-fnt hover:bg-wbg hover:text-out"
           ariaLabel={isPayment ? "Delete payment" : "Delete charge"}
         >
-          <Trash2 className="size-[13px]" strokeWidth={2} />
+          <Trash2 className="size-3.25" strokeWidth={2} />
         </DeleteEntryDialog>
       </AdminOnly>
     </div>
@@ -203,14 +203,14 @@ function Tab({ active, onClick, dot, activeText, label, left }: { active: boolea
     <button
       type="button"
       onClick={onClick}
-      className={`flex-1 rounded-[11px] border px-[13px] py-2.5 text-left transition-colors ${active ? "border-teal/40 bg-tlsf" : "border-bd2 bg-sf"}`}
+      className={`flex-1 rounded-11 border px-3.25 py-2.5 text-left transition-colors ${active ? "border-teal/40 bg-tlsf" : "border-bd2 bg-sf"}`}
     >
-      <div className="flex items-center gap-[7px]">
-        <span className={`size-2 rounded-[3px] ${dot}`} />
+      <div className="flex items-center gap-1.75">
+        <span className={`size-2 rounded-3 ${dot}`} />
         <span className={`text-xs font-semibold leading-none ${active ? activeText : "text-mut"}`}>{label}</span>
       </div>
-      <div className="mt-[9px] font-mono text-[15px] font-semibold leading-none text-ink">
-        {left} <span className="font-sans text-[10px] font-medium text-fnt">left</span>
+      <div className="mt-2.25 font-mono text-15 font-semibold leading-none text-ink">
+        {left} <span className="font-sans text-10 font-medium text-fnt">left</span>
       </div>
     </button>
   );
@@ -219,8 +219,8 @@ function Tab({ active, onClick, dot, activeText, label, left }: { active: boolea
 function LedgerStat({ label, value, accent = false, accentClass }: { label: string; value: string; accent?: boolean; accentClass?: string }) {
   return (
     <div className="flex-1">
-      <div className="text-[10px] font-medium leading-none text-mut">{label}</div>
-      <div className={`mt-[7px] font-mono text-[15px] font-semibold leading-none ${accentClass ?? (accent ? "text-in" : "text-ink")}`}>{value}</div>
+      <div className="text-10 font-medium leading-none text-mut">{label}</div>
+      <div className={`mt-1.75 font-mono text-15 font-semibold leading-none ${accentClass ?? (accent ? "text-in" : "text-ink")}`}>{value}</div>
     </div>
   );
 }

@@ -44,13 +44,13 @@ export function MembersTable({ members }: { members: Member[] }) {
 
   return (
     <>
-      <div className={`grid ${MEMBERS_GRID} gap-3 border-b border-hair bg-sf2 px-5 py-[11px]`}>
+      <div className={`grid ${MEMBERS_GRID} gap-3 border-b border-hair bg-sf2 px-5 py-2.75`}>
         {MEMBER_COLS.map((c) => {
           const key = COL_SORT_KEY[c.key];
           const sortable = c.sort !== "none";
           const active = sort?.key === key;
           const arrow = !sortable ? "none" : active ? (sort!.dir === "asc" ? "up" : "down") : "updown";
-          const cls = `flex items-center gap-1 text-[10px] font-semibold uppercase leading-none tracking-[0.06em] text-fnt ${
+          const cls = `flex items-center gap-1 text-10 font-semibold uppercase leading-none tracking-6 text-fnt ${
             c.align === "right" ? "justify-end" : ""
           }`;
           return sortable ? (
@@ -79,11 +79,11 @@ function Row({ m }: { m: Member }) {
       href={`/members/${m.id}`}
       className={`grid ${MEMBERS_GRID} items-center gap-3 border-b border-hr2 px-5 py-3 transition-colors last:border-b-0 hover:bg-sf2`}
     >
-      <div className="flex items-center gap-[11px]">
+      <div className="flex items-center gap-2.75">
         <ListAvatar name={m.name} src={m.avatarUrl} size={32} />
         <div className="min-w-0">
-          <div className="text-[13px] font-semibold leading-none text-ink">{m.name}</div>
-          <div className="mt-[3px] whitespace-nowrap text-[11px] font-medium leading-[1.3] text-fnt">Joined {m.joined}</div>
+          <div className="text-13 font-semibold leading-none text-ink">{m.name}</div>
+          <div className="mt-0.75 whitespace-nowrap text-11 font-medium leading-130 text-fnt">Joined {m.joined}</div>
         </div>
       </div>
       <Cell v={m.deposits} />
@@ -100,7 +100,7 @@ function Row({ m }: { m: Member }) {
 }
 
 function Cell({ v, cls = "text-ink" }: { v: string; cls?: string }) {
-  return <div className={`whitespace-nowrap text-right font-mono text-[13px] font-semibold leading-none ${cls}`}>{v}</div>;
+  return <div className={`whitespace-nowrap text-right font-mono text-13 font-semibold leading-none ${cls}`}>{v}</div>;
 }
 
 /** Adjustment = total catch-up/penalty ever charged (main), with the still-unpaid amount as sub-text. */
@@ -108,8 +108,8 @@ function AdjustmentCell({ total, pending }: { total: string | null; pending: str
   if (!total) return <Cell v="—" cls="text-fnt" />;
   return (
     <div className="text-right">
-      <div className="whitespace-nowrap font-mono text-[13px] font-semibold leading-none text-ink">{total}</div>
-      <div className={`mt-1 whitespace-nowrap font-mono text-[11px] font-semibold leading-none ${pending ? "text-wfg" : "text-fnt"}`}>
+      <div className="whitespace-nowrap font-mono text-13 font-semibold leading-none text-ink">{total}</div>
+      <div className={`mt-1 whitespace-nowrap font-mono text-11 font-semibold leading-none ${pending ? "text-wfg" : "text-fnt"}`}>
         {pending ?? "₹0"} pending
       </div>
     </div>

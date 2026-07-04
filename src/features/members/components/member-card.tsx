@@ -18,8 +18,8 @@ export function MemberCard({ m }: { m: Member }) {
       <div className="flex items-center gap-3">
         <ListAvatar name={m.name} src={m.avatarUrl} size={44} />
         <div className="min-w-0 flex-1">
-          <div className="text-[15px] font-bold leading-tight text-ink">{m.name}</div>
-          <div className="mt-1 text-[11px] font-medium leading-none text-fnt">Joined {m.joined}</div>
+          <div className="text-15 font-bold leading-tight text-ink">{m.name}</div>
+          <div className="mt-1 text-11 font-medium leading-none text-fnt">Joined {m.joined}</div>
         </div>
         <StatusBadge status={m.status} />
       </div>
@@ -35,7 +35,7 @@ export function MemberCard({ m }: { m: Member }) {
           {chips.map((c) => (
             <span
               key={c.label}
-              className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[10px] font-semibold uppercase leading-none tracking-[0.04em] ${c.cls}`}
+              className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-10 font-semibold uppercase leading-none tracking-4 ${c.cls}`}
             >
               {c.label} <span className="font-mono">{c.v}</span>
             </span>
@@ -49,8 +49,8 @@ export function MemberCard({ m }: { m: Member }) {
 function Metric({ label, v, cls = "text-ink" }: { label: string; v: string; cls?: string }) {
   return (
     <div>
-      <div className="text-[10px] font-semibold uppercase leading-none tracking-[0.05em] text-fnt">{label}</div>
-      <div className={`mt-1.5 font-mono text-[15px] font-semibold leading-none ${cls}`}>{v}</div>
+      <div className="text-10 font-semibold uppercase leading-none tracking-5 text-fnt">{label}</div>
+      <div className={`mt-1.5 font-mono text-15 font-semibold leading-none ${cls}`}>{v}</div>
     </div>
   );
 }

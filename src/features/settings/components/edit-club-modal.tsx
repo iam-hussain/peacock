@@ -7,10 +7,10 @@ import { Modal, ModalActions } from "@/components/shared/modal";
 import { saveClubSettings } from "@/server/actions";
 import type { SettingsData } from "@/server/queries/settings";
 
-const label = "text-[11px] font-bold uppercase leading-none tracking-[0.06em] text-fnt";
+const label = "text-11 font-bold uppercase leading-none tracking-6 text-fnt";
 const input =
-  "w-full rounded-[11px] border border-bd2 bg-sf px-3.5 py-2.5 text-sm font-medium text-ink outline-none placeholder:text-fnt focus:border-teal";
-const locked = "flex items-center justify-between rounded-[11px] border border-bd bg-bg2 px-3.5 py-2.5 text-sm font-medium text-mut";
+  "w-full rounded-11 border border-bd2 bg-sf px-3.5 py-2.5 text-sm font-medium text-ink outline-none placeholder:text-fnt focus:border-teal";
+const locked = "flex items-center justify-between rounded-11 border border-bd bg-bg2 px-3.5 py-2.5 text-sm font-medium text-mut";
 
 function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
   return (
@@ -19,9 +19,9 @@ function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void 
       role="switch"
       aria-checked={on}
       onClick={() => onChange(!on)}
-      className={`relative h-[26px] w-[46px] flex-none rounded-full transition-colors ${on ? "bg-teal" : "bg-bd2"}`}
+      className={`relative h-6.5 w-11.5 flex-none rounded-full transition-colors ${on ? "bg-teal" : "bg-bd2"}`}
     >
-      <span className={`absolute top-[3px] size-5 rounded-full bg-white shadow-sm transition-all ${on ? "left-[23px]" : "left-[3px]"}`} />
+      <span className={`absolute top-0.75 size-5 rounded-full bg-white shadow-sm transition-all ${on ? "left-[23px]" : "left-0.75"}`} />
     </button>
   );
 }
@@ -76,7 +76,7 @@ export function EditClubButton({ edit, className }: { edit: SettingsData["club"]
               {edit.name}
               <Lock className="size-4 text-fnt" strokeWidth={2} />
             </div>
-            <span className="text-[11px] font-medium text-fnt">The club name can&apos;t be changed.</span>
+            <span className="text-11 font-medium text-fnt">The club name can&apos;t be changed.</span>
           </div>
 
           <div className="flex flex-col gap-1.5">
@@ -85,7 +85,7 @@ export function EditClubButton({ edit, className }: { edit: SettingsData["club"]
               <input className={input} inputMode="decimal" placeholder="₹ New amount" value={depositAmount} onChange={(e) => setDepositAmount(e.target.value)} />
               <input className={input} type="date" aria-label="Deposit effective from" value={depositFrom} onChange={(e) => setDepositFrom(e.target.value)} />
             </div>
-            <span className="text-[11px] font-medium text-fnt">Currently {edit.currentDeposit} / mo. Leave blank to keep it.</span>
+            <span className="text-11 font-medium text-fnt">Currently {edit.currentDeposit} / mo. Leave blank to keep it.</span>
           </div>
 
           <div className="flex flex-col gap-1.5">
@@ -94,15 +94,15 @@ export function EditClubButton({ edit, className }: { edit: SettingsData["club"]
               <input className={input} inputMode="decimal" placeholder="New rate % / mo" value={rate} onChange={(e) => setRate(e.target.value)} />
               <input className={input} type="date" aria-label="Rate effective from" value={rateFrom} onChange={(e) => setRateFrom(e.target.value)} />
             </div>
-            <span className="text-[11px] font-medium leading-[1.5] text-fnt">
+            <span className="text-11 font-medium leading-150 text-fnt">
               Applies to new loans only — existing loans keep their origination rate. Currently {edit.currentRate}.
             </span>
           </div>
 
-          <div className="flex items-center justify-between rounded-[13px] border border-bd px-4 py-3.5">
+          <div className="flex items-center justify-between rounded-13 border border-bd px-4 py-3.5">
             <div>
               <div className="text-sm font-bold leading-none text-ink">Dividend distribution</div>
-              <div className="mt-1 text-[11px] font-medium leading-none text-fnt">When off, profit accumulates in the club.</div>
+              <div className="mt-1 text-11 font-medium leading-none text-fnt">When off, profit accumulates in the club.</div>
             </div>
             <Toggle on={dividend} onChange={setDividend} />
           </div>
@@ -115,7 +115,7 @@ export function EditClubButton({ edit, className }: { edit: SettingsData["club"]
             </div>
           </div>
 
-          {error && <p className="text-[13px] font-medium text-out">{error}</p>}
+          {error && <p className="text-13 font-medium text-out">{error}</p>}
         </div>
       </Modal>
     </>

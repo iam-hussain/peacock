@@ -16,22 +16,22 @@ export function MembersList({ members, summary, joinPreview }: { members: Member
     <>
       {/* Desktop */}
       <div className="hidden md:block">
-        <div className="mx-auto max-w-[1280px] p-[26px]">
-          <div className="mb-[18px] flex items-center justify-between">
+        <div className="mx-auto max-w-320 p-6.5">
+          <div className="mb-4.5 flex items-center justify-between">
             <div>
               <h1 className="text-2xl font-bold leading-none tracking-[-0.02em] text-ink">Members</h1>
-              <p className="mt-[5px] text-[13px] font-medium leading-[1.4] text-mut">
+              <p className="mt-1.25 text-13 font-medium leading-140 text-mut">
                 {summary.text} · {summary.totalDeposits} total deposits
               </p>
             </div>
             <AdminOnly>
-              <AddMemberDialog preview={joinPreview} buttonClassName="flex items-center gap-1 rounded-[9px] bg-teal px-4 py-[11px] text-[13px] font-semibold leading-none text-white">
+              <AddMemberDialog preview={joinPreview} buttonClassName="flex items-center gap-1 rounded-9 bg-teal px-4 py-2.75 text-13 font-semibold leading-none text-white">
                 <Plus className="size-3.5" strokeWidth={2.5} /> Add member
               </AddMemberDialog>
             </AdminOnly>
           </div>
 
-          <div className="overflow-hidden rounded-2xl border border-bd bg-sf shadow-[0_1px_2px_var(--shadow)]">
+          <div className="overflow-hidden rounded-2xl border border-bd bg-sf shadow-card">
             <MembersBrowser members={members} />
           </div>
         </div>

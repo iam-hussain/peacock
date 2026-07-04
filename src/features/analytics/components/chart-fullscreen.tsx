@@ -35,7 +35,7 @@ export function ChartFullscreen({
       <button
         onClick={() => setOpen(true)}
         aria-label="View chart fullscreen"
-        className="absolute right-3 top-3 z-10 flex size-9 items-center justify-center rounded-lg border border-bd2 bg-sf text-mut shadow-[0_1px_2px_var(--shadow)] active:bg-sf2 md:hidden"
+        className="absolute right-3 top-3 z-10 flex size-9 items-center justify-center rounded-lg border border-bd2 bg-sf text-mut shadow-card active:bg-sf2 md:hidden"
       >
         <Maximize2 className="size-4" strokeWidth={2.2} />
       </button>
@@ -45,7 +45,7 @@ export function ChartFullscreen({
           <button
             onClick={() => setOpen(false)}
             aria-label="Close fullscreen"
-            className="absolute right-4 top-4 z-10 flex size-10 items-center justify-center rounded-full border border-bd2 bg-sf text-ink shadow-[0_1px_2px_var(--shadow)] active:bg-sf2"
+            className="absolute right-4 top-4 z-10 flex size-10 items-center justify-center rounded-full border border-bd2 bg-sf text-ink shadow-card active:bg-sf2"
           >
             <X className="size-5" strokeWidth={2.2} />
           </button>
@@ -55,7 +55,7 @@ export function ChartFullscreen({
             className="absolute left-1/2 top-1/2 flex origin-center -translate-x-1/2 -translate-y-1/2 rotate-90 flex-col p-6"
             style={{ width: "100dvh", height: "100dvw" }}
           >
-            <div className="mb-1 text-[13px] font-semibold leading-none text-mut">{title}</div>
+            <div className="mb-1 text-13 font-semibold leading-none text-mut">{title}</div>
             <div className="mb-4 font-mono text-3xl font-semibold leading-none tracking-[-0.01em] text-ink">{value}</div>
             <div className="min-h-0 flex-1">
               <AxisChart data={data} labels={labels} unit={unit} rotated />

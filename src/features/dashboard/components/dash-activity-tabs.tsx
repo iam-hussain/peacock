@@ -18,14 +18,14 @@ export function DashActivityTabs({ activity }: { activity: DashboardData["activi
           <Link
             key={t}
             href={SHORTCUTS[t]}
-            className="flex-1 rounded-xl border border-hair bg-sf py-3 text-center text-[13px] font-semibold leading-none text-mut transition-colors"
+            className="flex-1 rounded-xl border border-hair bg-sf py-3 text-center text-13 font-semibold leading-none text-mut transition-colors"
           >
             {t}
           </Link>
         ))}
       </div>
-      <div className="rounded-[14px] border border-hair bg-sf p-[15px]">
-        <h2 className="mb-2 text-[15px] font-bold leading-none text-ink">Recent activity</h2>
+      <div className="rounded-14 border border-hair bg-sf p-3.75">
+        <h2 className="mb-2 text-15 font-bold leading-none text-ink">Recent activity</h2>
         {activity.map((a, i) => (
           <ActivityRow key={i} {...a} compact />
         ))}

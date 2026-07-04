@@ -20,7 +20,7 @@ export function MembersBrowser({ members }: { members: Member[] }) {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search members…"
-          className="flex-1 rounded-[10px] border border-bd2 bg-transparent px-[13px] py-2.5 text-[13px] font-medium leading-none text-ink outline-none placeholder:text-fnt focus:border-teal"
+          className="flex-1 rounded-10 border border-bd2 bg-transparent px-3.25 py-2.5 text-13 font-medium leading-none text-ink outline-none placeholder:text-fnt focus:border-teal"
         />
         <MemberStatusFilter value={filter} onChange={setFilter} />
       </div>
@@ -30,7 +30,7 @@ export function MembersBrowser({ members }: { members: Member[] }) {
           <MembersTable members={rows} />
         </div>
       ) : (
-        <div className="px-5 py-14 text-center text-[13px] font-medium text-fnt">No members match.</div>
+        <div className="px-5 py-14 text-center text-13 font-medium text-fnt">No members match.</div>
       )}
     </>
   );

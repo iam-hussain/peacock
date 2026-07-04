@@ -64,7 +64,7 @@ function Feather({ rotate, stem, className }: { rotate: number; stem: number; cl
       style={{ transformOrigin: "bottom center", transform: `translateX(-50%) rotate(${rotate}deg)` }}
     >
       <div className={cn("rounded-full", className)} style={{ width: 11, height: 11 }} />
-      <div className={cn("rounded-[3px]", className)} style={{ width: 4, height: stem }} />
+      <div className={cn("rounded-3", className)} style={{ width: 4, height: stem }} />
     </div>
   );
 }

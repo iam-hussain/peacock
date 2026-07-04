@@ -40,7 +40,7 @@ function groupHalves(fields: FieldDef[]): FieldDef[][] {
 
 /**
  * Renders a trigger (render-prop) that opens a modal with a field-driven form.
- * Submits to the stub action and closes. Used for add/edit/admin dialogs everywhere.
+ * Submits to the `formAction` server action and closes. Used for add/edit/admin dialogs everywhere.
  */
 export function FormModalButton({
   children,
@@ -168,7 +168,7 @@ export function FormModalButton({
                 ),
               )}
               {outro}
-              {error && <p className="text-[13px] font-medium leading-[1.4] text-out">{error}</p>}
+              {error && <p className="text-13 font-medium leading-140 text-out">{error}</p>}
             </form>
           </>
         )}

@@ -16,11 +16,11 @@ export function BrandLockup({
 }) {
   const dot = Math.max(5, Math.round(wordSize / 3));
   const inner = (
-    <div className={cn("flex items-center gap-[11px]", className)}>
+    <div className={cn("flex items-center gap-2.75", className)}>
       <PeacockMark px={markPx} biasY={54} />
       <div className="flex items-end gap-1">
         <span
-          className="font-display font-extrabold leading-[0.9] tracking-[-0.03em] text-ink"
+          className="font-display font-extrabold leading-90 tracking-[-0.03em] text-ink"
           style={{ fontSize: wordSize }}
         >
           peacock

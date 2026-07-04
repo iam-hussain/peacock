@@ -56,14 +56,14 @@ export function Audit({ groups: GROUPS, total }: { groups: AuditGroup[]; total: 
   }, [visible]);
 
   return (
-    <div className="mx-auto max-w-[1280px] p-4 pb-[78px] md:p-[26px] md:pb-[26px]">
-      <Link href="/settings" className="mb-4 inline-flex items-center gap-1.5 text-[13px] font-semibold leading-none text-teal">
+    <div className="mx-auto max-w-320 p-4 pb-19.5 md:p-6.5 md:pb-6.5">
+      <Link href="/settings" className="mb-4 inline-flex items-center gap-1.5 text-13 font-semibold leading-none text-teal">
         ← Admin tools
       </Link>
-      <div className="mb-[18px] flex flex-wrap items-end justify-between gap-4">
+      <div className="mb-4.5 flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold leading-none tracking-[-0.02em] text-ink">Audit log</h1>
-          <p className="mt-[7px] text-[13px] font-medium leading-[1.4] text-mut">
+          <p className="mt-1.75 text-13 font-medium leading-140 text-mut">
             A permanent record — every action, who did it, and when.
           </p>
         </div>
@@ -71,13 +71,13 @@ export function Audit({ groups: GROUPS, total }: { groups: AuditGroup[]; total: 
       </div>
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
-        <div className="flex min-w-[240px] flex-1 items-center gap-[9px] rounded-[11px] border border-bd2 bg-sf px-[13px] py-[11px]">
-          <Search className="size-[15px] flex-none text-fnt" strokeWidth={2} />
+        <div className="flex min-w-[240px] flex-1 items-center gap-2.25 rounded-11 border border-bd2 bg-sf px-3.25 py-2.75">
+          <Search className="size-3.75 flex-none text-fnt" strokeWidth={2} />
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search actions or people…"
-            className="min-w-0 flex-1 bg-transparent text-[13px] font-medium text-ink outline-none placeholder:text-fnt"
+            className="min-w-0 flex-1 bg-transparent text-13 font-medium text-ink outline-none placeholder:text-fnt"
           />
         </div>
         <div className="flex flex-wrap gap-2">
@@ -85,7 +85,7 @@ export function Audit({ groups: GROUPS, total }: { groups: AuditGroup[]; total: 
             <button
               key={c}
               onClick={() => setChip(c)}
-              className={`rounded-lg border px-3 py-2.5 text-[11px] font-semibold leading-none ${
+              className={`rounded-lg border px-3 py-2.5 text-11 font-semibold leading-none ${
                 chip === c ? "border-teal/40 bg-tlsf text-teal" : "border-bd2 bg-sf text-mut"
               }`}
             >
@@ -95,11 +95,11 @@ export function Audit({ groups: GROUPS, total }: { groups: AuditGroup[]; total: 
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-2xl border border-bd bg-sf shadow-[0_1px_2px_var(--shadow)]">
+      <div className="overflow-hidden rounded-2xl border border-bd bg-sf shadow-card">
         {groups.map((g) => (
           <div key={g.date}>
-            <div className="flex items-center gap-2.5 border-b border-hr2 bg-bg px-5 py-[11px]">
-              <span className="text-[10px] font-bold uppercase leading-none tracking-[0.07em] text-fnt">{g.date}</span>
+            <div className="flex items-center gap-2.5 border-b border-hr2 bg-bg px-5 py-2.75">
+              <span className="text-10 font-bold uppercase leading-none tracking-7 text-fnt">{g.date}</span>
               <span className="h-px flex-1 bg-hr2" />
             </div>
             {g.items.map((e, i) => {
@@ -110,23 +110,23 @@ export function Audit({ groups: GROUPS, total }: { groups: AuditGroup[]; total: 
                     {initials(e.who)}
                   </span>
                   <div className="min-w-0 flex-1">
-                    <div className="text-[13px] font-semibold leading-[1.45] text-ink">{e.act}</div>
-                    <div className="mt-1 text-[11px] font-medium leading-[1.3] text-fnt">{e.who}</div>
+                    <div className="text-13 font-semibold leading-145 text-ink">{e.act}</div>
+                    <div className="mt-1 text-11 font-medium leading-130 text-fnt">{e.who}</div>
                   </div>
-                  <span className="whitespace-nowrap font-mono text-[11px] font-medium leading-[1.3] text-fnt">{e.when}</span>
+                  <span className="whitespace-nowrap font-mono text-11 font-medium leading-130 text-fnt">{e.when}</span>
                 </div>
               );
             })}
           </div>
         ))}
         {groups.length === 0 && (
-          <div className="px-5 py-[54px] text-center">
-            <div className="text-[15px] font-bold leading-none text-ink">No matching events</div>
-            <div className="mt-1.5 text-xs font-medium leading-[1.4] text-mut">Try a different search or filter.</div>
+          <div className="px-5 py-13.5 text-center">
+            <div className="text-15 font-bold leading-none text-ink">No matching events</div>
+            <div className="mt-1.5 text-xs font-medium leading-140 text-mut">Try a different search or filter.</div>
           </div>
         )}
         {flat.length > 0 && (
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-hr2 px-5 py-[13px]">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-hr2 px-5 py-3.25">
             <span className="text-xs font-medium leading-none text-fnt">{rangeLabel}</span>
             <Pager page={safePage} pageCount={pageCount} onChange={setPage} />
           </div>

@@ -39,11 +39,11 @@ export function AxisChart({ data, labels, unit, rotated = false }: { data: numbe
   return (
     <div>
       <div className="flex gap-2.5">
-        <div className="relative h-[300px] w-[52px] flex-none">
+        <div className="relative h-75 w-13 flex-none">
           {yTicks.map((t, i) => (
             <div
               key={i}
-              className="absolute right-0 w-full -translate-y-1/2 text-right font-mono text-[11px] font-medium leading-none text-fnt"
+              className="absolute right-0 w-full -translate-y-1/2 text-right font-mono text-11 font-medium leading-none text-fnt"
               style={{ top: `${t.topPct}%` }}
             >
               {t.label}
@@ -51,7 +51,7 @@ export function AxisChart({ data, labels, unit, rotated = false }: { data: numbe
           ))}
         </div>
         <div
-          className="relative h-[300px] flex-1 touch-none"
+          className="relative h-75 flex-1 touch-none"
           onMouseMove={(e) => pick(e.clientX, e.clientY, e.currentTarget.getBoundingClientRect())}
           onMouseLeave={() => setHover(null)}
           onTouchStart={(e) => pick(e.touches[0].clientX, e.touches[0].clientY, e.currentTarget.getBoundingClientRect())}
@@ -84,7 +84,7 @@ export function AxisChart({ data, labels, unit, rotated = false }: { data: numbe
               <div className="pointer-events-none absolute inset-y-0 w-px bg-bd2" style={{ left: `${hx}%` }} />
               {/* point */}
               <div
-                className="pointer-events-none absolute size-[11px] -translate-x-1/2 -translate-y-1/2 rounded-full border-[2.5px] border-teal bg-sf"
+                className="pointer-events-none absolute size-2.75 -translate-x-1/2 -translate-y-1/2 rounded-full border-[2.5px] border-teal bg-sf"
                 style={{ left: `${hx}%`, top: `${hy}%` }}
               />
               {/* tooltip */}
@@ -92,8 +92,8 @@ export function AxisChart({ data, labels, unit, rotated = false }: { data: numbe
                 className="pointer-events-none absolute -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-lg bg-ink px-2.5 py-1.5 shadow-[0_8px_20px_var(--shadow)]"
                 style={{ left: `${hx}%`, top: `calc(${hy}% - 12px)` }}
               >
-                <div className="text-[10px] font-semibold leading-none text-sf/70">{labels[hover]}</div>
-                <div className="mt-1 font-mono text-[13px] font-semibold leading-none text-sf">
+                <div className="text-10 font-semibold leading-none text-sf/70">{labels[hover]}</div>
+                <div className="mt-1 font-mono text-13 font-semibold leading-none text-sf">
                   {fmt(data[hover])}
                 </div>
               </div>
@@ -102,12 +102,12 @@ export function AxisChart({ data, labels, unit, rotated = false }: { data: numbe
         </div>
       </div>
       <div className="mt-2 flex gap-2.5">
-        <div className="w-[52px] flex-none" />
+        <div className="w-13 flex-none" />
         <div className="relative h-3.5 flex-1">
           {xTicks.map((t, i) => (
             <div
               key={i}
-              className="absolute -translate-x-1/2 whitespace-nowrap text-[11px] font-medium leading-none text-fnt"
+              className="absolute -translate-x-1/2 whitespace-nowrap text-11 font-medium leading-none text-fnt"
               style={{ left: `${t.leftPct}%` }}
             >
               {t.label}

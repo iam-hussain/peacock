@@ -67,9 +67,9 @@ export function AdminsButton({
       >
         <div className="flex flex-col gap-4">
           <div>
-            <div className="mb-2 text-[11px] font-bold uppercase leading-none tracking-[0.06em] text-fnt">Add an admin</div>
-            <div className="flex items-center gap-2 rounded-[11px] border border-bd2 px-3">
-              <Search className="size-[15px] flex-none text-fnt" strokeWidth={2} />
+            <div className="mb-2 text-11 font-bold uppercase leading-none tracking-6 text-fnt">Add an admin</div>
+            <div className="flex items-center gap-2 rounded-11 border border-bd2 px-3">
+              <Search className="size-3.75 flex-none text-fnt" strokeWidth={2} />
               <input
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
@@ -78,7 +78,7 @@ export function AdminsButton({
               />
             </div>
             {matches.length > 0 && (
-              <div className="mt-1.5 overflow-hidden rounded-[11px] border border-bd">
+              <div className="mt-1.5 overflow-hidden rounded-11 border border-bd">
                 {matches.map((m) => (
                   <button
                     key={m.value}
@@ -90,9 +90,9 @@ export function AdminsButton({
                     <Avatar name={m.label} size={34} muted />
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-sm font-bold leading-tight text-ink">{m.label}</div>
-                      <div className="truncate text-[12px] font-medium leading-tight text-fnt">{m.sub}</div>
+                      <div className="truncate text-12 font-medium leading-tight text-fnt">{m.sub}</div>
                     </div>
-                    <span className="text-[13px] font-semibold text-teal">Add</span>
+                    <span className="text-13 font-semibold text-teal">Add</span>
                   </button>
                 ))}
               </div>
@@ -100,14 +100,14 @@ export function AdminsButton({
           </div>
 
           <div>
-            <div className="mb-2 text-[11px] font-bold uppercase leading-none tracking-[0.06em] text-fnt">Current admins · {admins.length}</div>
+            <div className="mb-2 text-11 font-bold uppercase leading-none tracking-6 text-fnt">Current admins · {admins.length}</div>
             <div className="flex flex-col gap-2.5">
               {admins.map((a) => (
-                <div key={a.id} className="flex items-center gap-3 rounded-[13px] border border-bd px-3.5 py-3">
+                <div key={a.id} className="flex items-center gap-3 rounded-13 border border-bd px-3.5 py-3">
                   <Avatar name={a.name} size={40} />
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-sm font-semibold leading-none text-ink">{a.name}</div>
-                    <div className="mt-1 truncate text-[11px] font-medium leading-none text-fnt">
+                    <div className="mt-1 truncate text-11 font-medium leading-none text-fnt">
                       Admin access{a.holds ? ` · Holds ${a.holds}` : ""}
                     </div>
                   </div>
@@ -115,7 +115,7 @@ export function AdminsButton({
                     type="button"
                     disabled={pending}
                     onClick={() => act(a.id, false)}
-                    className="rounded-lg border border-bd2 px-3.5 py-2 text-[13px] font-semibold leading-none text-out hover:bg-outbg disabled:opacity-60"
+                    className="rounded-lg border border-bd2 px-3.5 py-2 text-13 font-semibold leading-none text-out hover:bg-outbg disabled:opacity-60"
                   >
                     Remove
                   </button>
@@ -124,7 +124,7 @@ export function AdminsButton({
             </div>
           </div>
 
-          {error && <p className="text-[13px] font-medium text-out">{error}</p>}
+          {error && <p className="text-13 font-medium text-out">{error}</p>}
         </div>
       </Modal>
     </>

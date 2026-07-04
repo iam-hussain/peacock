@@ -57,7 +57,7 @@ export function ChipMenu({
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="listbox"
         aria-expanded={open}
-        className="flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-bd2 px-3 py-[9px] text-xs font-semibold leading-none text-mut hover:bg-sf2"
+        className="flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-bd2 px-3 py-2.25 text-xs font-semibold leading-none text-mut hover:bg-sf2"
       >
         {current?.label ?? label}
         <ChevronDown className={cn("size-3 text-fnt transition-transform", open && "rotate-180")} />
@@ -73,13 +73,13 @@ export function ChipMenu({
         >
           {searchable && (
             <div className="mb-1 flex items-center gap-2 rounded-lg border border-bd2 px-2.5">
-              <Search className="size-[13px] flex-none text-fnt" strokeWidth={2} />
+              <Search className="size-3.25 flex-none text-fnt" strokeWidth={2} />
               <input
                 autoFocus
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
                 placeholder="Search…"
-                className="min-w-0 flex-1 bg-transparent py-2 text-[13px] font-medium text-ink outline-none placeholder:text-fnt"
+                className="min-w-0 flex-1 bg-transparent py-2 text-13 font-medium text-ink outline-none placeholder:text-fnt"
               />
             </div>
           )}
@@ -95,13 +95,13 @@ export function ChipMenu({
                 setQ("");
               }}
               className={cn(
-                "flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[13px] font-semibold leading-none hover:bg-sf2",
+                "flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-13 font-semibold leading-none hover:bg-sf2",
                 o.value === value ? "text-teal" : "text-ink",
               )}
             >
-              {o.dot && <span className={cn("size-[7px] flex-none rounded-full", o.dot)} />}
+              {o.dot && <span className={cn("size-1.75 flex-none rounded-full", o.dot)} />}
               <span className="min-w-0 flex-1 truncate">{o.label}</span>
-              {o.value === value && <Check className="size-[15px] flex-none text-teal" strokeWidth={2.5} />}
+              {o.value === value && <Check className="size-3.75 flex-none text-teal" strokeWidth={2.5} />}
             </button>
           ))}
           {shown.length === 0 && (

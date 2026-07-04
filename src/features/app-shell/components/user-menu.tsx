@@ -17,23 +17,23 @@ export function UserMenu({ user }: { user: CurrentUser }) {
     <div className="relative">
       <button
         onClick={() => setOpen((o) => !o)}
-        className={`flex items-center gap-[7px] rounded-[20px] border py-[3px] pl-[3px] pr-[7px] transition-colors ${
+        className={`flex items-center gap-1.75 rounded-20 border py-0.75 pl-0.75 pr-1.75 transition-colors ${
           open ? "border-bd2 bg-bg2" : "border-transparent hover:bg-bg2"
         }`}
       >
-        <UserAvatar initials={user.initials} avatarUrl={user.avatarUrl} className="size-[30px] bg-teal text-xs font-bold text-white" />
+        <UserAvatar initials={user.initials} avatarUrl={user.avatarUrl} className="size-7.5 bg-teal text-xs font-bold text-white" />
         <ChevronDown className={`size-3.5 text-mut transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
 
       {open && (
         <>
           <button className="fixed inset-0 z-40 cursor-default" onClick={() => setOpen(false)} aria-label="Close menu" />
-          <div className="absolute right-0 top-[46px] z-[41] w-[248px] overflow-hidden rounded-[14px] border border-bd bg-sf shadow-[0_1px_2px_var(--shadow),0_18px_44px_var(--shadow)]">
-            <div className="flex items-center gap-[11px] border-b border-hair px-4 py-[15px]">
-              <UserAvatar initials={user.initials} avatarUrl={user.avatarUrl} className="size-[38px] bg-teal text-sm font-bold text-white" />
+          <div className="absolute right-0 top-11.5 z-[41] w-[248px] overflow-hidden rounded-14 border border-bd bg-sf shadow-[0_1px_2px_var(--shadow),0_18px_44px_var(--shadow)]">
+            <div className="flex items-center gap-2.75 border-b border-hair px-4 py-3.75">
+              <UserAvatar initials={user.initials} avatarUrl={user.avatarUrl} className="size-9.5 bg-teal text-sm font-bold text-white" />
               <div className="min-w-0 flex-1">
-                <div className="text-[13px] font-bold leading-none text-ink">{user.name}</div>
-                <div className="mt-1 truncate font-mono text-[11px] font-medium leading-[1.3] text-fnt">
+                <div className="text-13 font-bold leading-none text-ink">{user.name}</div>
+                <div className="mt-1 truncate font-mono text-11 font-medium leading-130 text-fnt">
                   {user.email}
                 </div>
               </div>
@@ -46,7 +46,7 @@ export function UserMenu({ user }: { user: CurrentUser }) {
             <div className="border-t border-hair p-1.5">
               <button
                 onClick={logout}
-                className="flex w-full items-center gap-[11px] rounded-[9px] px-[11px] py-2.5 text-left text-[13px] font-semibold text-out hover:bg-outbg"
+                className="flex w-full items-center gap-2.75 rounded-9 px-2.75 py-2.5 text-left text-13 font-semibold text-out hover:bg-outbg"
               >
                 <LogOut className="size-4" strokeWidth={2} />
                 Log out
@@ -63,7 +63,7 @@ function MenuLink({ href, icon: Icon, label }: { href: string; icon: typeof Sett
   return (
     <Link
       href={href}
-      className="flex items-center gap-[11px] rounded-[9px] px-[11px] py-2.5 text-[13px] font-semibold text-ink hover:bg-bg2"
+      className="flex items-center gap-2.75 rounded-9 px-2.75 py-2.5 text-13 font-semibold text-ink hover:bg-bg2"
     >
       <Icon className="size-4 text-mut" strokeWidth={2} />
       {label}

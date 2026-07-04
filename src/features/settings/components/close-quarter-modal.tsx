@@ -57,8 +57,8 @@ export function CloseQuarterButton({ quarter, className, children }: { quarter: 
         }
       >
         <div className="flex flex-col gap-4">
-          <div className="flex items-start gap-2.5 rounded-xl bg-outbg px-3.5 py-3 text-[13px] font-medium leading-[1.45] text-out">
-            <AlertTriangle className="mt-0.5 size-[18px] flex-none" strokeWidth={2} />
+          <div className="flex items-start gap-2.5 rounded-xl bg-outbg px-3.5 py-3 text-13 font-medium leading-145 text-out">
+            <AlertTriangle className="mt-0.5 size-4.5 flex-none" strokeWidth={2} />
             {quarter.alreadyClosed
               ? `${quarter.label} is already closed.`
               : `This locks all entries in ${quarter.period} and saves a snapshot. Profit stays in the club — no payout. This can't be undone.`}
@@ -67,16 +67,16 @@ export function CloseQuarterButton({ quarter, className, children }: { quarter: 
           <div className="overflow-hidden rounded-xl border border-bd">
             {rows.map((r, i) => (
               <div key={r.l} className={`flex items-center justify-between px-4 py-3 ${i < rows.length - 1 ? "border-b border-hr2" : ""}`}>
-                <span className="text-[13px] font-medium leading-none text-mut">{r.l}</span>
-                <span className={`font-mono text-[13px] font-semibold leading-none ${r.accent ? "text-teal" : "text-ink"}`}>{r.v}</span>
+                <span className="text-13 font-medium leading-none text-mut">{r.l}</span>
+                <span className={`font-mono text-13 font-semibold leading-none ${r.accent ? "text-teal" : "text-ink"}`}>{r.v}</span>
               </div>
             ))}
           </div>
 
-          <p className="text-[11px] font-medium leading-[1.5] text-fnt">
+          <p className="text-11 font-medium leading-150 text-fnt">
             Net profit is shown for the record only — it stays in the club and keeps accumulating. No money moves.
           </p>
-          {error && <p className="text-[13px] font-medium text-out">{error}</p>}
+          {error && <p className="text-13 font-medium text-out">{error}</p>}
         </div>
       </Modal>
     </>

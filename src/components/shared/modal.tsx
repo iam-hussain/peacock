@@ -50,15 +50,15 @@ export function Modal({
         aria-modal="true"
         aria-label={ariaLabel ?? (typeof title === "string" ? title : undefined)}
         className={`relative flex max-h-[92vh] w-full flex-col overflow-hidden border border-bd bg-sf shadow-[0_20px_60px_var(--shadow)] animate-in slide-in-from-bottom-4 sm:zoom-in-95 sm:slide-in-from-bottom-0 ${
-          wide ? "sm:max-w-[640px]" : "sm:max-w-[480px]"
-        } rounded-t-[20px] sm:rounded-2xl`}
+          wide ? "sm:max-w-[640px]" : "sm:max-w-120"
+        } rounded-t-20 sm:rounded-2xl`}
       >
         {!hideHeader && (
           <div className="relative flex flex-col items-center gap-1 px-12 py-4 text-center">
             <h2 className="text-base font-bold leading-tight text-ink">{title}</h2>
-            {subtitle && <p className="text-xs font-medium leading-[1.4] text-fnt">{subtitle}</p>}
+            {subtitle && <p className="text-xs font-medium leading-140 text-fnt">{subtitle}</p>}
             <button onClick={onClose} aria-label="Close" className="absolute right-3 top-3 flex size-8 items-center justify-center rounded-lg text-mut hover:bg-bg2">
-              <X className="size-[18px]" strokeWidth={2} />
+              <X className="size-4.5" strokeWidth={2} />
             </button>
           </div>
         )}
@@ -97,7 +97,7 @@ export function ModalActions({
         form={onSubmit ? undefined : formId}
         onClick={onSubmit}
         disabled={pending}
-        className={`flex-1 rounded-xl py-3.5 text-[15px] font-semibold leading-none text-white transition-opacity disabled:opacity-60 ${
+        className={`flex-1 rounded-xl py-3.5 text-15 font-semibold leading-none text-white transition-opacity disabled:opacity-60 ${
           destructive ? "bg-out" : "bg-teal"
         }`}
       >
@@ -106,7 +106,7 @@ export function ModalActions({
       <button
         type="button"
         onClick={onCancel}
-        className="rounded-xl border border-bd2 bg-sf px-6 py-3.5 text-[15px] font-semibold leading-none text-ink hover:bg-bg2"
+        className="rounded-xl border border-bd2 bg-sf px-6 py-3.5 text-15 font-semibold leading-none text-ink hover:bg-bg2"
       >
         {cancelLabel}
       </button>

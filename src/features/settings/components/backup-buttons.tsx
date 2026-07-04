@@ -26,7 +26,7 @@ export function CreateBackupButton() {
       <button onClick={onExport} disabled={pending} className="rounded-lg bg-tlsf px-3.5 py-2.5 text-xs font-semibold leading-none text-teal hover:bg-teal/15 disabled:opacity-60">
         {pending ? "Preparing…" : "Create backup"}
       </button>
-      {err && <span className="text-[11px] font-medium text-out">{err}</span>}
+      {err && <span className="text-11 font-medium text-out">{err}</span>}
     </div>
   );
 }
@@ -59,7 +59,7 @@ export function ImportButton() {
       <button onClick={() => fileRef.current?.click()} disabled={pending} className="rounded-lg border border-bd2 px-3.5 py-2.5 text-xs font-semibold leading-none text-ink hover:bg-bg2 disabled:opacity-60">
         {pending ? "Restoring…" : "Import"}
       </button>
-      {msg && <span className={`text-[11px] font-medium ${msg.ok ? "text-in" : "text-out"}`}>{msg.text}</span>}
+      {msg && <span className={`text-11 font-medium ${msg.ok ? "text-in" : "text-out"}`}>{msg.text}</span>}
     </div>
   );
 }

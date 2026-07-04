@@ -4,7 +4,9 @@ import { useId, useState, useTransition } from "react";
 import { Modal, ModalActions } from "@/components/shared/modal";
 import { formAction } from "@/server/actions";
 import { formatPaise } from "@/lib/money";
-import { AmountInput, SectionLabel, today } from "./catchup-penalty-modals";
+import { AmountInput } from "@/components/shared/amount-input";
+import { SectionLabel } from "@/components/shared/section-label";
+import { today } from "./catchup-penalty-modals";
 import type { RejoinDTO } from "@/server/queries/members";
 
 /**
@@ -66,9 +68,9 @@ export function RejoinDialog({
           <div className="rounded-xl bg-bg2 px-4 py-3">
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium leading-none text-mut">Back deposits</span>
-              <span className="font-mono text-[17px] font-bold leading-none text-ink">{rejoin.depDue}</span>
+              <span className="font-mono text-17 font-bold leading-none text-ink">{rejoin.depDue}</span>
             </div>
-            <p className="mt-1.5 text-[11px] font-medium leading-[1.4] text-fnt">
+            <p className="mt-1.5 text-11 font-medium leading-140 text-fnt">
               Full monthly deposits since the club started · paid down over time as normal deposits.
             </p>
           </div>
@@ -76,7 +78,7 @@ export function RejoinDialog({
           <div>
             <SectionLabel>Catch-up charge (per-member profit)</SectionLabel>
             <AmountInput value={catchup} onChange={setCatchup} autoFocus />
-            <p className="mt-2 text-[11px] font-medium leading-[1.4] text-fnt">
+            <p className="mt-2 text-11 font-medium leading-140 text-fnt">
               Auto-suggested from the profit each active member holds. Raised as a &ldquo;Rejoin&rdquo; charge {memberName} pays down over time.
             </p>
           </div>
@@ -93,14 +95,14 @@ export function RejoinDialog({
 
           <div className="flex items-center justify-between rounded-xl border border-teal/30 bg-tlsf px-4 py-3">
             <span className="text-sm font-semibold leading-none text-ink">Total to rejoin</span>
-            <span className="font-mono text-[19px] font-bold leading-none text-teal">{total}</span>
+            <span className="font-mono text-19 font-bold leading-none text-teal">{total}</span>
           </div>
 
-          <p className="text-[12px] font-medium leading-[1.5] text-fnt">
+          <p className="text-12 font-medium leading-150 text-fnt">
             Opens a new membership (Active) for {memberName} with the catch-up charge on it. The previous membership stays in history.
           </p>
 
-          {err && <p className="text-[13px] font-medium leading-[1.4] text-out">{err}</p>}
+          {err && <p className="text-13 font-medium leading-140 text-out">{err}</p>}
         </form>
       </Modal>
     </>

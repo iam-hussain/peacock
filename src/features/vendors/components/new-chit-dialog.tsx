@@ -118,7 +118,7 @@ export function NewChitDialog({ children, buttonClassName }: { children: React.R
             </Field>
           </FieldRow>
 
-          {error && <p className="text-[13px] font-medium leading-[1.4] text-out">{error}</p>}
+          {error && <p className="text-13 font-medium leading-140 text-out">{error}</p>}
         </form>
       </Modal>
     </>

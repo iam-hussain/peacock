@@ -21,7 +21,7 @@ export function StatusBadge({ status, label, className }: { status: Status; labe
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-[20px] px-[9px] py-1 text-[10px] font-semibold uppercase leading-none tracking-[0.03em]",
+        "inline-flex items-center rounded-20 px-2.25 py-1 text-10 font-semibold uppercase leading-none tracking-3",
         STYLES[status],
         className,
       )}

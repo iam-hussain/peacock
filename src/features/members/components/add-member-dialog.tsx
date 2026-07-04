@@ -139,7 +139,7 @@ export function AddMemberDialog({
                   type="button"
                   onClick={() => fileRef.current?.click()}
                   aria-label="Upload avatar"
-                  className="flex size-[46px] flex-none items-center justify-center overflow-hidden rounded-[12px] bg-tlsf text-[15px] font-bold text-teal"
+                  className="flex size-11.5 flex-none items-center justify-center overflow-hidden rounded-12 bg-tlsf text-15 font-bold text-teal"
                 >
                   {avatar ? (
                     // eslint-disable-next-line @next/next/no-img-element -- inline base64 preview, no image domain config
@@ -148,7 +148,7 @@ export function AddMemberDialog({
                     ini
                   )}
                 </button>
-                <p className="text-[11px] font-medium leading-[1.4] text-fnt">Initials are used until a photo is uploaded.</p>
+                <p className="text-11 font-medium leading-140 text-fnt">Initials are used until a photo is uploaded.</p>
                 <input ref={fileRef} type="file" accept="image/*" onChange={onFile} className="hidden" />
               </div>
             </Field>
@@ -158,41 +158,41 @@ export function AddMemberDialog({
             type="button"
             onClick={() => setActive((a) => !a)}
             aria-pressed={active}
-            className="flex items-center justify-between gap-3 rounded-[14px] border border-bd bg-bg2 px-4 py-3.5 text-left"
+            className="flex items-center justify-between gap-3 rounded-14 border border-bd bg-bg2 px-4 py-3.5 text-left"
           >
             <span>
               <span className="block text-sm font-bold leading-none text-ink">Status · {active ? "Active" : "Inactive"}</span>
-              <span className="mt-1.5 block text-[12px] font-medium leading-[1.4] text-fnt">Active members can participate in club activities.</span>
+              <span className="mt-1.5 block text-12 font-medium leading-140 text-fnt">Active members can participate in club activities.</span>
             </span>
             <span className={`relative h-6 w-11 flex-none rounded-full transition-colors ${active ? "bg-teal" : "bg-bd2"}`}>
-              <span className={`absolute top-0.5 size-5 rounded-full bg-white transition-all ${active ? "left-[22px]" : "left-0.5"}`} />
+              <span className={`absolute top-0.5 size-5 rounded-full bg-white transition-all ${active ? "left-5.5" : "left-0.5"}`} />
             </span>
           </button>
 
-          <div className="rounded-[14px] border border-bd bg-bg2 px-4 py-3.5">
+          <div className="rounded-14 border border-bd bg-bg2 px-4 py-3.5">
             <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold uppercase leading-none tracking-[0.05em] text-fnt">On joining, expected to bring in</span>
+              <span className="text-11 font-bold uppercase leading-none tracking-5 text-fnt">On joining, expected to bring in</span>
               <span className="font-mono text-base font-bold leading-none text-ink">{preview.total}</span>
             </div>
             <div className="mt-3 grid grid-cols-2 gap-3">
               <div>
-                <div className="text-[11px] font-medium leading-[1.3] text-fnt">Monthly deposits · since club start</div>
+                <div className="text-11 font-medium leading-130 text-fnt">Monthly deposits · since club start</div>
                 <div className="mt-1 font-mono text-sm font-semibold leading-none text-ink">{preview.deposits}</div>
               </div>
               <div>
-                <div className="text-[11px] font-medium leading-[1.3] text-fnt">Catch-up · per-member profit</div>
+                <div className="text-11 font-medium leading-130 text-fnt">Catch-up · per-member profit</div>
                 <div className="mt-1 font-mono text-sm font-semibold leading-none text-ink">{preview.profit}</div>
               </div>
             </div>
           </div>
 
-          <div className="flex items-start gap-2.5 rounded-[11px] bg-sf2 px-3.5 py-3 text-[12px] font-medium leading-[1.5] text-mut">
+          <div className="flex items-start gap-2.5 rounded-11 bg-sf2 px-3.5 py-3 text-12 font-medium leading-150 text-mut">
             <span>
               The <span className="font-semibold text-ink">phone number is the default password</span>. First login forces a password change. Joined date drives expected deposits &amp; catch-up.
             </span>
           </div>
 
-          {error && <p className="text-[13px] font-medium leading-[1.4] text-out">{error}</p>}
+          {error && <p className="text-13 font-medium leading-140 text-out">{error}</p>}
         </form>
       </Modal>
     </>

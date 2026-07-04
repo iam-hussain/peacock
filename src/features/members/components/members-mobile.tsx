@@ -21,9 +21,9 @@ export function MembersMobile({ members, summary, joinPreview }: { members: Memb
   const rows = useMemo(() => filterMembers(members, "", filter), [members, filter]);
 
   return (
-    <div className="pb-[78px] md:hidden">
+    <div className="pb-19.5 md:hidden">
       <div className="flex items-center justify-between gap-2 px-4 pb-3 pt-3.5">
-        <span className="min-w-0 truncate text-xs font-medium leading-[1.3] text-fnt">
+        <span className="min-w-0 truncate text-xs font-medium leading-130 text-fnt">
           {summary.text} · {summary.totalDeposits} deposits
         </span>
         <div className="flex flex-none items-center gap-2">
@@ -32,7 +32,7 @@ export function MembersMobile({ members, summary, joinPreview }: { members: Memb
             <AddMemberDialog
               preview={joinPreview}
               buttonAriaLabel="Add member"
-              buttonClassName="flex size-9 flex-none items-center justify-center rounded-[9px] bg-teal text-white"
+              buttonClassName="flex size-9 flex-none items-center justify-center rounded-9 bg-teal text-white"
             >
               <Plus className="size-4" strokeWidth={2.5} />
             </AddMemberDialog>
@@ -42,7 +42,7 @@ export function MembersMobile({ members, summary, joinPreview }: { members: Memb
       </div>
 
       {rows.length === 0 ? (
-        <div className="px-4 py-14 text-center text-[13px] font-medium text-fnt">No members match.</div>
+        <div className="px-4 py-14 text-center text-13 font-medium text-fnt">No members match.</div>
       ) : view === "cards" ? (
         <div className="flex flex-col gap-3 px-4">
           {rows.map((m) => (

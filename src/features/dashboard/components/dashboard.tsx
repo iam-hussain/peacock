@@ -22,9 +22,9 @@ export function Dashboard({ data, greeting }: { data: DashboardData; greeting: G
     <>
       {/* Desktop (forced in the poster regardless of viewport) */}
       <div className={inPoster ? undefined : "hidden md:block"}>
-        <div className="mx-auto max-w-[1280px] p-[26px]">
+        <div className="mx-auto max-w-320 p-6.5">
           {!inPoster && <h1 className="text-2xl font-bold leading-none tracking-[-0.02em] text-ink">{greeting.hello}</h1>}
-          {!inPoster && <p className="mb-5 mt-1 text-[13px] font-medium leading-[1.4] text-mut">{greeting.sub}</p>}
+          {!inPoster && <p className="mb-5 mt-1 text-13 font-medium leading-140 text-mut">{greeting.sub}</p>}
 
           <div className="mb-4 grid grid-cols-5 gap-3">
             {hero.map((m) => (
@@ -57,17 +57,17 @@ export function Dashboard({ data, greeting }: { data: DashboardData; greeting: G
 
       {/* Mobile (never in the poster — it always uses the desktop layout) */}
       {!inPoster && (
-      <div className="pb-[78px] md:hidden">
+      <div className="pb-19.5 md:hidden">
         <div className="px-4 pb-0.5 pt-4">
           <h1 className="text-xl font-bold leading-none tracking-[-0.01em] text-ink">{greeting.hello}</h1>
-          <p className="mt-[5px] text-xs font-medium leading-[1.4] text-mut">{greeting.sub}</p>
+          <p className="mt-1.25 text-xs font-medium leading-140 text-mut">{greeting.sub}</p>
         </div>
         <div className="flex flex-col gap-3 px-4 py-3.5">
-          <div className="rounded-[18px] bg-teal p-5 text-white">
-            <div className="text-[11px] font-semibold uppercase leading-none tracking-[0.03em] text-teal-ink">
+          <div className="rounded-18 bg-teal p-5 text-white">
+            <div className="text-11 font-semibold uppercase leading-none tracking-3 text-teal-ink">
               Total portfolio value
             </div>
-            <div className="my-3 font-mono text-[30px] font-semibold leading-none">{totalPortfolio.value}</div>
+            <div className="my-3 font-mono text-30 font-semibold leading-none">{totalPortfolio.value}</div>
             <div className="text-xs font-semibold leading-none text-teal-soft">{totalPortfolio.change}</div>
           </div>
 
@@ -97,11 +97,11 @@ function ChartCard({ data, mobile = false }: { data: Record<string, number[]>; m
   const [range, setRange] = useState<string>(CHART_DEFAULT);
   const series = data[range] ?? [];
   return (
-    <div className={`rounded-[14px] border border-hair bg-sf ${mobile ? "p-[15px]" : "p-[18px]"}`}>
+    <div className={`rounded-14 border border-hair bg-sf ${mobile ? "p-3.75" : "p-4.5"}`}>
       <div className={`flex items-center justify-between ${mobile ? "mb-3" : "mb-3.5"}`}>
         <div>
-          <div className={`font-bold leading-none text-ink ${mobile ? "text-[13px]" : "text-sm"}`}>Portfolio value</div>
-          <div className={`mt-[5px] font-medium leading-none text-fnt ${mobile ? "text-[11px]" : "text-xs"}`}>
+          <div className={`font-bold leading-none text-ink ${mobile ? "text-13" : "text-sm"}`}>Portfolio value</div>
+          <div className={`mt-1.25 font-medium leading-none text-fnt ${mobile ? "text-11" : "text-xs"}`}>
             {RANGE_SUBTITLE[range]}
           </div>
         </div>
@@ -116,14 +116,14 @@ function ChartCard({ data, mobile = false }: { data: Record<string, number[]>; m
 
 function GroupCard({ title, items }: { title: string; items: { l: string; v: string }[] }) {
   return (
-    <div className="rounded-[14px] border border-hair bg-sf p-4">
-      <div className="mb-2.5 text-[11px] font-semibold uppercase leading-none tracking-[0.05em] text-teal">
+    <div className="rounded-14 border border-hair bg-sf p-4">
+      <div className="mb-2.5 text-11 font-semibold uppercase leading-none tracking-5 text-teal">
         {title}
       </div>
       {items.map((r) => (
         <div key={r.l} className="flex items-center justify-between border-t border-hr2 py-1.5">
           <span className="text-xs font-medium leading-none text-mut">{r.l}</span>
-          <span className="font-mono text-[13px] font-semibold leading-none text-ink">{r.v}</span>
+          <span className="font-mono text-13 font-semibold leading-none text-ink">{r.v}</span>
         </div>
       ))}
     </div>
@@ -132,7 +132,7 @@ function GroupCard({ title, items }: { title: string; items: { l: string; v: str
 
 function ActivityCard({ activity }: { activity: DashboardData["activity"] }) {
   return (
-    <div className="rounded-[14px] border border-hair bg-sf p-[18px]">
+    <div className="rounded-14 border border-hair bg-sf p-4.5">
       <div className="mb-2 flex items-center justify-between">
         <h2 className="text-sm font-bold leading-none text-ink">Recent activity</h2>
         {!useInPoster() && (

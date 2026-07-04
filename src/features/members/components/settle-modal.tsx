@@ -5,7 +5,9 @@ import { LogOut } from "lucide-react";
 import { Modal, ModalActions } from "@/components/shared/modal";
 import { SelectorCard, PickerSheet, type PickOption } from "@/components/shared/entity-picker";
 import { formAction } from "@/server/actions";
-import { AmountInput, SectionLabel, today } from "./catchup-penalty-modals";
+import { AmountInput } from "@/components/shared/amount-input";
+import { SectionLabel } from "@/components/shared/section-label";
+import { today } from "./catchup-penalty-modals";
 import type { SettleDTO } from "@/server/queries/members";
 
 /**
@@ -81,7 +83,7 @@ export function SettleDialog({
         ) : (
           <form id={formId} onSubmit={(e) => { e.preventDefault(); submit(); }} className="flex flex-col gap-4">
             <div className="rounded-xl border border-bd bg-bg2 px-4 py-3.5">
-              <div className="mb-2.5 text-[11px] font-bold uppercase leading-none tracking-[0.05em] text-fnt">Settlement guide</div>
+              <div className="mb-2.5 text-11 font-bold uppercase leading-none tracking-5 text-fnt">Settlement guide</div>
               <GuideRow label="Paid-in capital" value={settle.capital} />
               <GuideRow label="Profit share" value={`+ ${settle.profit}`} tone="in" />
               {settle.owes && (
@@ -91,15 +93,15 @@ export function SettleDialog({
                 </>
               )}
               <div className="mt-1 flex items-center justify-between border-t border-bd pt-2.5">
-                <span className="text-[13px] font-bold leading-none text-ink">Suggested payout</span>
-                <span className="font-mono text-[17px] font-bold leading-none text-ink">{settle.guide}</span>
+                <span className="text-13 font-bold leading-none text-ink">Suggested payout</span>
+                <span className="font-mono text-17 font-bold leading-none text-ink">{settle.guide}</span>
               </div>
             </div>
 
             <div>
               <SectionLabel>Final amount paid out</SectionLabel>
               <AmountInput value={amount} onChange={setAmount} autoFocus />
-              <p className="mt-2 text-[11px] font-medium leading-[1.4] text-fnt">
+              <p className="mt-2 text-11 font-medium leading-140 text-fnt">
                 The admin may pay slightly less than the guide. Paid in cash from the chosen treasurer.
               </p>
             </div>
@@ -125,13 +127,13 @@ export function SettleDialog({
             </div>
 
             <div className="flex items-start gap-2.5 rounded-xl border border-outbd bg-outbg px-4 py-3">
-              <LogOut className="mt-0.5 size-[15px] flex-none text-out" strokeWidth={2} />
-              <p className="text-[12px] font-medium leading-[1.5] text-out">
+              <LogOut className="mt-0.5 size-3.75 flex-none text-out" strokeWidth={2} />
+              <p className="text-12 font-medium leading-150 text-out">
                 Closes {memberName}&rsquo;s membership. Their profit becomes zero and the stint moves to history — they can rejoin later.
               </p>
             </div>
 
-            {err && <p className="text-[13px] font-medium leading-[1.4] text-out">{err}</p>}
+            {err && <p className="text-13 font-medium leading-140 text-out">{err}</p>}
           </form>
         )}
       </Modal>
@@ -142,7 +144,7 @@ export function SettleDialog({
 function GuideRow({ label, value, tone }: { label: string; value: string; tone?: "in" | "out" }) {
   return (
     <div className="flex items-center justify-between py-1.5">
-      <span className="text-[13px] font-medium leading-none text-mut">{label}</span>
+      <span className="text-13 font-medium leading-none text-mut">{label}</span>
       <span className={`font-mono text-sm font-semibold leading-none ${tone === "in" ? "text-in" : tone === "out" ? "text-out" : "text-ink"}`}>
         {value}
       </span>

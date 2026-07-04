@@ -79,7 +79,7 @@ export function AvatarEditButton({ hasAvatar, className }: { hasAvatar: boolean;
   return (
     <>
       <button type="button" onClick={() => setOpen(true)} aria-label="Edit photo" className={className}>
-        <Pencil className="size-[11px]" strokeWidth={2.4} />
+        <Pencil className="size-2.75" strokeWidth={2.4} />
       </button>
 
       <Modal
@@ -120,7 +120,7 @@ export function AvatarEditButton({ hasAvatar, className }: { hasAvatar: boolean;
               aria-label="Zoom"
               className="w-full accent-teal"
             />
-            <button type="button" onClick={() => fileRef.current?.click()} className="text-[13px] font-semibold text-teal">
+            <button type="button" onClick={() => fileRef.current?.click()} className="text-13 font-semibold text-teal">
               Choose a different photo
             </button>
           </div>
@@ -129,19 +129,19 @@ export function AvatarEditButton({ hasAvatar, className }: { hasAvatar: boolean;
             <button
               type="button"
               onClick={() => fileRef.current?.click()}
-              className="flex h-32 w-full flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-bd2 text-[13px] font-semibold text-mut hover:bg-bg2"
+              className="flex h-32 w-full flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-bd2 text-13 font-semibold text-mut hover:bg-bg2"
             >
               <Pencil className="size-5" strokeWidth={2} />
               Choose a photo
             </button>
             {hasAvatar && (
-              <button type="button" onClick={remove} disabled={pending} className="text-[13px] font-semibold text-out disabled:opacity-60">
+              <button type="button" onClick={remove} disabled={pending} className="text-13 font-semibold text-out disabled:opacity-60">
                 Remove current photo
               </button>
             )}
           </div>
         )}
-        {error && <p className="mt-3 text-[13px] font-medium text-out">{error}</p>}
+        {error && <p className="mt-3 text-13 font-medium text-out">{error}</p>}
       </Modal>
     </>
   );
