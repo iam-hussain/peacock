@@ -1,5 +1,5 @@
 import { prisma } from "@/server/db";
-import type { TxnType } from "@prisma/client";
+import type { Prisma, TxnType } from "@prisma/client";
 
 export interface PostLine {
   accountId: string;
@@ -23,15 +23,19 @@ export interface PostInput {
  * The single choke point for all balance changes (§12). Pure pre-validate, then one
  * atomic DB transaction: create the Transaction + Entries, increment cached balances,
  * enforce non-negative treasury (§12.1), write an audit row. Returns the txn id.
+ *
+ * Pass an outer `tx` to run inside a caller's transaction (so the posting and the caller's
+ * side-effects commit atomically); omit it to open a fresh transaction. Never opens a nested
+ * one — with an outer `tx` the same client is reused.
  */
-export async function postTransaction(input: PostInput): Promise<{ id: string }> {
+export async function postTransaction(input: PostInput, tx?: Prisma.TransactionClient): Promise<{ id: string }> {
   const { lines } = input;
   if (lines.length < 2) throw new Error("A transaction needs at least two legs.");
   if (lines.some((l) => l.amount === 0n)) throw new Error("Ledger lines cannot be zero.");
   const sum = lines.reduce((s, l) => s + l.amount, 0n);
   if (sum !== 0n) throw new Error("Ledger lines must balance to zero.");
 
-  return prisma.$transaction(async (tx) => {
+  const run = async (tx: Prisma.TransactionClient) => {
     const ids = [...new Set(lines.map((l) => l.accountId))];
     const accts = await tx.ledgerAccount.findMany({ where: { id: { in: ids } } });
     if (accts.length !== ids.length) throw new Error("Unknown ledger account in posting.");
@@ -75,5 +79,7 @@ export async function postTransaction(input: PostInput): Promise<{ id: string }>
       data: { action: input.type, entityType: "Transaction", entityId: txn.id, actorId: input.actorId, meta: {} },
     });
     return { id: txn.id };
-  });
+  };
+
+  return tx ? run(tx) : prisma.$transaction(run);
 }

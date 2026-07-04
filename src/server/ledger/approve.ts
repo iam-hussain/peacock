@@ -8,17 +8,25 @@ import { postIntent, type EntryPayload } from "./intents";
 export async function approveSubmission(id: string, actorId: string): Promise<{ id: string; txnId: string }> {
   const sub = await prisma.submission.findUnique({ where: { id } });
   if (!sub) throw new Error("Submission not found.");
-  if (sub.status !== "PENDING") throw new Error("This submission was already decided.");
+  if (sub.status !== "PENDING") {
+    // Idempotent: a retry after a successful approve must not double-post. If it already posted,
+    // return the recorded transaction instead of posting a second one.
+    if (sub.status === "APPROVED" && sub.postedTxnId) return { id, txnId: sub.postedTxnId };
+    throw new Error("This submission was already decided.");
+  }
 
   const payload = { intent: sub.intent, ...(sub.payload as Record<string, string>) } as EntryPayload;
-  const txn = await postIntent(payload, actorId);
-
-  await prisma.submission.update({
-    where: { id },
-    data: { status: "APPROVED", decidedById: actorId, decidedAt: new Date(), postedTxnId: txn.id },
+  // Post the ledger entries and flip the submission to APPROVED atomically: a crash between them
+  // must not leave a posted transaction with the submission still PENDING (which a retry would re-post).
+  return prisma.$transaction(async (tx) => {
+    const txn = await postIntent(payload, actorId, tx);
+    await tx.submission.update({
+      where: { id },
+      data: { status: "APPROVED", decidedById: actorId, decidedAt: new Date(), postedTxnId: txn.id },
+    });
+    await tx.notification.updateMany({ where: { submissionId: id }, data: { isRead: true } });
+    return { id, txnId: txn.id };
   });
-  await prisma.notification.updateMany({ where: { submissionId: id }, data: { isRead: true } });
-  return { id, txnId: txn.id };
 }
 
 export async function rejectSubmission(id: string, actorId: string): Promise<{ id: string }> {

@@ -29,9 +29,8 @@ export async function decideSubmission(id: string, decision: "approve" | "reject
     if (!me?.isAdmin) return { ok: false, error: "Only an admin can do that." };
     if (decision === "approve") await approveSubmission(id, me.id);
     else await rejectSubmission(id, me.id);
-    revalidatePath("/notifications");
-    revalidatePath("/transactions");
-    revalidatePath("/dashboard");
+    // An approval posts to the ledger, touching every money view — invalidate them all, not just three.
+    revalidateLedger();
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Could not process the approval." };
@@ -87,52 +86,56 @@ export async function formAction(kind: string, fd: FormData): Promise<ActionResu
       const denied = await requireAdmin();
       if (denied) return { ok: false, error: denied };
     }
-    switch (kind) {
-      case "addMember":
-        return await addMember(fd);
-      case "editMember":
-        return await editMember(fd);
-      case "newVendor":
-        return await newVendor(fd);
-      case "newChit":
-        return await newChit(fd);
-      case "editVendor":
-        return await editVendor(fd);
-      case "addCharge":
-        return await addCharge(fd);
-      case "editCharge":
-        return await editCharge(fd);
-      case "rejoin":
-        return await rejoin(fd);
-      case "settle":
-        return await settle(fd);
-      case "vendorWriteOff":
-        return await vendorWriteOff(fd);
-      case "recordPayment":
-        return await recordPayment(fd);
-      case "editPayment":
-        return await editPayment(fd);
-      case "deleteCharge":
-        return await deleteCharge(fd);
-      case "deletePayment":
-        return await deletePayment(fd);
-      case "editTransaction":
-        return await editTransaction(fd);
-      case "deleteTransaction":
-        return await deleteTransaction(fd);
-      case "entry":
-        return await submitEntry(fd);
-      case "changePassword":
-        return await changePassword(fd);
-      case "resetPassword":
-        return await resetPassword(fd);
-      case "editProfile":
-        return await editProfile(fd);
-      default:
-        return { ok: true, deferred: true };
-    }
+    return await dispatch(kind, fd);
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Something went wrong" };
+  }
+}
+
+async function dispatch(kind: string, fd: FormData): Promise<ActionResult> {
+  switch (kind) {
+    case "addMember":
+      return await addMember(fd);
+    case "editMember":
+      return await editMember(fd);
+    case "newVendor":
+      return await newVendor(fd);
+    case "newChit":
+      return await newChit(fd);
+    case "editVendor":
+      return await editVendor(fd);
+    case "addCharge":
+      return await addCharge(fd);
+    case "editCharge":
+      return await editCharge(fd);
+    case "rejoin":
+      return await rejoin(fd);
+    case "settle":
+      return await settle(fd);
+    case "vendorWriteOff":
+      return await vendorWriteOff(fd);
+    case "recordPayment":
+      return await recordPayment(fd);
+    case "editPayment":
+      return await editPayment(fd);
+    case "deleteCharge":
+      return await deleteCharge(fd);
+    case "deletePayment":
+      return await deletePayment(fd);
+    case "editTransaction":
+      return await editTransaction(fd);
+    case "deleteTransaction":
+      return await deleteTransaction(fd);
+    case "entry":
+      return await submitEntry(fd);
+    case "changePassword":
+      return await changePassword(fd);
+    case "resetPassword":
+      return await resetPassword(fd);
+    case "editProfile":
+      return await editProfile(fd);
+    default:
+      return { ok: true, deferred: true };
   }
 }
 
@@ -237,16 +240,26 @@ async function editMember(fd: FormData): Promise<ActionResult> {
   return { ok: true };
 }
 
+// Optional yyyy-mm-dd string that, when present, must parse to a real date. Shared by the money
+// actions so a garbage date is rejected at the boundary instead of silently becoming `Invalid Date`.
+const optDate = z.string().optional().refine((s) => !s || !Number.isNaN(new Date(s).getTime()), "Enter a valid date.");
+
+const newVendorSchema = z.object({
+  name: z.string().min(1, "Vendor name is required."),
+  category: z.string().optional(),
+  cycle: optDate,
+});
+
 async function newVendor(fd: FormData): Promise<ActionResult> {
-  const name = str(fd, "name");
-  if (!name) return { ok: false, error: "Vendor name is required." };
+  const p = newVendorSchema.safeParse({ name: str(fd, "name"), category: str(fd, "category"), cycle: str(fd, "cycle") });
+  if (!p.success) return { ok: false, error: p.error.issues[0].message };
   // Capital & returns come from ledger entries later, so the vendor opens with a zero receivable.
   await prisma.vendor.create({
     data: {
-      name,
+      name: p.data.name,
       type: "GENERAL",
-      category: str(fd, "category") || null,
-      startedAt: parseFormDate(str(fd, "cycle")),
+      category: p.data.category || null,
+      startedAt: parseFormDate(p.data.cycle ?? ""),
       accounts: { create: { kind: "VENDOR_RECEIVABLE", balance: 0n } },
     },
   });
@@ -254,15 +267,23 @@ async function newVendor(fd: FormData): Promise<ActionResult> {
   return { ok: true };
 }
 
+const newChitSchema = z.object({
+  name: z.string().min(1, "Chit name is required."),
+  months: z.string().optional(),
+  value: z.string().optional(),
+  margin: z.string().optional(),
+  start: optDate,
+});
+
 async function newChit(fd: FormData): Promise<ActionResult> {
-  const name = str(fd, "name");
-  if (!name) return { ok: false, error: "Chit name is required." };
-  const months = Number(str(fd, "months")) || 20;
-  const value = rupeesToPaise(str(fd, "value"));
-  const startedAt = parseFormDate(str(fd, "start"));
+  const p = newChitSchema.safeParse({ name: str(fd, "name"), months: str(fd, "months"), value: str(fd, "value"), margin: str(fd, "margin"), start: str(fd, "start") });
+  if (!p.success) return { ok: false, error: p.error.issues[0].message };
+  const months = Number(p.data.months) || 20;
+  const value = rupeesToPaise(p.data.value ?? "");
+  const startedAt = parseFormDate(p.data.start ?? "");
   await prisma.vendor.create({
     data: {
-      name,
+      name: p.data.name,
       type: "CHIT",
       category: "Chit",
       startedAt,
@@ -270,7 +291,7 @@ async function newChit(fd: FormData): Promise<ActionResult> {
         create: {
           chitValue: value,
           durationMonths: months,
-          marginInstallment: rupeesToPaise(str(fd, "margin")) || (months ? value / BigInt(months) : 0n),
+          marginInstallment: rupeesToPaise(p.data.margin ?? "") || (months ? value / BigInt(months) : 0n),
           startedAt,
         },
       },
@@ -281,22 +302,31 @@ async function newChit(fd: FormData): Promise<ActionResult> {
   return { ok: true };
 }
 
+const editVendorSchema = z.object({
+  id: z.string().min(1, "Missing vendor."),
+  name: z.string().optional(),
+  category: z.string().optional(),
+  status: z.string().optional(),
+  value: z.string().optional(),
+  months: z.string().optional(),
+  margin: z.string().optional(),
+});
+
 async function editVendor(fd: FormData): Promise<ActionResult> {
-  const id = str(fd, "id");
-  if (!id) return { ok: false, error: "Missing vendor." };
+  const p = editVendorSchema.safeParse({ id: str(fd, "id"), name: str(fd, "name"), category: str(fd, "category"), status: str(fd, "status"), value: str(fd, "value"), months: str(fd, "months"), margin: str(fd, "margin") });
+  if (!p.success) return { ok: false, error: p.error.issues[0].message };
+  const { id } = p.data;
 
   await prisma.vendor.update({
     where: { id },
     data: {
-      name: str(fd, "name") || undefined,
-      category: str(fd, "category") || null,
-      status: (str(fd, "status").toUpperCase() as "ACTIVE" | "INACTIVE" | "CLOSED") || undefined,
+      name: p.data.name || undefined,
+      category: p.data.category || null,
+      status: (p.data.status ? (p.data.status.toUpperCase() as "ACTIVE" | "INACTIVE" | "CLOSED") : undefined),
     },
   });
   // Chit vendors also carry value / duration / margin — update the ChitFund when those come through.
-  const value = str(fd, "value");
-  const months = str(fd, "months");
-  const margin = str(fd, "margin");
+  const { value, months, margin } = p.data;
   if (value || months || margin) {
     await prisma.chitFund.updateMany({
       where: { vendorId: id },
@@ -382,20 +412,19 @@ async function deleteCharge(fd: FormData): Promise<ActionResult> {
   return { ok: true };
 }
 
-// Delete a recorded pay-down — reverse its ledger legs (undo the balance changes), then remove it.
+// Delete a recorded pay-down — post a reversing entry (§16). Routed through reverseTransaction so the
+// closed-quarter lock, non-negative-treasury guard, and audit/reversal trail all apply (a direct
+// balance decrement bypassed every one of them and lost the history).
 async function deletePayment(fd: FormData): Promise<ActionResult> {
   const id = str(fd, "id");
   const memberId = str(fd, "memberId");
   if (!id || !memberId) return { ok: false, error: "Missing payment." };
-  const txn = await prisma.transaction.findUnique({ where: { id }, select: { entries: { select: { id: true, accountId: true, amount: true } } } });
-  if (!txn) return { ok: false, error: "Payment not found." };
-  await prisma.$transaction(async (tx) => {
-    for (const e of txn.entries) {
-      await tx.ledgerAccount.update({ where: { id: e.accountId }, data: { balance: { increment: -e.amount } } });
-    }
-    await tx.entry.deleteMany({ where: { transactionId: id } });
-    await tx.transaction.delete({ where: { id } });
-  });
+  try {
+    await reverseTransaction(id);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Could not delete the payment." };
+  }
+  revalidateLedger();
   revalidatePath(`/members/${memberId}`);
   return { ok: true };
 }
@@ -437,9 +466,17 @@ async function editTransaction(fd: FormData): Promise<ActionResult> {
 // membership is closed, and raise the auto-suggested catch-up as a "Rejoin" charge they pay
 // down over time. Back deposits aren't a charge — they surface as the new membership's normal
 // pending dues (0 paid vs the full club-life baseline). No cash moves here.
+const rejoinSchema = z.object({
+  memberId: z.string().min(1, "Missing member."),
+  catchup: z.string().optional(),
+  date: optDate,
+  note: z.string().optional(),
+});
+
 async function rejoin(fd: FormData): Promise<ActionResult> {
-  const memberId = str(fd, "memberId");
-  if (!memberId) return { ok: false, error: "Missing member." };
+  const parsed = rejoinSchema.safeParse({ memberId: str(fd, "memberId"), catchup: str(fd, "catchup"), date: str(fd, "date"), note: str(fd, "note") });
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0].message };
+  const { memberId } = parsed.data;
   const member = await prisma.member.findUnique({
     where: { id: memberId },
     select: { id: true, memberships: { select: { seq: true, status: true } } },
@@ -447,9 +484,9 @@ async function rejoin(fd: FormData): Promise<ActionResult> {
   if (!member) return { ok: false, error: "Member not found." };
   if (member.memberships.some((s) => s.status === "ACTIVE")) return { ok: false, error: "This member is already active." };
 
-  const catchup = rupeesToPaise(str(fd, "catchup"));
+  const catchup = rupeesToPaise(parsed.data.catchup ?? "");
   if (catchup < 0n) return { ok: false, error: "Catch-up can't be negative." };
-  const date = str(fd, "date") ? new Date(str(fd, "date")) : new Date();
+  const date = parsed.data.date ? new Date(parsed.data.date) : new Date();
   const nextSeq = Math.max(0, ...member.memberships.map((s) => s.seq)) + 1;
 
   await prisma.$transaction(async (tx) => {
@@ -464,7 +501,7 @@ async function rejoin(fd: FormData): Promise<ActionResult> {
     });
     if (catchup > 0n) {
       await tx.charge.create({
-        data: { membershipId: ms.id, kind: "CATCHUP", reason: "REJOIN", amount: catchup, occurredAt: date, note: str(fd, "note") || null },
+        data: { membershipId: ms.id, kind: "CATCHUP", reason: "REJOIN", amount: catchup, occurredAt: date, note: parsed.data.note || null },
       });
     }
     // Clear the archived flag so a member who had fully "left" reads as active again.
@@ -598,7 +635,10 @@ export async function setAdmin(memberId: string, makeAdmin: boolean): Promise<Ac
 // Admin edits club settings (design "Edit club settings"): name & timezone are locked; the
 // dividend toggle flips instantly; a new monthly-deposit amount or loan rate is an APPEND to the
 // dated history (effective going forward — past records untouched). Both fields of a pair required.
-type ClubStage = { name?: string; amountPaise: number; startDate: string; endDate?: string | null };
+// amountPaise is stored as a string: JSON has no BigInt, and Number() would down-cast paise into a
+// float and lose precision on large money. The read side (queries/settings.ts, queries/members.ts)
+// already parses it back with BigInt(), which accepts both string and legacy-number values.
+type ClubStage = { name?: string; amountPaise: string; startDate: string; endDate?: string | null };
 type ClubRate = { rateBps: number; effectiveFrom: string };
 
 export async function saveClubSettings(input: {
@@ -617,15 +657,15 @@ export async function saveClubSettings(input: {
   const depD = (input.depositFrom ?? "").trim();
   if (depA || depD) {
     if (!depA || !depD) return { ok: false, error: "Enter both a new deposit amount and its effective date." };
-    const amount = Number(rupeesToPaise(depA));
-    if (amount <= 0) return { ok: false, error: "Deposit amount must be greater than zero." };
+    const amount = rupeesToPaise(depA);
+    if (amount <= 0n) return { ok: false, error: "Deposit amount must be greater than zero." };
     const from = new Date(depD);
     if (Number.isNaN(from.getTime())) return { ok: false, error: "Enter a valid deposit effective date." };
     const stages = ([...(cfg.stages as unknown as ClubStage[])]).sort((a, b) => a.startDate.localeCompare(b.startDate));
     const last = stages[stages.length - 1];
     if (last && depD <= last.startDate) return { ok: false, error: "Effective date must be after the current stage." };
     if (last) last.endDate = depD;
-    stages.push({ name: `Stage ${stages.length + 1}`, amountPaise: amount, startDate: depD });
+    stages.push({ name: `Stage ${stages.length + 1}`, amountPaise: amount.toString(), startDate: depD });
     data.stages = stages;
   }
 
@@ -665,7 +705,8 @@ async function vendorWriteOff(fd: FormData): Promise<ActionResult> {
     return { ok: false, error: e instanceof Error ? e.message : "Could not write off the vendor." };
   }
   const vendorId = str(fd, "vendorId");
-  revalidatePath("/vendors");
+  // A write-off posts to the ledger (receivable → profit), touching dashboard/analytics too.
+  revalidateLedger();
   if (vendorId) revalidatePath(`/vendors/${vendorId}`);
   return { ok: true };
 }
@@ -674,24 +715,33 @@ async function vendorWriteOff(fd: FormData): Promise<ActionResult> {
 // their membership. Posts the settlement as REAL split legs — interest collected, loan repaid,
 // capital returned, profit paid to PROFIT_DISTRIBUTED — grouped under one reference, and snapshots
 // the guide on the membership (see settleMembership). Profit zeroes out once they're no longer active.
+const settleSchema = z.object({
+  memberId: z.string().min(1, "Missing member."),
+  treasurerId: z.string().min(1, "Pick the treasurer paying the member out."),
+  amount: z.string().optional(),
+  date: optDate,
+  note: z.string().optional(),
+});
+
 async function settle(fd: FormData): Promise<ActionResult> {
-  const memberId = str(fd, "memberId");
+  const p = settleSchema.safeParse({ memberId: str(fd, "memberId"), treasurerId: str(fd, "treasurerId"), amount: str(fd, "amount"), date: str(fd, "date"), note: str(fd, "note") });
+  if (!p.success) return { ok: false, error: p.error.issues[0].message };
+  const { memberId } = p.data;
   try {
     const ms = await prisma.membership.findFirst({ where: { memberId, status: "ACTIVE" }, orderBy: { seq: "desc" }, select: { id: true } });
     if (!ms) return { ok: false, error: "This member has no active membership to settle." };
-    const treasurerId = str(fd, "treasurerId");
-    if (!treasurerId) return { ok: false, error: "Pick the treasurer paying the member out." };
     await settleMembership({
       membershipId: ms.id,
-      treasurerMemberId: treasurerId,
-      finalPaise: rupeesToPaise(str(fd, "amount") || "0"),
-      occurredAt: str(fd, "date") ? new Date(str(fd, "date")) : new Date(),
-      note: str(fd, "note") || null,
+      treasurerMemberId: p.data.treasurerId,
+      finalPaise: rupeesToPaise(p.data.amount || "0"),
+      occurredAt: p.data.date ? new Date(p.data.date) : new Date(),
+      note: p.data.note || null,
     });
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Could not settle the member." };
   }
-  revalidatePath("/members");
+  // Settlement posts real ledger legs (interest, loan, capital, profit) — invalidate every money view.
+  revalidateLedger();
   revalidatePath(`/members/${memberId}`);
   return { ok: true };
 }
@@ -730,44 +780,53 @@ async function recordPayment(fd: FormData): Promise<ActionResult> {
   const isPenalty = str(fd, "type").toLowerCase().startsWith("pen");
   return postOrSubmit(
     isPenalty ? "Delayed-payment penalty" : "Catch-up payment",
-    { party: str(fd, "party"), amount: str(fd, "amount"), treasurer: str(fd, "treasurer"), date: str(fd, "date"), note: str(fd, "note") },
+    { party: str(fd, "party"), partyId: memberId, amount: str(fd, "amount"), treasurer: str(fd, "treasurer"), date: str(fd, "date"), note: str(fd, "note") },
     () => revalidatePath(`/members/${memberId}`),
   );
 }
 
-// Edit a recorded payment's amount / date by re-scaling its (balanced) 2-leg posting.
+// Edit a recorded payment's amount / date. Routed through editTransactionAmount (reverse + repost)
+// so it goes through rebuildLines — which balances every posting shape, not just 2-leg ones — and
+// through the closed-quarter lock + audit trail. The old in-place re-scale wrote ±amount to every
+// leg, which silently corrupted any 3-leg posting (e.g. a vendor return) and bypassed the lock.
 async function editPayment(fd: FormData): Promise<ActionResult> {
   const id = str(fd, "id");
   const memberId = str(fd, "memberId");
   if (!id || !memberId) return { ok: false, error: "Missing payment." };
   const amount = rupeesToPaise(str(fd, "amount"));
   if (amount <= 0n) return { ok: false, error: "Enter an amount greater than zero." };
-  const date = str(fd, "date");
-  const txn = await prisma.transaction.findUnique({ where: { id }, select: { entries: { select: { id: true, accountId: true, amount: true } } } });
-  if (!txn) return { ok: false, error: "Payment not found." };
-  // ponytail: assumes a balanced 2-leg pay-down; re-scale each leg to the new magnitude.
-  await prisma.$transaction(async (tx) => {
-    for (const e of txn.entries) {
-      const next = e.amount > 0n ? amount : -amount;
-      const delta = next - e.amount;
-      if (delta === 0n) continue;
-      await tx.entry.update({ where: { id: e.id }, data: { amount: next } });
-      await tx.ledgerAccount.update({ where: { id: e.accountId }, data: { balance: { increment: delta } } });
-    }
-    if (date) await tx.transaction.update({ where: { id }, data: { occurredAt: new Date(date) } });
-  });
+  try {
+    await editTransactionAmount(id, amount, str(fd, "date") || undefined);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Could not edit the payment." };
+  }
+  revalidateLedger();
   revalidatePath(`/members/${memberId}`);
   return { ok: true };
 }
 
+const entrySchema = z.object({
+  intent: z.string().min(1, "Pick what happened."),
+  party: z.string().optional(),
+  partyId: z.string().optional(),
+  amount: z.string().optional(),
+  date: optDate,
+  treasurer: z.string().optional(),
+  treasurerId: z.string().optional(),
+  note: z.string().optional(),
+  principal: z.string().optional(),
+});
+
 // Top-bar "Add entry": admin posts to the ledger immediately, member queues a pending request (§15).
 async function submitEntry(fd: FormData): Promise<ActionResult> {
-  const intent = str(fd, "intent");
-  if (!intent) return { ok: false, error: "Pick what happened." };
+  const p = entrySchema.safeParse({
+    intent: str(fd, "intent"), party: str(fd, "party"), partyId: str(fd, "partyId"), amount: str(fd, "amount"),
+    date: str(fd, "date"), treasurer: str(fd, "treasurer"), treasurerId: str(fd, "treasurerId"), note: str(fd, "note"), principal: str(fd, "principal"),
+  });
+  if (!p.success) return { ok: false, error: p.error.issues[0].message };
   const payload: Record<string, string> = {};
-  for (const key of ["party", "amount", "date", "treasurer", "note", "principal"]) {
-    const v = str(fd, key);
-    if (v) payload[key] = v;
+  for (const [key, v] of Object.entries(p.data)) {
+    if (typeof v === "string" && v) payload[key] = v;
   }
-  return postOrSubmit(intent, payload, revalidateLedger);
+  return postOrSubmit(payload.intent, payload, revalidateLedger);
 }

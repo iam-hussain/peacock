@@ -3,7 +3,7 @@ import { profitShare } from "@/lib/money";
 import { ensureTreasury, ensureEquity, ensureIncome, ensureLoanReceivable, ensureProfitDistributed } from "./accounts";
 import { postTransaction } from "./post-transaction";
 import { shareableClubProfit, expectedClubDeposit, type Stage } from "@/server/queries/members";
-import { interestOwedByMembership } from "@/server/queries/loans";
+import { interestOwedForMembership } from "@/server/queries/loans";
 
 // The settlement guide (§12), all integer paise. `paid` is the admin-entered final amount; the
 // rest is the server-authoritative breakdown at settle time. Persisted on Membership.settledGuide
@@ -25,7 +25,7 @@ export async function computeSettlement(membershipId: string): Promise<Settlemen
   const activeCount = await prisma.membership.count({ where: { status: "ACTIVE" } });
   const profit = profitShare(await shareableClubProfit(), capital, activeCount, expectedDeposit);
   const loan = (await prisma.loan.aggregate({ _sum: { principalOutstanding: true }, where: { membershipId, status: "ACTIVE" } }))._sum.principalOutstanding ?? 0n;
-  const interest = (await interestOwedByMembership()).get(membershipId) ?? 0n;
+  const interest = await interestOwedForMembership(membershipId);
   const suggested = capital + profit - loan - interest;
   return { capital, profit, loan, interest, suggested: suggested > 0n ? suggested : 0n };
 }
@@ -65,36 +65,42 @@ export async function settleMembership(params: {
 
   const loanRow = await prisma.loan.findFirst({ where: { membershipId, status: "ACTIVE" }, orderBy: { startedAt: "desc" }, select: { id: true } });
 
-  // 1) collect unpaid interest (cash-in)
-  if (g.interest > 0n) {
-    const inc = await ensureIncome("INTEREST_INCOME");
-    await postTransaction({ type: "LOAN_INTEREST", occurredAt, description: note ?? "Settlement — interest cleared", membershipId, loanId: loanRow?.id, reference, lines: [{ accountId: treasury, amount: g.interest }, { accountId: inc, amount: -g.interest }], actorId });
-  }
-  // 2) clear outstanding principal (cash-in) + close the loan
-  if (g.loan > 0n && loanRow) {
-    const lr = await ensureLoanReceivable(membershipId);
-    await postTransaction({ type: "LOAN_REPAY", occurredAt, description: note ?? "Settlement — loan cleared", membershipId, loanId: loanRow.id, reference, lines: [{ accountId: treasury, amount: g.loan }, { accountId: lr, amount: -g.loan }], actorId });
-    await prisma.loan.update({ where: { id: loanRow.id }, data: { principalOutstanding: 0n, status: "CLOSED", closedAt: occurredAt } });
-  }
-  // 3) return capital (cash-out)
-  if (capitalReturned > 0n) {
-    const eq = await ensureEquity(membershipId);
-    await postTransaction({ type: "WITHDRAW", occurredAt, description: note ?? "Settlement — capital returned", membershipId, reference, lines: [{ accountId: treasury, amount: -capitalReturned }, { accountId: eq, amount: capitalReturned }], actorId });
-  }
-  // 4) pay profit (cash-out) → contra-income pool
-  if (profitPaid > 0n) {
-    const pd = await ensureProfitDistributed();
-    await postTransaction({ type: "PROFIT_WITHDRAW", occurredAt, description: note ?? "Settlement — profit paid", membershipId, reference, lines: [{ accountId: treasury, amount: -profitPaid }, { accountId: pd, amount: profitPaid }], actorId });
-  }
+  // Resolve the accounts up-front (creates are idempotent), then commit every posting, the loan
+  // close, and the membership close in ONE transaction — a crash mid-settlement must not leave the
+  // ledger half-posted with the membership still open or the loan still active.
+  const inc = g.interest > 0n ? await ensureIncome("INTEREST_INCOME") : null;
+  const lr = g.loan > 0n && loanRow ? await ensureLoanReceivable(membershipId) : null;
+  const eq = capitalReturned > 0n ? await ensureEquity(membershipId) : null;
+  const pd = profitPaid > 0n ? await ensureProfitDistributed() : null;
 
-  await prisma.membership.update({
-    where: { id: membershipId },
-    data: {
-      status: "CLOSED",
-      leftAt: occurredAt,
-      settledAmount: finalPaise,
-      settledGuide: { capital: g.capital.toString(), profit: g.profit.toString(), loan: g.loan.toString(), interest: g.interest.toString(), suggested: g.suggested.toString(), paid: finalPaise.toString() },
-    },
+  await prisma.$transaction(async (tx) => {
+    // 1) collect unpaid interest (cash-in)
+    if (inc) {
+      await postTransaction({ type: "LOAN_INTEREST", occurredAt, description: note ?? "Settlement — interest cleared", membershipId, loanId: loanRow?.id, reference, lines: [{ accountId: treasury, amount: g.interest }, { accountId: inc, amount: -g.interest }], actorId }, tx);
+    }
+    // 2) clear outstanding principal (cash-in) + close the loan
+    if (lr && loanRow) {
+      await postTransaction({ type: "LOAN_REPAY", occurredAt, description: note ?? "Settlement — loan cleared", membershipId, loanId: loanRow.id, reference, lines: [{ accountId: treasury, amount: g.loan }, { accountId: lr, amount: -g.loan }], actorId }, tx);
+      await tx.loan.update({ where: { id: loanRow.id }, data: { principalOutstanding: 0n, status: "CLOSED", closedAt: occurredAt } });
+    }
+    // 3) return capital (cash-out)
+    if (eq) {
+      await postTransaction({ type: "WITHDRAW", occurredAt, description: note ?? "Settlement — capital returned", membershipId, reference, lines: [{ accountId: treasury, amount: -capitalReturned }, { accountId: eq, amount: capitalReturned }], actorId }, tx);
+    }
+    // 4) pay profit (cash-out) → contra-income pool
+    if (pd) {
+      await postTransaction({ type: "PROFIT_WITHDRAW", occurredAt, description: note ?? "Settlement — profit paid", membershipId, reference, lines: [{ accountId: treasury, amount: -profitPaid }, { accountId: pd, amount: profitPaid }], actorId }, tx);
+    }
+
+    await tx.membership.update({
+      where: { id: membershipId },
+      data: {
+        status: "CLOSED",
+        leftAt: occurredAt,
+        settledAmount: finalPaise,
+        settledGuide: { capital: g.capital.toString(), profit: g.profit.toString(), loan: g.loan.toString(), interest: g.interest.toString(), suggested: g.suggested.toString(), paid: finalPaise.toString() },
+      },
+    });
   });
   return { ...g, paid: finalPaise };
 }

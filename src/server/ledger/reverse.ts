@@ -1,7 +1,7 @@
 import "server-only";
 import { prisma } from "@/server/db";
 import { postTransaction } from "./post-transaction";
-import type { TxnType } from "@prisma/client";
+import type { Prisma, TxnType } from "@prisma/client";
 
 const abs = (n: bigint) => (n < 0n ? -n : n);
 
@@ -41,7 +41,7 @@ async function loadCorrectable(id: string): Promise<LoadedTxn> {
   return txn;
 }
 
-async function postReversal(txn: LoadedTxn, actorId?: string) {
+async function postReversal(txn: LoadedTxn, actorId?: string, tx?: Prisma.TransactionClient) {
   return postTransaction({
     type: "REVERSAL",
     occurredAt: txn.occurredAt,
@@ -52,7 +52,7 @@ async function postReversal(txn: LoadedTxn, actorId?: string) {
     reversesId: txn.id,
     lines: txn.entries.map((e) => ({ accountId: e.accountId, amount: -e.amount })),
     actorId,
-  });
+  }, tx);
 }
 
 /** Delete = post a reversing entry, dated to the original's month (§16). */
@@ -81,6 +81,11 @@ function rebuildLines(txn: LoadedTxn, A: bigint): { accountId: string; amount: b
   const principal = txn.entries.find((e) => e.account.kind === "VENDOR_RECEIVABLE");
   const profit = txn.entries.find((e) => e.account.kind === "VENDOR_PROFIT");
   if (treasury && principal && profit) {
+    // The principal (capital-returned) leg is fixed and the profit leg absorbs the rest, so the new
+    // total must at least cover the returned principal — otherwise profit would flip to a debit,
+    // silently booking a loss. Mirror postIntent's "principal can't exceed the amount received" guard.
+    const P = abs(principal.amount);
+    if (A < P) throw new Error("Principal returned can't exceed the amount received.");
     const t = treasury.amount > 0n ? A : -A;
     return [
       { accountId: treasury.accountId, amount: t },
@@ -93,13 +98,13 @@ function rebuildLines(txn: LoadedTxn, A: bigint): { accountId: string; amount: b
 
 // Loan / membership state is a running aggregate. After the ledger is corrected, nudge the linked
 // side table by the same delta and re-derive status. (Δ = new − old.)
-async function applyEditSideEffects(txn: LoadedTxn, oldA: bigint, newA: bigint, occurredAt: Date) {
+async function applyEditSideEffects(txn: LoadedTxn, oldA: bigint, newA: bigint, occurredAt: Date, db: Prisma.TransactionClient = prisma) {
   const delta = newA - oldA;
   if (delta === 0n) return;
 
   if ((txn.type === "LOAN_TAKEN" || txn.type === "LOAN_REPAY") && txn.loanId) {
     const step = txn.type === "LOAN_TAKEN" ? delta : -delta; // a bigger repayment lowers principal
-    const loan = await prisma.loan.update({
+    const loan = await db.loan.update({
       where: { id: txn.loanId },
       data: {
         principalOutstanding: { increment: step },
@@ -110,7 +115,7 @@ async function applyEditSideEffects(txn: LoadedTxn, oldA: bigint, newA: bigint, 
     // ponytail: re-derive status from the resulting principal — correct for the common single-loan
     // case. A pathological edit of an early entry after later ones already moved the loan can leave
     // it off; recompute from the loan's full entry history if the club ever overlaps loans.
-    await prisma.loan.update({
+    await db.loan.update({
       where: { id: txn.loanId },
       data: loan.principalOutstanding <= 0n
         ? { status: "CLOSED", closedAt: occurredAt }
@@ -119,7 +124,7 @@ async function applyEditSideEffects(txn: LoadedTxn, oldA: bigint, newA: bigint, 
   }
 
   if (txn.type === "WITHDRAW" && txn.membershipId)
-    await prisma.membership.update({ where: { id: txn.membershipId }, data: { settledAmount: newA } });
+    await db.membership.update({ where: { id: txn.membershipId }, data: { settledAmount: newA } });
 }
 
 /** Edit = reverse the original, re-post a corrected copy at the new amount / date, and adjust any
@@ -139,20 +144,22 @@ export async function editTransactionAmount(
   const occurredAt = newDateISO && !sameDate ? new Date(newDateISO) : txn.occurredAt;
   const lines = rebuildLines(txn, newAmountPaise); // validate shape before we touch anything
 
-  // ponytail: reverse + repost are two separate postings, not one atomic unit. If the repost fails
-  // (closed-quarter date, treasury guard) the original is left reversed with no replacement — re-add
-  // it. Fold both into one $transaction if that ever bites.
-  await postReversal(txn, actorId);
-  const corrected = await postTransaction({
-    type: txn.type,
-    occurredAt,
-    description: txn.description ?? undefined,
-    membershipId: txn.membershipId ?? undefined,
-    loanId: txn.loanId ?? undefined,
-    vendorId: txn.vendorId ?? undefined,
-    lines,
-    actorId,
+  // Reverse + repost + side-effect adjustment are one atomic unit: if the repost fails (closed-quarter
+  // date, treasury guard) the reversal rolls back too, so the original is never left reversed with no
+  // replacement, and the loan/membership side table can't drift out of sync with the ledger.
+  return prisma.$transaction(async (tx) => {
+    await postReversal(txn, actorId, tx);
+    const corrected = await postTransaction({
+      type: txn.type,
+      occurredAt,
+      description: txn.description ?? undefined,
+      membershipId: txn.membershipId ?? undefined,
+      loanId: txn.loanId ?? undefined,
+      vendorId: txn.vendorId ?? undefined,
+      lines,
+      actorId,
+    }, tx);
+    await applyEditSideEffects(txn, oldA, newAmountPaise, occurredAt, tx);
+    return corrected;
   });
-  await applyEditSideEffects(txn, oldA, newAmountPaise, occurredAt);
-  return corrected;
 }
