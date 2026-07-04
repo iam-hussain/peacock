@@ -203,4 +203,67 @@
   body {
     @apply bg-background text-foreground;
   }
+  /* Disable the browser's double-tap-to-zoom on tappable controls. Removes the
+     ~300ms tap delay and the accidental zoom on mobile Chrome/Safari, while
+     keeping pinch-to-zoom intact (unlike user-scalable=no). */
+  a,
+  button,
+  [role="button"],
+  label,
+  select,
+  summary {
+    touch-action: manipulation;
+  }
+}
+
+/* Mobile only (< md): force text inputs to ≥16px so iOS/WebKit doesn't auto-zoom
+   the page when a field gains focus. Unlayered so it wins over Tailwind's text-*
+   utilities regardless of specificity; excludes non-typing control types. */
+@media (width < 48rem) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]):not([type="button"]):not([type="submit"]),
+  textarea,
+  select {
+    font-size: 1rem;
+  }
+}
+
+/* Brand loader — the peacock mark gently bobs while three feather-dots pulse in
+   sequence. Used for route-transition and Suspense fallbacks. */
+@keyframes peacock-bob {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+  }
+  50% {
+    transform: translateY(-8px) scale(1.05);
+  }
+}
+@keyframes peacock-dot {
+  0%,
+  100% {
+    opacity: 0.25;
+    transform: scale(0.7);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+.animate-peacock-bob {
+  animation: peacock-bob 1.5s ease-in-out infinite;
+}
+.peacock-dots > span {
+  animation: peacock-dot 1.1s ease-in-out infinite;
+}
+.peacock-dots > span:nth-child(2) {
+  animation-delay: 0.18s;
+}
+.peacock-dots > span:nth-child(3) {
+  animation-delay: 0.36s;
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-peacock-bob,
+  .peacock-dots > span {
+    animation: none;
+  }
 }

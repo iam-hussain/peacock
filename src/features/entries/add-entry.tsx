@@ -170,7 +170,7 @@ function AddEntryDialog({ optionsPromise, preset, onClose }: { optionsPromise: P
           )
         }
         footer={
-          intent && !picking ? (
+          picking ? undefined : intent ? (
             <>
               <button
                 type="button"
@@ -188,7 +188,17 @@ function AddEntryDialog({ optionsPromise, preset, onClose }: { optionsPromise: P
                 Cancel
               </button>
             </>
-          ) : undefined
+          ) : (
+            // Intent picker (first screen): a full-width Cancel so the selection list is
+            // dismissable from the bottom on mobile without drilling into an option first.
+            <button
+              type="button"
+              onClick={close}
+              className="flex-1 rounded-xl border border-bd2 bg-sf py-3.5 text-center text-[15px] font-semibold leading-none text-ink hover:bg-bg2"
+            >
+              Cancel
+            </button>
+          )
         }
       >
         {!intent ? (
