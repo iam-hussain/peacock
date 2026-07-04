@@ -491,6 +491,13 @@ share. After settling:
 - their **current membership is closed** (marked Closed, with the leave date and settled amount),
 - **all their history is kept** — nothing is deleted; it becomes a **previous membership**.
 
+The settlement is **recorded as its real parts, not one lump**: the interest they owed is collected,
+any loan is repaid, their capital is returned, and their profit is paid out — each booked separately.
+Because of this the **settlement guide is preserved**: a closed membership's page shows exactly what
+was paid out and how it broke down (capital + profit − loan − interest), so a past exit can always be
+reviewed. The profit a leaver takes is tracked as **profit paid out**, so it correctly leaves the
+pool the remaining members share (§11) and the club can never promise profit that has already left.
+
 ```mermaid
 flowchart LR
   ACT["Membership #N · Active"] -->|decides to leave| CALC["Peacock computes settlement guide:<br/>capital + profit share − loan − unpaid interest"]

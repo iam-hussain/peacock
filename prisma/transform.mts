@@ -71,6 +71,7 @@ const vrId = (v: string) => `vr_${v}`;
 const vpId = (v: string) => `vp_${v}`;
 const INTEREST_INCOME = "interest-income";
 const OTHER_INCOME = "other-income"; // penalty pay-downs land here (club income, shared as profit)
+const PROFIT_DISTRIBUTED = "profit-distributed"; // profit paid out to leavers (§12 contra-income)
 
 // In-memory ledger account registry → bulk-created after the replay.
 interface Acct { id: string; kind: LedgerAccountKind; balance: bigint; memberId?: string; membershipId?: string; vendorId?: string; }
@@ -108,6 +109,10 @@ const txnLoanId = new Map<string, string>();
 // installments in receivable, inflating both. Net result per vendor = Σinvest − Σreturns.
 const vendorInvestTotal = new Map<string, bigint>();
 const vendorPrincipalReturned = new Map<string, bigint>(); // running principal repaid per vendor (pass 2)
+// Settlement guide captured at each WITHDRAW replay (old export: withdrawal = capital + profit; loan
+// & interest were separate txns already cleared). Feeds Membership.settledGuide so a closed account
+// shows the guide (§12) and the profit lands in PROFIT_DISTRIBUTED — see the WITHDRAW case below.
+const settlementByMs = new Map<string, { capital: bigint; profit: bigint; paid: bigint }>();
 for (const t of txns) {
   const from = resolve(t.fromId), to = resolve(t.toId);
   const A = P(t.amount);
@@ -158,8 +163,24 @@ for (const t of txns) {
     }
     case "LOAN_INTEREST": // treasurer(to) +A, interest income −A
       markTreasury(to); push(trAcc(to), A); push(ensure(INTEREST_INCOME, "INTEREST_INCOME"), -A); row.membershipId = msId(from); break;
-    case "WITHDRAW": // treasurer(from) −A, member equity(to) +A
-      markTreasury(from); push(trAcc(from), -A); push(eqAcc(to), A); row.membershipId = msId(to); break;
+    case "WITHDRAW": { // settle & leave: treasurer(from) −A; return capital to equity + book profit to PROFIT_DISTRIBUTED
+      // Old export: withdrawal amount = capital + profit (loan/interest cleared via separate txns).
+      // Capital = deposits so far = −(current equity balance); the rest is realized profit paid out.
+      const eq = eqAcc(to);
+      const capital = eq.balance < 0n ? -eq.balance : 0n;
+      const profit = A > capital ? A - capital : 0n;
+      const capitalReturned = A - profit; // = min(A, capital); zeroes equity on a full settlement
+      markTreasury(from);
+      push(trAcc(from), -A);
+      push(eq, capitalReturned);
+      if (profit > 0n) push(ensure(PROFIT_DISTRIBUTED, "PROFIT_DISTRIBUTED"), profit);
+      row.membershipId = msId(to);
+      // A member can be paid out over SEVERAL withdrawals (e.g. part cash + part UPI) — accumulate,
+      // don't overwrite, so the guide reflects the whole settlement (capital first, profit last).
+      const prev = settlementByMs.get(msId(to)) ?? { capital: 0n, profit: 0n, paid: 0n };
+      settlementByMs.set(msId(to), { capital: prev.capital + capitalReturned, profit: prev.profit + profit, paid: prev.paid + A });
+      break;
+    }
     case "LOAN_TAKEN": // treasurer(from) −A, loan receivable(to) +A
       markTreasury(from); push(trAcc(from), -A); push(lrAcc(to), A); row.membershipId = msId(to); row.loanId = txnLoanId.get(t.id); break;
     case "LOAN_REPAY": // treasurer(to) +A, loan receivable(from) −A
@@ -231,7 +252,7 @@ const credentials: { name: string; email: string; password: string }[] = [];
 const usedPhones = new Set<string>();
 
 const memberCreates: Prisma.MemberCreateManyInput[] = [];
-const membershipCreates: { id: string; memberId: string; seq: number; status: MembershipStatus; joinedAt: Date; leftAt: Date | null }[] = [];
+const membershipCreates: { id: string; memberId: string; seq: number; status: MembershipStatus; joinedAt: Date; leftAt: Date | null; settledAmount?: bigint; settledGuide?: Prisma.InputJsonValue }[] = [];
 
 for (let i = 0; i < members.length; i++) {
   const a = members[i];
@@ -251,7 +272,15 @@ for (let i = 0; i < members.length; i++) {
     userId: signUp.user.id, mustChangePassword: true, customerSince: new Date(a.startedAt),
     archivedAt: a.active ? null : a.endedAt ? new Date(a.endedAt) : null,
   });
-  membershipCreates.push({ id: msId(a.id), memberId: a.id, seq: 1, status: a.active ? "ACTIVE" : "CLOSED", joinedAt: new Date(a.startedAt), leftAt: a.endedAt ? new Date(a.endedAt) : null });
+  const st = settlementByMs.get(msId(a.id)); // frozen settlement guide for a closed stint (§12)
+  membershipCreates.push({
+    id: msId(a.id), memberId: a.id, seq: 1, status: a.active ? "ACTIVE" : "CLOSED",
+    joinedAt: new Date(a.startedAt), leftAt: a.endedAt ? new Date(a.endedAt) : null,
+    ...(st ? {
+      settledAmount: st.paid,
+      settledGuide: { capital: st.capital.toString(), profit: st.profit.toString(), loan: "0", interest: "0", suggested: st.paid.toString(), paid: st.paid.toString() },
+    } : {}),
+  });
   credentials.push({ name, email, password });
 }
 await prisma.member.createMany({ data: memberCreates });

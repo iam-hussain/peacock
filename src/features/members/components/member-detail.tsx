@@ -84,6 +84,7 @@ export function MemberDetailView({ m }: { m: MemberDetail }) {
               <IdentityCard m={m} />
               <BalancesCard m={m} />
               {m.rejoin && <RejoinCard m={m} />}
+              {m.settledGuide && <SettlementGuideCard m={m} />}
               <ContributionCard m={m} />
               <CatchupPenaltyCard m={m} />
               <LoansCard m={m} />
@@ -104,6 +105,7 @@ export function MemberDetailView({ m }: { m: MemberDetail }) {
               {/* right */}
               <div className="flex flex-col gap-4">
                 {m.rejoin && <RejoinCard m={m} />}
+                {m.settledGuide && <SettlementGuideCard m={m} />}
                 <ContributionCard m={m} />
                 <CatchupPenaltyCard m={m} />
                 <LoansCard m={m} />
@@ -129,6 +131,7 @@ export function MemberDetailView({ m }: { m: MemberDetail }) {
           </AdminOnly>
           <BalancesCard m={m} />
           {m.rejoin && <RejoinCard m={m} />}
+          {m.settledGuide && <SettlementGuideCard m={m} />}
           <ContributionCard m={m} />
           <CatchupPenaltyCard m={m} />
           <LoansCard m={m} />
@@ -281,6 +284,46 @@ function RejoinCard({ m }: { m: MemberDetail }) {
           Record rejoin &amp; catch-up
         </RejoinDialog>
       </AdminOnly>
+    </div>
+  );
+}
+
+// Closed stint (§12): the frozen settlement guide — what the leave screen showed and what was paid.
+function SettlementGuideCard({ m }: { m: MemberDetail }) {
+  const g = m.settledGuide!;
+  return (
+    <CardShell
+      title="Settlement guide"
+      titleBadge={
+        <span className="inline-flex items-center gap-[5px] rounded-[20px] border border-wbd bg-wbg px-[9px] py-[5px] text-[9px] font-bold uppercase leading-none tracking-[0.05em] text-wfg">
+          <span className="size-[5px] rounded-full bg-wfg" />
+          Settled · {g.date}
+        </span>
+      }
+    >
+      <div className="px-[22px] py-4">
+        <GuideRow label="Paid-in capital" value={g.capital} />
+        <GuideRow label="Profit share" value={`+ ${g.profit}`} tone="in" />
+        {g.owes && (
+          <>
+            <GuideRow label="Loan cleared" value={`− ${g.loan}`} tone="out" />
+            <GuideRow label="Interest cleared" value={`− ${g.interest}`} tone="out" />
+          </>
+        )}
+        <div className="mt-1 flex items-center justify-between border-t border-hr2 pt-2.5">
+          <span className="text-[13px] font-bold leading-none text-ink">Amount paid out</span>
+          <span className="font-mono text-[17px] font-bold leading-none text-ink">{g.paid}</span>
+        </div>
+      </div>
+    </CardShell>
+  );
+}
+
+function GuideRow({ label, value, tone }: { label: string; value: string; tone?: "in" | "out" }) {
+  return (
+    <div className="flex items-center justify-between py-1.5">
+      <span className="text-[13px] font-medium leading-none text-mut">{label}</span>
+      <span className={`font-mono text-sm font-semibold leading-none ${tone === "in" ? "text-in" : tone === "out" ? "text-out" : "text-ink"}`}>{value}</span>
     </div>
   );
 }
