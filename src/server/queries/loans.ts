@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import { prisma } from "@/server/db";
 import { formatLakh, formatPaise, roundToWholeRupee } from "@/lib/money";
 import { monthYear, dayMonthYear, daysBetween, monthsDays, ist, addMonths } from "@/lib/date";
@@ -16,13 +17,15 @@ export interface LoanCfg {
 }
 const DEFAULT_CFG: LoanCfg = { loanTermMonths: 5, loanCooldownMonths: 1, overduePenaltyBps: 0, dayInterestFrom: new Date(0) };
 
-export async function loanConfig(): Promise<LoanCfg> {
+// Wrapped in React `cache()` so the loan knobs are fetched at most once per request even though
+// several query functions read them (dashboard, loans, members, entries all touch it).
+export const loanConfig = cache(async function loanConfig(): Promise<LoanCfg> {
   const cfg = await prisma.clubConfig.findUnique({
     where: { id: "singleton" },
     select: { loanTermMonths: true, loanCooldownMonths: true, overduePenaltyBps: true, dayInterestFrom: true },
   });
   return cfg ? { ...cfg } : DEFAULT_CFG;
-}
+});
 
 // PRODUCT.md §9: full calendar months at the monthly rate + leftover days pro-rated by the number of
 // days in that incomplete month. All month/day anchoring is on the IST wall-clock (§11). Before
@@ -31,15 +34,12 @@ export function accruedInterest(principal: bigint, bps: number, start: Date, asO
   if (principal <= 0n || asOf <= start || bps <= 0) return 0n;
   const monthly = interestOf(principal, bps);
   const end = ist(asOf);
-  const anniv = ist(start);
+  const startIst = ist(start);
+  // Count whole monthly anniversaries. addMonths clamps at month-end and anchors each step to the
+  // original start day, so a 31st-of-month loan steps 28/29→31→30… without the Feb-31→Mar-3 overflow.
   let months = 0;
-  for (;;) {
-    const next = new Date(anniv);
-    next.setUTCMonth(next.getUTCMonth() + 1);
-    if (next > end) break;
-    anniv.setUTCMonth(anniv.getUTCMonth() + 1);
-    months++;
-  }
+  while (addMonths(startIst, months + 1) <= end) months++;
+  const anniv = addMonths(startIst, months); // last completed anniversary (IST wall-clock)
   let total = monthly * BigInt(months);
   const leftover = daysBetween(anniv, end);
   if (leftover > 0) {
@@ -83,17 +83,34 @@ export interface LoanCycle {
 /** Signed principal changes on a loan, oldest first (+ tranche, − repay). Reversed disbursals /
  *  repayments (and their reversal entries) are dropped so an edited loan isn't double-counted. */
 export async function loanEvents(loanId: string): Promise<{ at: Date; delta: bigint }[]> {
-  const reversed = await prisma.transaction.findMany({
-    where: { loanId, type: "REVERSAL", reversesId: { not: null } },
-    select: { reversesId: true },
-  });
-  const reversedIds = reversed.map((r) => r.reversesId!).filter(Boolean);
-  const txns = await prisma.transaction.findMany({
-    where: { loanId, type: { in: ["LOAN_TAKEN", "LOAN_REPAY"] }, id: { notIn: reversedIds } },
-    orderBy: { occurredAt: "asc" },
-    select: { occurredAt: true, entries: { where: { account: { kind: "LOAN_RECEIVABLE" } }, select: { amount: true } } },
-  });
-  return txns.map((t) => ({ at: t.occurredAt, delta: t.entries.reduce((s, e) => s + e.amount, 0n) }));
+  return (await loanEventsMap([loanId])).get(loanId) ?? [];
+}
+
+/** Batched `loanEvents` for many loans in exactly 2 queries total (vs 2 per loan). Fetches all
+ *  REVERSAL rows then all LOAN_TAKEN/LOAN_REPAY rows for the given loans, drops reversed txns
+ *  (transaction ids are unique, so a single global reversed-set is equivalent to per-loan filtering),
+ *  and groups the signed principal deltas by loanId. Order within each loan stays oldest-first. */
+export async function loanEventsMap(loanIds: string[]): Promise<Map<string, { at: Date; delta: bigint }[]>> {
+  const map = new Map<string, { at: Date; delta: bigint }[]>();
+  if (loanIds.length === 0) return map;
+  for (const id of loanIds) map.set(id, []);
+  const [reversed, txns] = await Promise.all([
+    prisma.transaction.findMany({
+      where: { loanId: { in: loanIds }, type: "REVERSAL", reversesId: { not: null } },
+      select: { reversesId: true },
+    }),
+    prisma.transaction.findMany({
+      where: { loanId: { in: loanIds }, type: { in: ["LOAN_TAKEN", "LOAN_REPAY"] } },
+      orderBy: { occurredAt: "asc" },
+      select: { id: true, loanId: true, occurredAt: true, entries: { where: { account: { kind: "LOAN_RECEIVABLE" } }, select: { amount: true } } },
+    }),
+  ]);
+  const reversedIds = new Set(reversed.map((r) => r.reversesId!).filter(Boolean));
+  for (const t of txns) {
+    if (!t.loanId || reversedIds.has(t.id)) continue;
+    map.get(t.loanId)?.push({ at: t.occurredAt, delta: t.entries.reduce((s, e) => s + e.amount, 0n) });
+  }
+  return map;
 }
 
 /** Replay the principal changes into cycles; the trailing open cycle runs to `asOf`. */
@@ -189,21 +206,19 @@ function toDTO(l: Awaited<ReturnType<typeof loanRows>>[number], cfg: LoanCfg, tr
 }
 
 export async function getLoans(): Promise<LoanDTO[]> {
-  const rows = await loanRows();
+  const [rows, cfg] = await Promise.all([loanRows(), loanConfig()]);
   const now = new Date();
-  const cfg = await loanConfig();
+  const eventsMap = await loanEventsMap(rows.map((l) => l.id));
   // Per-loan accrued interest (whole rupees, incl. overdue penalty) + tranche count.
-  const computed = await Promise.all(
-    rows.map(async (l) => {
-      const events = await loanEvents(l.id);
-      const cycles = reconstructCycles(events, l.monthlyRateBps, now, cfg.dayInterestFrom);
-      const penalty = l.status === "ACTIVE" ? overduePenalty(l.principalOutstanding, l.startedAt, cfg, now) : 0n;
-      const interest = roundToWholeRupee(cycles.reduce((s, c) => s + c.interest, 0n) + penalty);
-      const currentInterest = cycles.find((c) => c.open)?.interest ?? 0n;
-      const tranches = events.filter((e) => e.delta > 0n).length;
-      return { l, interest, currentInterest, tranches };
-    }),
-  );
+  const computed = rows.map((l) => {
+    const events = eventsMap.get(l.id) ?? [];
+    const cycles = reconstructCycles(events, l.monthlyRateBps, now, cfg.dayInterestFrom);
+    const penalty = l.status === "ACTIVE" ? overduePenalty(l.principalOutstanding, l.startedAt, cfg, now) : 0n;
+    const interest = roundToWholeRupee(cycles.reduce((s, c) => s + c.interest, 0n) + penalty);
+    const currentInterest = cycles.find((c) => c.open)?.interest ?? 0n;
+    const tranches = events.filter((e) => e.delta > 0n).length;
+    return { l, interest, currentInterest, tranches };
+  });
 
   // Loan interest is collected per membership (LOAN_INTEREST carries no loanId), so track the
   // borrower's total accrued vs paid. A CLOSED loan whose borrower still owes interest — and has
@@ -257,21 +272,24 @@ export async function getLoans(): Promise<LoanDTO[]> {
 // tracked per membership (LOAN_INTEREST carries no loanId), so aggregate accrual + payments by member.
 /** Per-membership interest still to collect (accrued − paid, whole rupees, floored at 0 per member). */
 export async function interestOwedByMembership(): Promise<Map<string, bigint>> {
-  const loans = await prisma.loan.findMany({ select: { id: true, monthlyRateBps: true, membershipId: true, principalOutstanding: true, startedAt: true, status: true } });
+  const [loans, cfg] = await Promise.all([
+    prisma.loan.findMany({ select: { id: true, monthlyRateBps: true, membershipId: true, principalOutstanding: true, startedAt: true, status: true } }),
+    loanConfig(),
+  ]);
   const now = new Date();
-  const cfg = await loanConfig();
-  // per-loan accrual first (concurrent), THEN fold into the map sequentially — avoids lost updates.
-  const perLoan = await Promise.all(
-    loans.map(async (l) => {
-      const cycleInterest = reconstructCycles(await loanEvents(l.id), l.monthlyRateBps, now, cfg.dayInterestFrom).reduce((s, c) => s + c.interest, 0n);
-      const penalty = l.status === "ACTIVE" ? overduePenalty(l.principalOutstanding, l.startedAt, cfg, now) : 0n;
-      return { membershipId: l.membershipId, interest: roundToWholeRupee(cycleInterest + penalty) };
-    }),
-  );
+  const [eventsMap, interestTxns] = await Promise.all([
+    loanEventsMap(loans.map((l) => l.id)),
+    prisma.transaction.findMany({ where: { type: "LOAN_INTEREST" }, select: { membershipId: true, entries: { where: { amount: { gt: 0 } }, select: { amount: true } } } }),
+  ]);
+  const perLoan = loans.map((l) => {
+    const cycleInterest = reconstructCycles(eventsMap.get(l.id) ?? [], l.monthlyRateBps, now, cfg.dayInterestFrom).reduce((s, c) => s + c.interest, 0n);
+    const penalty = l.status === "ACTIVE" ? overduePenalty(l.principalOutstanding, l.startedAt, cfg, now) : 0n;
+    return { membershipId: l.membershipId, interest: roundToWholeRupee(cycleInterest + penalty) };
+  });
   const accruedByMs = new Map<string, bigint>();
   for (const p of perLoan) accruedByMs.set(p.membershipId, (accruedByMs.get(p.membershipId) ?? 0n) + p.interest);
   const paidByMs = new Map<string, bigint>();
-  for (const t of await prisma.transaction.findMany({ where: { type: "LOAN_INTEREST" }, select: { membershipId: true, entries: { where: { amount: { gt: 0 } }, select: { amount: true } } } })) {
+  for (const t of interestTxns) {
     if (!t.membershipId) continue;
     paidByMs.set(t.membershipId, (paidByMs.get(t.membershipId) ?? 0n) + t.entries.reduce((s, e) => s + e.amount, 0n));
   }
@@ -281,6 +299,32 @@ export async function interestOwedByMembership(): Promise<Map<string, bigint>> {
     if (o > 0n) owed.set(ms, o);
   }
   return owed;
+}
+
+/** Interest still to collect for a SINGLE membership (accrued − paid, whole rupees, floored at 0).
+ * Same accrual/penalty/paid logic as `interestOwedByMembership`, but fetches only this membership's
+ * loans + interest payments — used by settlement, which needs exactly one member's figure. Returns
+ * the identical value `interestOwedByMembership().get(membershipId) ?? 0n` would produce. */
+export async function interestOwedForMembership(membershipId: string): Promise<bigint> {
+  const [loans, cfg] = await Promise.all([
+    prisma.loan.findMany({ where: { membershipId }, select: { id: true, monthlyRateBps: true, principalOutstanding: true, startedAt: true, status: true } }),
+    loanConfig(),
+  ]);
+  const now = new Date();
+  const [eventsMap, interestTxns] = await Promise.all([
+    loanEventsMap(loans.map((l) => l.id)),
+    prisma.transaction.findMany({ where: { type: "LOAN_INTEREST", membershipId }, select: { entries: { where: { amount: { gt: 0 } }, select: { amount: true } } } }),
+  ]);
+  let accrued = 0n;
+  for (const l of loans) {
+    const cycleInterest = reconstructCycles(eventsMap.get(l.id) ?? [], l.monthlyRateBps, now, cfg.dayInterestFrom).reduce((s, c) => s + c.interest, 0n);
+    const penalty = l.status === "ACTIVE" ? overduePenalty(l.principalOutstanding, l.startedAt, cfg, now) : 0n;
+    accrued += roundToWholeRupee(cycleInterest + penalty);
+  }
+  let paid = 0n;
+  for (const t of interestTxns) paid += t.entries.reduce((s, e) => s + e.amount, 0n);
+  const owed = accrued - paid;
+  return owed > 0n ? owed : 0n;
 }
 
 // Total loan interest still to collect across all borrowers.

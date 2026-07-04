@@ -2,7 +2,7 @@ import "server-only";
 import { prisma } from "@/server/db";
 import { formatLakh, formatPaise, profitShare } from "@/lib/money";
 import { monthYear, monthsDays, tenure, daysBetween, dayMonthYear } from "@/lib/date";
-import { loanEvents, reconstructCycles, loanConfig, isOverdue, interestOwedTotal } from "./loans";
+import { loanEventsMap, reconstructCycles, loanConfig, isOverdue, interestOwedTotal, type LoanCfg } from "./loans";
 import { vendorProfitAndObligation } from "./vendors";
 import { getCashHolderOptions } from "./entries";
 import type { Status } from "@/components/shared/status-badge";
@@ -90,38 +90,52 @@ export async function getMembers(): Promise<MemberDTO[]> {
 
   // Full-club-life expected deposit baseline (club start → today) — same for every active member
   // (PRODUCT.md §6). "Pending" on the list = pending deposits (SCREENS.md), i.e. expected − paid.
-  const cfg = await prisma.clubConfig.findUnique({ where: { id: "singleton" }, select: { stages: true } });
-  const expectedDeposit = expectedClubDeposit((cfg?.stages as Stage[] | undefined) ?? []);
-
-  // Per-member gross deposits (PERIODIC_DEPOSIT + CATCHUP credited to equity) and net value.
-  const rows = await Promise.all(
-    members.map(async (m) => {
-      const active = m.memberships.some((s) => s.status === "ACTIVE");
-      const equity = m.memberships.flatMap((s) => s.accounts)[0];
-      const value = -(equity?.balance ?? 0n);
-      const dep = equity
-        ? await prisma.entry.aggregate({ _sum: { amount: true }, where: { accountId: equity.id, transaction: { type: { in: ["PERIODIC_DEPOSIT", "CATCHUP"] } } } })
-        : { _sum: { amount: null } };
-      const deposits = -(dep._sum.amount ?? 0n);
-      const membershipId = m.memberships[0]?.id;
-      const penalty = membershipId ? await outstandingCharge(membershipId, "PENALTY") : 0n;
-      const catchup = membershipId ? await outstandingCharge(membershipId, "CATCHUP") : 0n;
-      const adjustment = (penalty > 0n ? penalty : 0n) + (catchup > 0n ? catchup : 0n);
-      const chargedAgg = membershipId
-        ? await prisma.charge.aggregate({ _sum: { amount: true }, where: { membershipId, kind: { in: ["CATCHUP", "PENALTY"] } } })
-        : { _sum: { amount: null } };
-      const charged = chargedAgg._sum.amount ?? 0n;
-      const pending = active && expectedDeposit > deposits ? expectedDeposit - deposits : 0n;
-      return { m, active, value, deposits, pending, adjustment, charged };
+  // Everything the per-member rows need is fetched in a handful of batched queries (no N+1):
+  // deposits per equity account, charges raised per membership+kind, and charge pay-down legs.
+  const equityIds = members.flatMap((m) => m.memberships.flatMap((s) => s.accounts)).map((a) => a.id);
+  const membershipIds = members.map((m) => m.memberships[0]?.id).filter((x): x is string => !!x);
+  const [cfg, clubProfit, depGroups, raisedGroups, paidRows] = await Promise.all([
+    prisma.clubConfig.findUnique({ where: { id: "singleton" }, select: { stages: true } }),
+    // Profit isn't posted to member equity in this ledger — it pools in the club (interest + vendor
+    // returns). Split it over the EXPECTED deposit base (active members × expected-per-member) so a
+    // fully-paid member always earns their full share regardless of others, each underpayer bears
+    // their own shortfall, and the club never distributes more than it earned (§11, see `profitShare`).
+    shareableClubProfit(),
+    prisma.entry.groupBy({ by: ["accountId"], _sum: { amount: true }, where: { accountId: { in: equityIds }, transaction: { type: { in: ["PERIODIC_DEPOSIT", "CATCHUP"] } } } }),
+    prisma.charge.groupBy({ by: ["membershipId", "kind"], _sum: { amount: true }, where: { membershipId: { in: membershipIds }, kind: { in: ["CATCHUP", "PENALTY"] } } }),
+    prisma.entry.findMany({
+      where: { transaction: { membershipId: { in: membershipIds }, type: { in: ["CATCHUP", "PENALTY"] } }, account: { kind: { in: ["MEMBER_EQUITY", "OTHER_INCOME"] } } },
+      select: { amount: true, account: { select: { kind: true } }, transaction: { select: { membershipId: true, type: true } } },
     }),
-  );
+  ]);
+  const expectedDeposit = expectedClubDeposit((cfg?.stages as Stage[] | undefined) ?? []);
+  const depByAcct = new Map(depGroups.map((d) => [d.accountId, -(d._sum.amount ?? 0n)])); // equity is credit → negate
+  const raisedByMsKind = new Map(raisedGroups.map((g) => [`${g.membershipId}:${g.kind}`, g._sum.amount ?? 0n]));
+  // Pay-downs credit the charge account with a negative leg; outstanding = raised + Σ pay-down legs.
+  // Match `outstandingCharge`'s account filter exactly: CATCHUP pays down MEMBER_EQUITY, PENALTY OTHER_INCOME.
+  const paidByMsKind = new Map<string, bigint>();
+  const paidAcctKind = (type: string) => (type === "CATCHUP" ? "MEMBER_EQUITY" : "OTHER_INCOME");
+  for (const e of paidRows) {
+    if (!e.transaction.membershipId || e.account.kind !== paidAcctKind(e.transaction.type)) continue;
+    const key = `${e.transaction.membershipId}:${e.transaction.type}`;
+    paidByMsKind.set(key, (paidByMsKind.get(key) ?? 0n) + e.amount);
+  }
+  const outstandingOf = (msId: string, kind: "CATCHUP" | "PENALTY") =>
+    (raisedByMsKind.get(`${msId}:${kind}`) ?? 0n) + (paidByMsKind.get(`${msId}:${kind}`) ?? 0n);
 
-  // Profit isn't posted to member equity in this ledger — it pools in the club
-  // (interest + vendor returns). Split it over the EXPECTED deposit base (active members ×
-  // expected-per-member) so a fully-paid member always earns their full share regardless of others,
-  // each underpayer bears their own shortfall, and the club never distributes more than it earned
-  // (PRODUCT.md §11 — see `profitShare`).
-  const clubProfit = await shareableClubProfit();
+  const rows = members.map((m) => {
+    const active = m.memberships.some((s) => s.status === "ACTIVE");
+    const equity = m.memberships.flatMap((s) => s.accounts)[0];
+    const value = -(equity?.balance ?? 0n);
+    const deposits = equity ? depByAcct.get(equity.id) ?? 0n : 0n;
+    const membershipId = m.memberships[0]?.id;
+    const penalty = membershipId ? outstandingOf(membershipId, "PENALTY") : 0n;
+    const catchup = membershipId ? outstandingOf(membershipId, "CATCHUP") : 0n;
+    const adjustment = (penalty > 0n ? penalty : 0n) + (catchup > 0n ? catchup : 0n);
+    const charged = membershipId ? (raisedByMsKind.get(`${membershipId}:CATCHUP`) ?? 0n) + (raisedByMsKind.get(`${membershipId}:PENALTY`) ?? 0n) : 0n;
+    const pending = active && expectedDeposit > deposits ? expectedDeposit - deposits : 0n;
+    return { m, active, value, deposits, pending, adjustment, charged };
+  });
   const activeCount = rows.filter((r) => r.active).length;
   const shareOf = (deposits: bigint, active: boolean) =>
     active ? profitShare(clubProfit, deposits, activeCount, expectedDeposit) : 0n;
@@ -158,11 +172,14 @@ export async function getMembers(): Promise<MemberDTO[]> {
 /** Shareable club profit = loan interest + other income + vendor P/L. Vendor P/L already nets chit
  *  obligations still owed and projects un-taken chit face value (PRODUCT.md §10/§11). */
 export async function realizedClubProfit(): Promise<bigint> {
-  const income = await prisma.ledgerAccount.aggregate({
-    _sum: { balance: true },
-    where: { kind: { in: ["INTEREST_INCOME", "OTHER_INCOME"] }, id: { not: "club-opening" } },
-  });
-  return -(income._sum.balance ?? 0n) + (await vendorProfitAndObligation()).profit; // credit accounts hold negative balances
+  const [income, vpo] = await Promise.all([
+    prisma.ledgerAccount.aggregate({
+      _sum: { balance: true },
+      where: { kind: { in: ["INTEREST_INCOME", "OTHER_INCOME"] }, id: { not: "club-opening" } },
+    }),
+    vendorProfitAndObligation(),
+  ]);
+  return -(income._sum.balance ?? 0n) + vpo.profit; // credit accounts hold negative balances
 }
 
 /** Pooled profit that ACTIVE members share (PRODUCT.md §11):
@@ -173,7 +190,8 @@ export async function realizedClubProfit(): Promise<bigint> {
  *  members would be credited profit that has already left the club as cash, and the club would fall
  *  exactly that short if everyone settled at once. Mirrors the dashboard's `currentProfit`. */
 export async function shareableClubProfit(): Promise<bigint> {
-  return (await realizedClubProfit()) + (await interestOwedTotal()) - (await profitWithdrawnTotal());
+  const [realized, owed, withdrawn] = await Promise.all([realizedClubProfit(), interestOwedTotal(), profitWithdrawnTotal()]);
+  return realized + owed - withdrawn;
 }
 
 /** Profit already paid out to members who left (§12). Settlement posts the profit leg as a
@@ -189,18 +207,23 @@ export async function profitWithdrawnTotal(): Promise<bigint> {
 export async function getMemberFunds(): Promise<{
   activeMembers: number; activeDeposits: bigint; avgBalance: bigint; pendingTotal: bigint; pendingCount: number;
 }> {
-  const cfg = await prisma.clubConfig.findUnique({ where: { id: "singleton" }, select: { stages: true } });
+  const [cfg, active] = await Promise.all([
+    prisma.clubConfig.findUnique({ where: { id: "singleton" }, select: { stages: true } }),
+    prisma.membership.findMany({
+      where: { status: "ACTIVE" },
+      select: { accounts: { where: { kind: "MEMBER_EQUITY" }, select: { id: true, balance: true } } },
+    }),
+  ]);
   const expected = expectedClubDeposit((cfg?.stages as Stage[] | undefined) ?? []);
-  const active = await prisma.membership.findMany({
-    where: { status: "ACTIVE" },
-    select: { accounts: { where: { kind: "MEMBER_EQUITY" }, select: { id: true, balance: true } } },
-  });
+  // One grouped query for all active equity accounts instead of an aggregate per membership.
+  const equityIds = active.flatMap((ms) => ms.accounts).map((a) => a.id);
+  const depGroups = await prisma.entry.groupBy({ by: ["accountId"], _sum: { amount: true }, where: { accountId: { in: equityIds }, transaction: { type: { in: ["PERIODIC_DEPOSIT", "CATCHUP"] } } } });
+  const depByAcct = new Map(depGroups.map((d) => [d.accountId, -(d._sum.amount ?? 0n)]));
   let activeDeposits = 0n, value = 0n, pendingTotal = 0n, pendingCount = 0;
   for (const ms of active) {
     const eq = ms.accounts[0];
     if (!eq) continue;
-    const dep = await prisma.entry.aggregate({ _sum: { amount: true }, where: { accountId: eq.id, transaction: { type: { in: ["PERIODIC_DEPOSIT", "CATCHUP"] } } } });
-    const deposits = -(dep._sum.amount ?? 0n);
+    const deposits = depByAcct.get(eq.id) ?? 0n;
     activeDeposits += deposits;
     value += -(eq.balance ?? 0n);
     if (expected > deposits) { pendingTotal += expected - deposits; pendingCount++; }
@@ -375,7 +398,29 @@ export interface MemberDetailDTO extends MemberDTO {
   cycles: LoanCycleDTO[];
 }
 
-export async function getMemberDetail(id: string): Promise<MemberDetailDTO | null> {
+/** Club-wide invariants that every member-detail statement shares. Computing them once lets a caller
+ *  that needs many statements (e.g. the Share posters) avoid recomputing the heavy pooled-profit /
+ *  treasurer / config reads N times. `getMemberDetail` computes them itself when none is passed. */
+export interface MemberDetailContext {
+  clubProfit: bigint;
+  activeCount: number;
+  stages: Stage[];
+  treasurers: Awaited<ReturnType<typeof getCashHolderOptions>>;
+  loanCfg: LoanCfg;
+}
+
+export async function memberDetailContext(): Promise<MemberDetailContext> {
+  const [clubProfit, activeCount, cfg, treasurers, loanCfg] = await Promise.all([
+    shareableClubProfit(),
+    prisma.membership.count({ where: { status: "ACTIVE" } }),
+    prisma.clubConfig.findUnique({ where: { id: "singleton" }, select: { stages: true } }),
+    getCashHolderOptions(),
+    loanConfig(),
+  ]);
+  return { clubProfit, activeCount, stages: (cfg?.stages as Stage[] | undefined) ?? [], treasurers, loanCfg };
+}
+
+export async function getMemberDetail(id: string, ctx?: MemberDetailContext): Promise<MemberDetailDTO | null> {
   const m = await prisma.member.findUnique({
     where: { id },
     select: {
@@ -405,19 +450,40 @@ export async function getMemberDetail(id: string): Promise<MemberDetailDTO | nul
   });
   if (!m) return null;
 
+  // Club-wide invariants once (injected by batch callers like the Share posters; otherwise computed).
+  const context = ctx ?? (await memberDetailContext());
   const ms = m.memberships[0];
   const active = m.memberships.some((s) => s.status === "ACTIVE");
   const equity = ms?.accounts.find((a) => a.kind === "MEMBER_EQUITY");
   const value = -(equity?.balance ?? 0n);
-  const dep = equity ? await prisma.entry.aggregate({ _sum: { amount: true }, where: { accountId: equity.id, transaction: { type: { in: ["PERIODIC_DEPOSIT", "CATCHUP"] } } } }) : { _sum: { amount: null } };
-  const deposits = -(dep._sum.amount ?? 0n);
+  const loans = ms?.loans ?? [];
   // proportional share of pooled club profit (same model as the members list; see `profitShare`)
-  const clubProfit = await shareableClubProfit();
+  const clubProfit = context.clubProfit;
 
-  const assigned = ms ? (ms.charges.filter((c) => c.kind === "CATCHUP").reduce((s, c) => s + c.amount, 0n)) : 0n;
-  const penaltyAssigned = ms ? (ms.charges.filter((c) => c.kind === "PENALTY").reduce((s, c) => s + c.amount, 0n)) : 0n;
-  const paidDown = assigned - (ms ? await outstandingCharge(ms.id, "CATCHUP") : 0n); // magnitude actually paid
-  const penaltyPaidDown = penaltyAssigned - (ms ? await outstandingCharge(ms.id, "PENALTY") : 0n);
+  // All per-member reads in one batch (deposits, charge pay-downs, ledger payments, loan-interest
+  // paid, loan events for every loan) — no await-per-charge / await-per-loan waterfalls.
+  const [dep, catchupOut, penaltyOut, payments, intPaidAgg, eventsMap] = await Promise.all([
+    equity
+      ? prisma.entry.aggregate({ _sum: { amount: true }, where: { accountId: equity.id, transaction: { type: { in: ["PERIODIC_DEPOSIT", "CATCHUP"] } } } })
+      : Promise.resolve({ _sum: { amount: null } }),
+    ms ? outstandingCharge(ms.id, "CATCHUP") : Promise.resolve(0n),
+    ms ? outstandingCharge(ms.id, "PENALTY") : Promise.resolve(0n),
+    ms
+      ? prisma.transaction.findMany({
+          where: { membershipId: ms.id, type: { in: ["CATCHUP", "PENALTY"] } },
+          orderBy: { occurredAt: "desc" },
+          select: { id: true, type: true, occurredAt: true, entries: { select: { amount: true } } },
+        })
+      : Promise.resolve([]),
+    prisma.entry.aggregate({ _sum: { amount: true }, where: { amount: { gt: 0 }, transaction: { type: "LOAN_INTEREST", membershipId: { in: m.memberships.map((x) => x.id) } } } }),
+    loanEventsMap(loans.map((l) => l.id)),
+  ]);
+  const deposits = -(dep._sum.amount ?? 0n);
+
+  const assigned = ms ? ms.charges.filter((c) => c.kind === "CATCHUP").reduce((s, c) => s + c.amount, 0n) : 0n;
+  const penaltyAssigned = ms ? ms.charges.filter((c) => c.kind === "PENALTY").reduce((s, c) => s + c.amount, 0n) : 0n;
+  const paidDown = assigned - catchupOut; // magnitude actually paid
+  const penaltyPaidDown = penaltyAssigned - penaltyOut;
   // Remaining clamped ≥0 (imported pay-downs can exist without a charge → overpaid vs ₹0).
   const pendingCharge = assigned - paidDown > 0n ? assigned - paidDown : 0n;
   const penaltyCharge = penaltyAssigned - penaltyPaidDown > 0n ? penaltyAssigned - penaltyPaidDown : 0n;
@@ -425,13 +491,6 @@ export async function getMemberDetail(id: string): Promise<MemberDetailDTO | nul
 
   const memberName = [m.firstName, m.lastName].filter(Boolean).join(" ");
   // Ledger rows per bucket = charges raised (+) merged with payments received (−), newest first.
-  const payments = ms
-    ? await prisma.transaction.findMany({
-        where: { membershipId: ms.id, type: { in: ["CATCHUP", "PENALTY"] } },
-        orderBy: { occurredAt: "desc" },
-        select: { id: true, type: true, occurredAt: true, entries: { select: { amount: true } } },
-      })
-    : [];
   const chargeRow = (c: (typeof ms.charges)[number]) => ({
     ts: c.occurredAt.getTime(),
     row: {
@@ -475,15 +534,14 @@ export async function getMemberDetail(id: string): Promise<MemberDetailDTO | nul
 
   // Monthly-deposit pending = full-club-life expected (club start → today) − paid (deposits +
   // catch-up). Same baseline for every active member. Overall pending sums all three buckets.
-  const cfg = await prisma.clubConfig.findUnique({ where: { id: "singleton" }, select: { stages: true } });
-  const stages = (cfg?.stages as Stage[] | undefined) ?? [];
+  const stages = context.stages;
   // Full-club-life baseline (club start → today) — same for everyone, incl. an inactive member
   // computing what it'd take to rejoin. depositPending stays active-only (an inactive member
   // owes nothing until they return).
   const expectedDeposit = expectedClubDeposit(stages);
   const depositPending = active && expectedDeposit > deposits ? expectedDeposit - deposits : 0n;
   const overallPending = depositPending + pendingCharge + penaltyCharge;
-  const activeCount = await prisma.membership.count({ where: { status: "ACTIVE" } });
+  const activeCount = context.activeCount;
   // Profit is split over the EXPECTED base (members × expected), so `fullShare` is the fair full
   // per-head share (clubProfit ÷ members) and `returnsActual` = fullShare × paidPct. A fully-paid
   // member is unaffected by others being behind; each underpayer bears their own shortfall; the sum
@@ -511,26 +569,24 @@ export async function getMemberDetail(id: string): Promise<MemberDetailDTO | nul
         profitRupees: Number(avgProfit) / 100,
       };
   const penaltySuggest = suggest((depositPending * 2n) / 100n, "2% of this member's pending dues");
-  const treasurers = await getCashHolderOptions();
+  const treasurers = context.treasurers;
 
-  const loans = ms?.loans ?? [];
   const activeLoan = loans.find((l) => l.status === "ACTIVE");
   const currentLoan = activeLoan?.principalOutstanding ?? 0n;
   const loanTaken = loans.reduce((s, l) => s + l.requestedAmount, 0n);
   const loanRepaid = loans.reduce((s, l) => s + (l.requestedAmount - l.principalOutstanding), 0n);
   // interest collected on this member's loans = LOAN_INTEREST cash legs tied to their memberships
-  const intPaidAgg = await prisma.entry.aggregate({ _sum: { amount: true }, where: { amount: { gt: 0 }, transaction: { type: "LOAN_INTEREST", membershipId: { in: m.memberships.map((x) => x.id) } } } });
   const interestPaid = intPaidAgg._sum.amount ?? 0n;
 
   // Reconstruct loan history as cycles: replay each loan's tranches/repays so every
   // balance change opens a new cycle (PRODUCT.md §9), numbered 1..N oldest→newest, then
   // shown most-recent first.
   const now = new Date();
-  const loanCfg = await loanConfig();
+  const loanCfg = context.loanCfg;
   const cycles: LoanCycleDTO[] = [];
   let interestGen = 0n;
   for (const l of [...loans].reverse()) {
-    const events = await loanEvents(l.id);
+    const events = eventsMap.get(l.id) ?? [];
     const overdueLoan = l.status === "ACTIVE" && isOverdue(l.startedAt, loanCfg, now);
     for (const c of reconstructCycles(events, l.monthlyRateBps, now, loanCfg.dayInterestFrom)) {
       interestGen += c.interest;

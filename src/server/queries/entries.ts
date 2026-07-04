@@ -92,7 +92,7 @@ export async function getCashHolderOptions(): Promise<PickOptionDTO[]> {
 
 /** Directory options for the Add-Entry pickers (members / vendors / treasurers). */
 export async function getEntryPickerOptions(): Promise<EntryPickerOptions> {
-  const [members, vendors, treasurers, eligibility] = await Promise.all([
+  const [members, vendors, treasurers, eligibility, memberCtx] = await Promise.all([
     prisma.member.findMany({
       where: { memberships: { some: { status: "ACTIVE" } } },
       orderBy: { firstName: "asc" },
@@ -108,8 +108,8 @@ export async function getEntryPickerOptions(): Promise<EntryPickerOptions> {
     }),
     getCashHolderOptions(),
     getLoanEligibility(),
+    getMemberEntryContext(),
   ]);
-  const memberCtx = await getMemberEntryContext();
   const ctxOf = (id: string): MemberCtx => {
     const c = memberCtx.get(id);
     return {

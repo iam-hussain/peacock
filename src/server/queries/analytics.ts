@@ -184,23 +184,47 @@ async function vendorProfitSeries(cutoffs: Date[]): Promise<{ raw: bigint[]; bre
   const totals = cutoffs.map(() => 0n);
   const rows: { name: string; bal: bigint }[] = [];
 
+  const generalIds = vendors.filter((v) => v.type !== "CHIT" || !v.chit).map((v) => v.id);
+  const chitIds = vendors.filter((v) => v.type === "CHIT" && v.chit).map((v) => v.id);
+
+  // Two batched queries (vs two per vendor): all VENDOR_PROFIT entries for the general vendors, and
+  // all cash-side txns for the chit vendors. Grouped by vendorId in JS below.
+  const [profitEntries, chitTxns] = await Promise.all([
+    generalIds.length
+      ? prisma.entry.findMany({
+          where: { account: { is: { kind: "VENDOR_PROFIT", vendorId: { in: generalIds } } } },
+          select: { amount: true, account: { select: { vendorId: true } }, transaction: { select: { occurredAt: true } } },
+          orderBy: { transaction: { occurredAt: "asc" } },
+        })
+      : Promise.resolve([]),
+    chitIds.length
+      ? prisma.transaction.findMany({
+          where: { vendorId: { in: chitIds }, type: { in: ["CHIT_PAYMENT", "VENDOR_INVEST", "CHIT_PAYOUT", "VENDOR_RETURN"] } },
+          orderBy: { occurredAt: "asc" },
+          select: { vendorId: true, type: true, occurredAt: true, entries: { where: { account: { kind: "TREASURY_CASH" } }, select: { amount: true } } },
+        })
+      : Promise.resolve([]),
+  ]);
+
+  const entriesByVendor = new Map<string, { amount: bigint; at: Date }[]>();
+  for (const e of profitEntries) {
+    const vid = e.account.vendorId;
+    if (!vid) continue;
+    (entriesByVendor.get(vid) ?? entriesByVendor.set(vid, []).get(vid)!).push({ amount: e.amount, at: e.transaction.occurredAt });
+  }
+  const txnsByVendor = new Map<string, typeof chitTxns>();
+  for (const t of chitTxns) {
+    if (!t.vendorId) continue;
+    (txnsByVendor.get(t.vendorId) ?? txnsByVendor.set(t.vendorId, []).get(t.vendorId)!).push(t);
+  }
+
   for (const v of vendors) {
     let arr: bigint[];
     if (v.type !== "CHIT" || !v.chit) {
-      const entries = await prisma.entry.findMany({
-        where: { account: { is: { kind: "VENDOR_PROFIT", vendorId: v.id } } },
-        select: { amount: true, transaction: { select: { occurredAt: true } } },
-        orderBy: { transaction: { occurredAt: "asc" } },
-      });
-      arr = accumulate(entries.map((e) => ({ amount: e.amount, at: e.transaction.occurredAt })), cutoffs, -1n);
+      arr = accumulate(entriesByVendor.get(v.id) ?? [], cutoffs, -1n);
     } else {
       const chit = v.chit;
-      const txns = await prisma.transaction.findMany({
-        where: { vendorId: v.id, type: { in: ["CHIT_PAYMENT", "VENDOR_INVEST", "CHIT_PAYOUT", "VENDOR_RETURN"] } },
-        orderBy: { occurredAt: "asc" },
-        select: { type: true, occurredAt: true, entries: { where: { account: { kind: "TREASURY_CASH" } }, select: { amount: true } } },
-      });
-      const ev = txns.map((t) => ({
+      const ev = (txnsByVendor.get(v.id) ?? []).map((t) => ({
         at: t.occurredAt,
         pay: t.type === "CHIT_PAYMENT" || t.type === "VENDOR_INVEST",
         amt: t.entries.reduce((s, e) => s + (e.amount < 0n ? -e.amount : e.amount), 0n),

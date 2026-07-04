@@ -79,13 +79,12 @@ export interface ChitStats {
  * populated by postings). Obligation left = remaining months × margin (installments the
  * club must still pay); it reduces realized profit per PRODUCT.md §11.
  */
-export async function chitLedger(vendorId: string, chit: { chitValue: bigint; durationMonths: number; marginInstallment: bigint }): Promise<ChitStats> {
-  const txns = await prisma.transaction.findMany({
-    where: { vendorId, type: { in: ["CHIT_PAYMENT", "VENDOR_INVEST", "CHIT_PAYOUT", "VENDOR_RETURN"] } },
-    orderBy: { occurredAt: "asc" },
-    select: { type: true, occurredAt: true, entries: { where: { account: { kind: "TREASURY_CASH" } }, select: { amount: true } } },
-  });
-  const absAmt = (t: (typeof txns)[number]) => t.entries.reduce((s, e) => s + (e.amount < 0n ? -e.amount : e.amount), 0n);
+const CHIT_LEDGER_TYPES = ["CHIT_PAYMENT", "VENDOR_INVEST", "CHIT_PAYOUT", "VENDOR_RETURN"] as const;
+type ChitLedgerTxn = { type: string; occurredAt: Date; entries: { amount: bigint }[] };
+
+/** Pure chit economics from already-fetched (TREASURY_CASH-filtered) txns — see `chitLedger`. */
+function chitStatsFrom(txns: ChitLedgerTxn[], chit: { durationMonths: number; marginInstallment: bigint }): ChitStats {
+  const absAmt = (t: ChitLedgerTxn) => t.entries.reduce((s, e) => s + (e.amount < 0n ? -e.amount : e.amount), 0n);
   const paidInstallments = txns.filter((t) => t.type === "CHIT_PAYMENT" || t.type === "VENDOR_INVEST").map((t) => ({ date: t.occurredAt, amt: absAmt(t) }));
   const payouts = txns.filter((t) => t.type === "CHIT_PAYOUT" || t.type === "VENDOR_RETURN");
   const paidCount = paidInstallments.length;
@@ -97,6 +96,33 @@ export async function chitLedger(vendorId: string, chit: { chitValue: bigint; du
   const remaining = Math.max(0, chit.durationMonths - paidCount);
   const obligation = chit.marginInstallment * BigInt(remaining);
   return { paidCount, totalPaid, payout, taken, payoutAt, payoutMonth, obligation, paidInstallments };
+}
+
+export async function chitLedger(vendorId: string, chit: { chitValue: bigint; durationMonths: number; marginInstallment: bigint }): Promise<ChitStats> {
+  const txns = await prisma.transaction.findMany({
+    where: { vendorId, type: { in: [...CHIT_LEDGER_TYPES] } },
+    orderBy: { occurredAt: "asc" },
+    select: { type: true, occurredAt: true, entries: { where: { account: { kind: "TREASURY_CASH" } }, select: { amount: true } } },
+  });
+  return chitStatsFrom(txns, chit);
+}
+
+/** Batched chit ledgers: one query for every chit vendor's TREASURY_CASH txns, grouped by vendor. */
+async function chitTxnsByVendor(vendorIds: string[]): Promise<Map<string, ChitLedgerTxn[]>> {
+  const map = new Map<string, ChitLedgerTxn[]>();
+  if (!vendorIds.length) return map;
+  const txns = await prisma.transaction.findMany({
+    where: { vendorId: { in: vendorIds }, type: { in: [...CHIT_LEDGER_TYPES] } },
+    orderBy: { occurredAt: "asc" },
+    select: { vendorId: true, type: true, occurredAt: true, entries: { where: { account: { kind: "TREASURY_CASH" } }, select: { amount: true } } },
+  });
+  for (const t of txns) {
+    if (!t.vendorId) continue;
+    const arr = map.get(t.vendorId) ?? [];
+    arr.push(t);
+    map.set(t.vendorId, arr);
+  }
+  return map;
 }
 
 // Vendor economics come straight from the ledger (chit-aware projections replaced by realized
@@ -118,9 +144,11 @@ type ChitFin = { profit: bigint; obligation: bigint };
 //   receipt   = payout if taken, else the chit's face value (still to be received)
 //   obligation = installments still owed = margin × months not yet paid (0 once fully covered)
 // A general vendor has no obligation; its profit is the realized VENDOR_PROFIT.
-async function vendorFin(v: { id: string; type: string; accounts: { kind: string; balance: bigint }[]; chit: { chitValue: bigint; durationMonths: number; marginInstallment: bigint } | null }): Promise<ChitFin> {
-  if (v.type !== "CHIT" || !v.chit) return { profit: profitOf(v.accounts), obligation: 0n };
-  const s = await chitLedger(v.id, v.chit);
+type VendorFinInput = { id: string; type: string; accounts: { kind: string; balance: bigint }[]; chit: { chitValue: bigint; durationMonths: number; marginInstallment: bigint } | null };
+
+/** Vendor P/L from precomputed chit stats (null → general vendor: realized VENDOR_PROFIT only). */
+function finFromStats(v: VendorFinInput, s: ChitStats | null): ChitFin {
+  if (v.type !== "CHIT" || !v.chit || !s) return { profit: profitOf(v.accounts), obligation: 0n };
   const receipt = s.taken ? s.payout : v.chit.chitValue;
   return { profit: receipt - (s.totalPaid + s.obligation), obligation: s.obligation };
 }
@@ -128,23 +156,33 @@ async function vendorFin(v: { id: string; type: string; accounts: { kind: string
 /** Club-wide vendor profit (chit P/L + general realized) and chit obligation still owed (paise). */
 export async function vendorProfitAndObligation(): Promise<ChitFin> {
   const vendors = await prisma.vendor.findMany({ select: { id: true, type: true, accounts: { select: { kind: true, balance: true } }, chit: CHIT_TERMS } });
-  const fins = await Promise.all(vendors.map(vendorFin));
+  const byVendor = await chitTxnsByVendor(vendors.filter((v) => v.type === "CHIT" && v.chit).map((v) => v.id));
+  const fins = vendors.map((v) => finFromStats(v, v.type === "CHIT" && v.chit ? chitStatsFrom(byVendor.get(v.id) ?? [], v.chit) : null));
   return { profit: fins.reduce((s, f) => s + f.profit, 0n), obligation: fins.reduce((s, f) => s + f.obligation, 0n) };
 }
 
 const LIST_SELECT = {
   id: true, name: true, type: true, category: true, status: true, startedAt: true,
-  accounts: { select: { kind: true, balance: true } },
+  accounts: { select: { id: true, kind: true, balance: true } },
   chit: CHIT_TERMS,
 } as const;
 
 // List rows: lifetime invested + P/L (chit projects the face value if no payout yet) + obligation owed.
 export async function getVendors(): Promise<VendorDTO[]> {
   const vendors = await prisma.vendor.findMany({ orderBy: { name: "asc" }, select: LIST_SELECT });
-  return Promise.all(vendors.map(async (v) => {
-    const [invested, fin] = await Promise.all([lifetimeInvested(v.id), vendorFin(v)]);
+  // Lifetime invested for ALL vendors in one grouped query (by receivable account, one per vendor),
+  // and every chit vendor's ledger in one batched query — instead of 2 queries per vendor.
+  const [investedGroups, chitByVendor] = await Promise.all([
+    prisma.entry.groupBy({ by: ["accountId"], _sum: { amount: true }, where: { amount: { gt: 0 }, account: { kind: "VENDOR_RECEIVABLE", vendorId: { in: vendors.map((v) => v.id) } } } }),
+    chitTxnsByVendor(vendors.filter((v) => v.type === "CHIT" && v.chit).map((v) => v.id)),
+  ]);
+  const investedByAcct = new Map(investedGroups.map((g) => [g.accountId, g._sum.amount ?? 0n]));
+  return vendors.map((v) => {
+    const recvId = v.accounts.find((a) => a.kind === "VENDOR_RECEIVABLE")?.id;
+    const invested = recvId ? investedByAcct.get(recvId) ?? 0n : 0n;
+    const fin = finFromStats(v, v.type === "CHIT" && v.chit ? chitStatsFrom(chitByVendor.get(v.id) ?? [], v.chit) : null);
     return toDTO(v, invested, fin.profit, fin.obligation);
-  }));
+  });
 }
 
 // Club-wide vendor position: holding (money still out), P/L, obligation owed, ROI on lifetime invested.

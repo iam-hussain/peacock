@@ -74,7 +74,13 @@ export interface DashboardData {
 }
 
 export async function getDashboard(): Promise<DashboardData> {
-  const t = await totals();
+  // The four blocks are independent, so fetch them concurrently instead of in a waterfall.
+  const [t, flow, chart, recent] = await Promise.all([
+    totals(),
+    cashFlow30d(),
+    portfolioSeries(),
+    getTransactions(DASH_ACTIVITY_WEB),
+  ]);
   const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
 
   const hero = [
@@ -86,7 +92,7 @@ export async function getDashboard(): Promise<DashboardData> {
   ];
 
   // Club Passbook — the full §14.4 breakdown (per-treasurer cash lives in Settings; no view toggle).
-  const flow = await cashFlow30d();
+  // `flow` fetched above alongside the other independent blocks.
   // Each figure appears once. Hero holds the 5 headline KPIs (portfolio, profit/member, cash,
   // outstanding loans, pending dues); the groups drill into what's NOT already on a hero card.
   const groups = [
@@ -129,10 +135,8 @@ export async function getDashboard(): Promise<DashboardData> {
     { title: "Cash flow · 30d", items: flow },
   ];
 
-  const chart = await portfolioSeries();
-
-  // Web shows the full list; mobile slices to DASH_ACTIVITY_MOBILE (see dashboard.tsx).
-  const recent = await getTransactions(DASH_ACTIVITY_WEB);
+  // `chart` (portfolioSeries) and `recent` (getTransactions) fetched above; web shows the full list,
+  // mobile slices to DASH_ACTIVITY_MOBILE (see dashboard.tsx).
   const activity = recent.map((r) => ({
     from: r.from, to: r.to, what: labelShort(r.what), date: r.date, time: r.entered, amt: r.amount, dir: r.dir,
   }));
