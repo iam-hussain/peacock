@@ -87,7 +87,7 @@ export const ClubReportPoster = forwardRef<HTMLDivElement, { data: ClubData; sec
     const loans = incClosedLoans ? data.loans : data.loans.filter((l) => l.pendingInterest);
     const vendors = incClosedVendors ? data.vendors : data.vendors.filter((v) => v.status === "active");
     return (
-      <div ref={ref} style={{ width: 1280 }} className="overflow-hidden rounded-lg bg-bg">
+      <div ref={ref} style={{ width: 1280 }} className="poster-light overflow-hidden rounded-lg bg-bg">
         <PosterHeader title="CLUB REPORT" asOf={asOf} subtitle={by} />
         <Frame>
           {sections.club && <Dashboard data={data.dashboard} greeting={{ hello: "", sub: "" }} />}
@@ -115,7 +115,7 @@ export const ClubReportPoster = forwardRef<HTMLDivElement, { data: ClubData; sec
 export const MemberStatementPoster = forwardRef<HTMLDivElement, { detail: MemberDetailDTO; asOf: string; by: string }>(
   function MemberStatementPoster({ detail, asOf, by }, ref) {
     return (
-      <div ref={ref} style={{ width: 900 }} className="overflow-hidden rounded-lg bg-bg">
+      <div ref={ref} style={{ width: 900 }} className="poster-light overflow-hidden rounded-lg bg-bg">
         <PosterHeader title="MEMBER STATEMENT" asOf={asOf} subtitle={by} />
         <Frame>
           <MemberDetailView m={detail} />

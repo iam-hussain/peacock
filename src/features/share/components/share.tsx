@@ -89,7 +89,11 @@ export function Share() {
     if (!node) throw new Error("not ready");
     // Heavy client-only lib — loaded on demand so it stays out of the initial bundle.
     const htmlToImage = await import("html-to-image");
-    const opts = { pixelRatio: 2, cacheBust: true, backgroundColor: "#F7F8F7" };
+    // Explicit dimensions: mobile Safari reports the poster's size scaled by the preview
+    // wrapper's `zoom`, which made html-to-image render into a too-small (cropped) canvas.
+    const width = parseInt(node.style.width, 10);
+    const height = Math.round(node.offsetHeight * (width / node.offsetWidth));
+    const opts = { pixelRatio: 2, cacheBust: true, backgroundColor: "#F7F8F7", width, height };
     return kind === "blob" ? htmlToImage.toBlob(node, opts) : htmlToImage.toPng(node, opts);
   }
   async function doDownload() {

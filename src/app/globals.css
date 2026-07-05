@@ -3,8 +3,11 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* ---------- Peacock design tokens (extracted from the design system) ---------- */
-:root {
+/* ---------- Peacock design tokens (extracted from the design system) ----------
+   `.poster-light` re-declares the light values on an element so share/export posters
+   render light even when the app is in dark mode (tokens inherit from the nearest set). */
+:root,
+.poster-light {
   --radius: 0.75rem;
 
   /* raw brand palette */
