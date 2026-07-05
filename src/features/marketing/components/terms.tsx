@@ -1,7 +1,5 @@
 import Link from "next/link";
 import { Users, Landmark, Gavel, type LucideIcon } from "lucide-react";
-import { PublicHeader } from "./public-header";
-import { MobileBackHeader } from "@/components/shared/mobile-back-header";
 import { TERMS, type TermsIcon } from "../data";
 
 const ICONS: Record<TermsIcon, { Icon: LucideIcon; bg: string; fg: string }> = {
@@ -13,11 +11,10 @@ const ICONS: Record<TermsIcon, { Icon: LucideIcon; bg: string; fg: string }> = {
 export function Terms() {
   return (
     <>
-      {/* Desktop */}
-      <div className="hidden min-h-screen flex-col bg-bg md:flex">
-        <PublicHeader showTerms={false} showHowItWorks />
-        <main className="flex-1 px-7 pb-16 pt-11.5">
-          <div className="mx-auto max-w-230 animate-in fade-in">
+      {/* Desktop — page chrome comes from PublicShell */}
+      <div className="hidden md:block">
+        <main className="px-7 pb-16 pt-11.5">
+          <div className="mx-auto max-w-270 animate-in fade-in">
             <div className="mb-3 text-11 font-semibold uppercase tracking-14 text-teal">Policy</div>
             <h1 className="mb-2 font-display text-38 font-extrabold leading-103 tracking-[-0.025em] text-ink">
               Club terms &amp; conditions
@@ -84,9 +81,8 @@ export function Terms() {
         </main>
       </div>
 
-      {/* Mobile */}
-      <div className="flex min-h-screen flex-col bg-bg md:hidden">
-        <MobileBackHeader title="Terms & conditions" backHref="/" />
+      {/* Mobile — page chrome comes from PublicShell */}
+      <div className="md:hidden">
         <main className="px-4 py-4.5">
           <div className="mb-2.5 text-11 font-semibold uppercase tracking-12 text-teal">Policy</div>
           <h1 className="mb-2 font-display text-25 font-extrabold leading-106 tracking-[-0.02em] text-ink">
