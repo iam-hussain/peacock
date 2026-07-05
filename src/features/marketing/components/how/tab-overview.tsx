@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { MoneyFlow } from "./money-flow";
-import { PanelHeading, Card, StatTile, Callout } from "./how-ui";
+import { PanelHeading, StatTile, Callout } from "./how-ui";
 
 const CYCLE: { icon: LucideIcon; title: string; body: string }[] = [
   {
@@ -89,13 +89,11 @@ export function TabOverview() {
         </div>
       </div>
 
-      <Card>
-        <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4">
-          {FACTS.map((f) => (
-            <StatTile key={f.label} value={f.value} label={f.label} sub={f.sub} />
-          ))}
-        </div>
-      </Card>
+      <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4">
+        {FACTS.map((f) => (
+          <StatTile key={f.label} value={f.value} label={f.label} sub={f.sub} />
+        ))}
+      </div>
 
       <Callout icon={ShieldCheck} title="No central cash box" tone="teal">
         The club owns no bank account. Its available cash is simply the sum of what every treasurer is
