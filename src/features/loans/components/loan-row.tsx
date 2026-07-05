@@ -3,11 +3,11 @@ import { Avatar } from "@/components/shared/avatar";
 import { StatusBadge } from "@/components/shared/status-badge";
 import type { Loan } from "../data";
 
-/** Right-aligned label + value pair, used for the loan amount and pending interest. */
-function AmtCol({ label, value, tone, className = "" }: { label: string; value: string; tone: "ink" | "wfg" | "in"; className?: string }) {
+/** Stacked label + value pair (right-aligned by default), used across the loan rows and cards. */
+function AmtCol({ label, value, tone, align = "end", className = "" }: { label: string; value: string; tone: "ink" | "wfg" | "in"; align?: "start" | "end"; className?: string }) {
   return (
-    <div className={`flex flex-col items-end gap-1.5 ${className}`}>
-      <span className="text-9 font-semibold uppercase leading-none tracking-wide text-mut">{label}</span>
+    <div className={`flex flex-col gap-1.5 ${align === "start" ? "items-start" : "items-end"} ${className}`}>
+      <span className="whitespace-nowrap text-9 font-semibold uppercase leading-none tracking-wide text-mut">{label}</span>
       <span className={`font-mono text-sm font-semibold leading-none ${tone === "wfg" ? "text-wfg" : tone === "in" ? "text-in" : "text-ink"}`}>{value}</span>
     </div>
   );
@@ -16,54 +16,53 @@ function AmtCol({ label, value, tone, className = "" }: { label: string; value: 
 /** Mobile: each loan is its own card — identity + amount/status, no progress bar. */
 export function MobileLoanCard({ l }: { l: Loan }) {
   return (
-    <Link href={`/members/${l.memberId}`} className={`block rounded-2xl border px-4 py-3.75 active:bg-sf2 ${l.interestUnpaid ? "border-wfg/40 bg-wbg" : "border-bd bg-sf"}`}>
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 gap-3">
+    <Link href={`/members/${l.memberId}`} className={`block rounded-2xl border px-4 py-3.5 active:bg-sf2 ${l.interestUnpaid ? "border-wfg/40 bg-wbg" : "border-bd bg-sf"}`}>
+      {/* Header: identity + status */}
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
           <Avatar name={l.member} src={l.avatar} size={38} muted />
           <div className="min-w-0">
             <div className="flex items-center gap-1.75">
-              <span className="text-15 font-semibold leading-none text-ink">{l.member}</span>
+              <span className="truncate text-15 font-semibold leading-none text-ink">{l.member}</span>
               {l.tranches && l.tranches > 1 && (
-                <span className="rounded-5 bg-bg2 px-1.5 py-0.75 text-9 font-semibold leading-none text-mut">
+                <span className="shrink-0 rounded-5 bg-bg2 px-1.5 py-0.75 text-9 font-semibold leading-none text-mut">
                   {l.tranches} tr
                 </span>
               )}
             </div>
-            <div className="mt-1.75 text-11 font-medium leading-135 text-fnt">
+            <div className="mt-1.5 space-y-0.5 text-11 font-medium leading-none text-fnt">
               {l.open ? (
                 <>
-                  <div>Started {l.start}</div>
-                  <div className={`font-semibold ${l.overdue ? "text-out" : "text-mut"}`}>{l.elapsed}</div>
+                  <div className="truncate">Started {l.start}</div>
+                  <div className="truncate">
+                    <span className={`font-semibold ${l.overdue ? "text-out" : "text-mut"}`}>{l.elapsed}</span>
+                    {l.rate ? <span className="text-mut"> · {l.rate}</span> : null}
+                  </div>
                 </>
               ) : (
                 <>
-                  <div>Closed {l.closedDate}</div>
-                  <div>{l.ran}</div>
+                  <div className="truncate">Closed {l.closedDate}</div>
+                  <div className="truncate">{l.ran}</div>
                 </>
-              )}
-            </div>
-            <div className="mt-1 font-mono text-11 font-medium leading-135 text-fnt">
-              {l.open ? (
-                <>{l.rate}</>
-              ) : (
-                <>interest earned {l.interestEarned}</>
               )}
             </div>
           </div>
         </div>
-        <div className="flex flex-none flex-col items-end gap-2.5">
-          <div className="flex items-start gap-5">
-            {l.interestOverpaid ? (
-              <AmtCol label="Overpaid" value={l.interestOverpaid} tone="in" />
-            ) : l.open ? (
-              <AmtCol label="Pending interest" value={l.interest!} tone="wfg" />
-            ) : l.interestUnpaid ? (
-              <AmtCol label="Interest due" value={l.interestDue!} tone="wfg" />
-            ) : null}
-            <AmtCol label="Loan" value={l.amount} tone="ink" />
-          </div>
-          <StatusBadge status={l.badge} label={l.statusLabel} />
-        </div>
+        <StatusBadge status={l.badge} label={l.statusLabel} />
+      </div>
+
+      {/* Footer: stat tiles — all values in one row */}
+      <div className="mt-3 flex items-center gap-4 border-t border-hr2 pt-3">
+        <AmtCol label="Generated" value={l.interestEarned!} tone="ink" align="start" />
+        {l.interestCurrent && <AmtCol label="Current" value={l.interestCurrent} tone="ink" align="start" />}
+        {l.interestOverpaid ? (
+          <AmtCol label="Overpaid" value={l.interestOverpaid} tone="in" align="start" />
+        ) : l.open ? (
+          <AmtCol label="Pending interest" value={l.interest!} tone="wfg" align="start" />
+        ) : l.interestUnpaid ? (
+          <AmtCol label="Interest due" value={l.interestDue!} tone="wfg" align="start" />
+        ) : null}
+        <AmtCol label="Loan" value={l.amount} tone="ink" className="ml-auto" />
       </div>
     </Link>
   );
@@ -78,7 +77,7 @@ export function LoanRowDesktop({ l }: { l: Loan }) {
         l.interestUnpaid ? "bg-wbg" : ""
       }`}
     >
-      <div className="flex flex-[1.4] items-center gap-3.5">
+      <div className="flex flex-1 items-center gap-3.5 min-w-0">
         <Avatar name={l.member} src={l.avatar} size={34} muted />
         <div className="min-w-0">
           <div className="flex items-center gap-1.75">
@@ -94,6 +93,7 @@ export function LoanRowDesktop({ l }: { l: Loan }) {
               <>
                 Started {l.start} ·{" "}
                 <span className={`font-semibold ${l.overdue ? "text-out" : "text-mut"}`}>{l.elapsed}</span>
+                {l.rate ? <span className="text-mut"> · {l.rate}</span> : null}
               </>
             ) : (
               <>
@@ -104,14 +104,13 @@ export function LoanRowDesktop({ l }: { l: Loan }) {
         </div>
       </div>
 
-      <div className="flex-[0.9]">
-        <div className="font-mono text-11 font-medium leading-130 text-fnt">
-          <div>interest earned {l.interestEarned}</div>
-          {l.interestCurrent && <div>current {l.interestCurrent}</div>}
-        </div>
-      </div>
-
-      <div className="flex shrink-0 items-center gap-5">
+      <div className="flex shrink-0 items-center gap-8">
+        <AmtCol label="Generated" value={l.interestEarned!} tone="ink" className="w-16 shrink-0" />
+        {l.interestCurrent ? (
+          <AmtCol label="Current" value={l.interestCurrent} tone="ink" className="w-16 shrink-0" />
+        ) : (
+          <div className="w-16 shrink-0" />
+        )}
         {l.interestOverpaid ? (
           <AmtCol label="Overpaid" value={l.interestOverpaid} tone="in" className="w-28 shrink-0" />
         ) : l.open ? (

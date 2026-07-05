@@ -152,8 +152,8 @@ export interface LoanDTO {
   tranches?: number;
   closedDate?: string;
   ran?: string;
-  interestEarned?: string; // total accrued interest across every tranche of this loan
-  interestCurrent?: string; // open loans only: interest on the current (open) tranche
+  interestEarned?: string; // "Generated": member's lifetime interest across ALL their loans (matches member page)
+  interestCurrent?: string; // "Current": interest on the latest (open) cycle of the member's active/overdue loan (blank if none)
   interestDue?: string;
   interestUnpaid?: boolean; // closed loan whose interest is still (partly) unpaid → highlight
   interestOverpaid?: string; // member paid MORE interest than accrued (e.g. rounded up on exit) → credit
@@ -171,7 +171,7 @@ async function loanRows() {
 
 // interest = Σ per-cycle accrual across every balance segment of the loan's life.
 // interestOwed (closed loans only) = still-unpaid loan interest for the borrower; >0 → highlight.
-function toDTO(l: Awaited<ReturnType<typeof loanRows>>[number], cfg: LoanCfg, tranches: number, interest: bigint, currentInterest: bigint, interestOwed: bigint, pendingInterest: boolean, overpaid: bigint): LoanDTO {
+function toDTO(l: Awaited<ReturnType<typeof loanRows>>[number], cfg: LoanCfg, tranches: number, generated: bigint, currentInterest: bigint, interestOwed: bigint, pendingInterest: boolean, overpaid: bigint, pendingPaise: bigint): LoanDTO {
   const overpaidLabel = overpaid > 0n ? formatPaise(overpaid) : undefined;
   const name = [l.membership.member.firstName, l.membership.member.lastName].filter(Boolean).join(" ");
   const memberId = l.membership.member.id;
@@ -186,7 +186,7 @@ function toDTO(l: Awaited<ReturnType<typeof loanRows>>[number], cfg: LoanCfg, tr
     return {
       id: l.id, memberId, member: name, avatar, status: key, statusLabel: "Closed", badge: "settled", memberClosed, pendingInterest, amount: formatLakh(l.requestedAmount), open: false,
       closedDate: monthYear(l.closedAt ?? l.startedAt), ran: `ran ${monthsDays(days)}`,
-      interestEarned: formatLakh(interest),
+      interestEarned: formatPaise(generated),
       interestDue: interestOwed > 0n ? formatPaise(interestOwed) : undefined,
       interestUnpaid: interestOwed > 0n,
       interestOverpaid: overpaidLabel,
@@ -198,9 +198,9 @@ function toDTO(l: Awaited<ReturnType<typeof loanRows>>[number], cfg: LoanCfg, tr
     amount: formatLakh(l.requestedAmount), open: true, start: monthYear(l.startedAt),
     elapsed: monthsDays(days), overdue,
     pct, pending: formatLakh(l.principalOutstanding),
-    interest: formatPaise(interest),
-    interestEarned: formatLakh(interest),
-    interestCurrent: tranches > 1 ? formatLakh(currentInterest) : undefined,
+    interest: formatPaise(pendingPaise), // net still-owed (accrued − paid), matches member detail
+    interestEarned: formatPaise(generated),
+    interestCurrent: currentInterest > 0n ? formatPaise(currentInterest) : undefined,
     rate: rateLabel(l.monthlyRateBps), tranches,
     interestOverpaid: overpaidLabel,
   };
@@ -215,10 +215,11 @@ export async function getLoans(): Promise<LoanDTO[]> {
     const events = eventsMap.get(l.id) ?? [];
     const cycles = reconstructCycles(events, l.monthlyRateBps, now, cfg.dayInterestFrom);
     const penalty = l.status === "ACTIVE" ? overduePenalty(l.principalOutstanding, l.startedAt, cfg, now) : 0n;
-    const interest = roundToWholeRupee(cycles.reduce((s, c) => s + c.interest, 0n) + penalty);
-    const currentInterest = cycles.find((c) => c.open)?.interest ?? 0n;
+    const generated = cycles.reduce((s, c) => s + c.interest, 0n); // raw accrued, no penalty — matches member page "Interest generated"
+    const interest = roundToWholeRupee(generated + penalty); // whole-rupee, penalty-incl — drives owed/pending math
+    const currentInterest = cycles.find((c) => c.open)?.interest ?? 0n; // latest (open) cycle — active loans only
     const tranches = events.filter((e) => e.delta > 0n).length;
-    return { l, interest, currentInterest, tranches };
+    return { l, interest, generated, currentInterest, tranches };
   });
 
   // Loan interest is collected per membership (LOAN_INTEREST carries no loanId), so track the
@@ -226,9 +227,17 @@ export async function getLoans(): Promise<LoanDTO[]> {
   // no ACTIVE loan (whose interest is expected to keep accruing) — is flagged as unpaid.
   const accruedByMs = new Map<string, bigint>();
   const hasActiveByMs = new Set<string>();
-  for (const { l, interest } of computed) {
+  // Displayed per-member interest: Generated = Σ over ALL the member's loans (matches the member page);
+  // Current = interest on the latest (open) cycle of the member's ACTIVE/overdue loan (loans are one-at-a-time).
+  const genByMs = new Map<string, bigint>();
+  const currentByMs = new Map<string, bigint>();
+  for (const { l, interest, generated, currentInterest } of computed) {
     accruedByMs.set(l.membership.id, (accruedByMs.get(l.membership.id) ?? 0n) + interest);
-    if (l.status === "ACTIVE") hasActiveByMs.add(l.membership.id);
+    genByMs.set(l.membership.id, (genByMs.get(l.membership.id) ?? 0n) + generated);
+    if (l.status === "ACTIVE") {
+      hasActiveByMs.add(l.membership.id);
+      currentByMs.set(l.membership.id, (currentByMs.get(l.membership.id) ?? 0n) + currentInterest);
+    }
   }
   const interestTxns = await prisma.transaction.findMany({
     where: { type: "LOAN_INTEREST", id: { notIn: await reversedTxnIds() } },
@@ -245,7 +254,7 @@ export async function getLoans(): Promise<LoanDTO[]> {
   // (rows are ordered newest-closed-first), not repeated across every past closed loan.
   const anchored = new Set<string>();
   const overAnchored = new Set<string>();
-  return computed.map(({ l, interest, currentInterest, tranches }) => {
+  return computed.map(({ l, tranches }) => {
     const ms = l.membership.id;
     const owed = (accruedByMs.get(ms) ?? 0n) - (paidByMs.get(ms) ?? 0n);
     let unpaidOwed = 0n;
@@ -264,7 +273,10 @@ export async function getLoans(): Promise<LoanDTO[]> {
     // "Pending" = active/overdue loans + closed loans that still owe interest (member-status agnostic;
     // the Closed-members toggle filters closed members uniformly across every view).
     const pendingInterest = l.status === "ACTIVE" || unpaidOwed > 0n;
-    return toDTO(l, cfg, tranches, interest, currentInterest, unpaidOwed, pendingInterest, overpaid);
+    const pendingPaise = owed > 0n ? owed : 0n; // net owed by this member (per-member; loans are one-at-a-time)
+    const memberGen = genByMs.get(ms) ?? 0n; // Generated = member's lifetime total across all loans
+    const currentGen = currentByMs.get(ms) ?? 0n; // Current = latest (open) cycle interest of the member's active loan
+    return toDTO(l, cfg, tranches, memberGen, currentGen, unpaidOwed, pendingInterest, overpaid, pendingPaise);
   });
 }
 
