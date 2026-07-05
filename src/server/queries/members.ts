@@ -141,7 +141,9 @@ export async function getMembers(): Promise<MemberDTO[]> {
     const catchup = membershipId ? outstandingOf(membershipId, "CATCHUP") : 0n;
     const adjustment = (penalty > 0n ? penalty : 0n) + (catchup > 0n ? catchup : 0n);
     const charged = membershipId ? (raisedByMsKind.get(`${membershipId}:CATCHUP`) ?? 0n) + (raisedByMsKind.get(`${membershipId}:PENALTY`) ?? 0n) : 0n;
-    const pending = active && expectedDeposit > deposits ? expectedDeposit - deposits : 0n;
+    // Deposit due is measured against PERIODIC deposits only — catch-up is profit-gap equalisation
+    // (PRODUCT.md §7), not a monthly deposit, so it doesn't reduce the deposit shortfall.
+    const pending = active && expectedDeposit > periodic ? expectedDeposit - periodic : 0n;
     return { m, active, value, deposits, periodic, pending, adjustment, charged };
   });
   const activeCount = rows.filter((r) => r.active).length;
@@ -230,16 +232,22 @@ export async function getMemberFunds(): Promise<{
   const expected = expectedClubDeposit((cfg?.stages as Stage[] | undefined) ?? []);
   // One grouped query for all active equity accounts instead of an aggregate per membership.
   const equityIds = active.flatMap((ms) => ms.accounts).map((a) => a.id);
-  const depGroups = await prisma.entry.groupBy({ by: ["accountId"], _sum: { amount: true }, where: { accountId: { in: equityIds }, transaction: { type: { in: ["PERIODIC_DEPOSIT", "CATCHUP"] }, id: { notIn: await reversedTxnIds() } } } });
+  const reversedIds = await reversedTxnIds();
+  const [depGroups, periodicGroups] = await Promise.all([
+    prisma.entry.groupBy({ by: ["accountId"], _sum: { amount: true }, where: { accountId: { in: equityIds }, transaction: { type: { in: ["PERIODIC_DEPOSIT", "CATCHUP"] }, id: { notIn: reversedIds } } } }),
+    prisma.entry.groupBy({ by: ["accountId"], _sum: { amount: true }, where: { accountId: { in: equityIds }, transaction: { type: "PERIODIC_DEPOSIT", id: { notIn: reversedIds } } } }),
+  ]);
   const depByAcct = new Map(depGroups.map((d) => [d.accountId, -(d._sum.amount ?? 0n)]));
+  const periodicByAcct = new Map(periodicGroups.map((d) => [d.accountId, -(d._sum.amount ?? 0n)]));
   let activeDeposits = 0n, value = 0n, pendingTotal = 0n, pendingCount = 0;
   for (const ms of active) {
     const eq = ms.accounts[0];
     if (!eq) continue;
-    const deposits = depByAcct.get(eq.id) ?? 0n;
-    activeDeposits += deposits;
+    activeDeposits += depByAcct.get(eq.id) ?? 0n;
     value += -(eq.balance ?? 0n);
-    if (expected > deposits) { pendingTotal += expected - deposits; pendingCount++; }
+    // Deposit due vs PERIODIC deposits only (catch-up is profit-gap, not a monthly deposit — §7).
+    const periodic = periodicByAcct.get(eq.id) ?? 0n;
+    if (expected > periodic) { pendingTotal += expected - periodic; pendingCount++; }
   }
   const n = active.length;
   return { activeMembers: n, activeDeposits, avgBalance: n ? value / BigInt(n) : 0n, pendingTotal, pendingCount };
@@ -550,7 +558,8 @@ export async function getMemberDetail(id: string, ctx?: MemberDetailContext): Pr
   // computing what it'd take to rejoin. depositPending stays active-only (an inactive member
   // owes nothing until they return).
   const expectedDeposit = expectedClubDeposit(stages);
-  const depositPending = active && expectedDeposit > deposits ? expectedDeposit - deposits : 0n;
+  // Deposit due vs PERIODIC deposits only — catch-up is profit-gap equalisation (§7), not a monthly deposit.
+  const depositPending = active && expectedDeposit > periodicPure ? expectedDeposit - periodicPure : 0n;
   const overallPending = depositPending + pendingCharge + penaltyCharge;
   const activeCount = context.activeCount;
   // Profit is split over the EXPECTED base (members × expected), so `fullShare` is the fair full

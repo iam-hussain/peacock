@@ -35,7 +35,8 @@ async function getMemberEntryContext(): Promise<Map<string, { value: bigint; due
         charges: { select: { kind: true, amount: true } },
       },
     }),
-    prisma.entry.groupBy({ by: ["accountId"], _sum: { amount: true }, where: { account: { kind: "MEMBER_EQUITY" }, transaction: { type: { in: ["PERIODIC_DEPOSIT", "CATCHUP"] }, id: { notIn: reversedIds } } } }),
+    // Periodic-only: deposit dues are measured against monthly deposits, not catch-up (§7).
+    prisma.entry.groupBy({ by: ["accountId"], _sum: { amount: true }, where: { account: { kind: "MEMBER_EQUITY" }, transaction: { type: "PERIODIC_DEPOSIT", id: { notIn: reversedIds } } } }),
     prisma.entry.findMany({ where: { transaction: { type: { in: ["CATCHUP", "PENALTY"] }, id: { notIn: reversedIds } } }, select: { amount: true, transaction: { select: { membershipId: true, type: true } } } }),
   ]);
   const expected = expectedClubDeposit((cfg?.stages as Stage[] | undefined) ?? []);

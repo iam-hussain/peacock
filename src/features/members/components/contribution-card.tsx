@@ -39,8 +39,8 @@ export function ContributionCard({ m }: { m: MemberDetail }) {
       <div className="grid grid-cols-4 border-t border-hr2">
         <FourCell label="Periodic" value={m.periodic} strike={strike} />
         <FourCell label="Catch-up & Penalty" value={m.catchupPenalty} border strike={strike} />
-        <FourCell label="Pending dues" value={m.overallPending ?? "₹0"} border accent={!!m.overallPending} strike={strike} />
-        <FourCell label="Interest due" value={m.interestDue} border accent={m.interestDue !== "₹0"} strike={strike} />
+        <FourCell label="Deposit due" value={m.depositPending ?? "₹0"} border accent={!!m.depositPending} strike={strike} />
+        <FourCell label="Catch-up & Penalty due" value={m.adjustment ?? "₹0"} border accent={!!m.adjustment} strike={strike} />
       </div>
     </CardShell>
   );
