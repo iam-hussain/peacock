@@ -6,24 +6,14 @@ import { AddMemberDialog } from "./add-member-dialog";
 import { AdminOnly } from "@/lib/admin";
 import type { JoinPreviewDTO } from "@/server/queries/members";
 
-export interface MemberSummary {
-  text: string;
-  totalDeposits: string;
-}
-
-export function MembersList({ members, summary, joinPreview }: { members: Member[]; summary: MemberSummary; joinPreview: JoinPreviewDTO }) {
+export function MembersList({ members, joinPreview }: { members: Member[]; joinPreview: JoinPreviewDTO }) {
   return (
     <>
       {/* Desktop */}
       <div className="hidden md:block">
         <div className="mx-auto max-w-320 p-6.5">
           <div className="mb-4.5 flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold leading-none tracking-[-0.02em] text-ink">Members</h1>
-              <p className="mt-1.25 text-13 font-medium leading-140 text-mut">
-                {summary.text} · {summary.totalDeposits} total deposits
-              </p>
-            </div>
+            <h1 className="text-2xl font-bold leading-none tracking-[-0.02em] text-ink">Members</h1>
             <AdminOnly>
               <AddMemberDialog preview={joinPreview} buttonClassName="flex items-center gap-1 rounded-9 bg-teal px-4 py-2.75 text-13 font-semibold leading-none text-white">
                 <Plus className="size-3.5" strokeWidth={2.5} /> Add member
@@ -38,7 +28,7 @@ export function MembersList({ members, summary, joinPreview }: { members: Member
       </div>
 
       {/* Mobile */}
-      <MembersMobile members={members} summary={summary} joinPreview={joinPreview} />
+      <MembersMobile members={members} joinPreview={joinPreview} />
     </>
   );
 }

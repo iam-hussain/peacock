@@ -7,14 +7,13 @@ import { AdminOnly } from "@/lib/admin";
 import { ViewToggle, type ListView } from "@/components/shared/view-toggle";
 import type { Member } from "../data";
 import { filterMembers, type MemberFilter } from "../filter";
-import { type MemberSummary } from "./members-list";
 import type { JoinPreviewDTO } from "@/server/queries/members";
 import { MemberCard } from "./member-card";
 import { MembersTable } from "./members-table";
 import { MemberStatusFilter } from "./member-status-filter";
 
-/** Members — mobile: header (summary + add + view toggle), status filter, then card or table view. */
-export function MembersMobile({ members, summary, joinPreview }: { members: Member[]; summary: MemberSummary; joinPreview: JoinPreviewDTO }) {
+/** Members — mobile: header (add + view toggle), status filter, then card or table view. */
+export function MembersMobile({ members, joinPreview }: { members: Member[]; joinPreview: JoinPreviewDTO }) {
   const [view, setView] = useState<ListView>("table");
   const [filter, setFilter] = useState<MemberFilter>("active");
 
