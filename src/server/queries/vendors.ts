@@ -39,7 +39,8 @@ interface ChitLifecycle { paidCount: number; durationMonths: number; taken: bool
 function vendorStatus(v: { type: "GENERAL" | "CHIT"; status: string }, chit?: ChitLifecycle): { status: Status; label: string } {
   if (v.type === "CHIT") {
     if (chit && chit.paidCount >= chit.durationMonths) return { status: "settled", label: "Completed" };
-    if (chit?.taken) return { status: "settled", label: "Paid out" };
+    // Paid out but not yet fully paid → still an active chit (installments continue): green, not settled.
+    if (chit?.taken) return { status: "active", label: "Paid out" };
     return { status: "active", label: "Running" };
   }
   if (v.status === "CLOSED") return { status: "settled", label: "Closed" };
