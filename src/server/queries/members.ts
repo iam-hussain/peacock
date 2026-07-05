@@ -97,7 +97,7 @@ export async function getMembers(): Promise<MemberDTO[]> {
   const equityIds = members.flatMap((m) => m.memberships.flatMap((s) => s.accounts)).map((a) => a.id);
   const membershipIds = members.map((m) => m.memberships[0]?.id).filter((x): x is string => !!x);
   const reversedIds = await reversedTxnIds();
-  const [cfg, clubProfit, depGroups, raisedGroups, paidRows] = await Promise.all([
+  const [cfg, clubProfit, depGroups, periodicGroups, raisedGroups, paidRows] = await Promise.all([
     prisma.clubConfig.findUnique({ where: { id: "singleton" }, select: { stages: true } }),
     // Profit isn't posted to member equity in this ledger — it pools in the club (interest + vendor
     // returns). Split it over the EXPECTED deposit base (active members × expected-per-member) so a
@@ -105,6 +105,9 @@ export async function getMembers(): Promise<MemberDTO[]> {
     // their own shortfall, and the club never distributes more than it earned (§11, see `profitShare`).
     shareableClubProfit(),
     prisma.entry.groupBy({ by: ["accountId"], _sum: { amount: true }, where: { accountId: { in: equityIds }, transaction: { type: { in: ["PERIODIC_DEPOSIT", "CATCHUP"] }, id: { notIn: reversedIds } } } }),
+    // Periodic-only, for the list "Deposits" column (catch-up shows under Adjustment). Profit/pending
+    // still use the combined paid total below (deposits + catch-up), per PRODUCT.md §6/§11.
+    prisma.entry.groupBy({ by: ["accountId"], _sum: { amount: true }, where: { accountId: { in: equityIds }, transaction: { type: "PERIODIC_DEPOSIT", id: { notIn: reversedIds } } } }),
     prisma.charge.groupBy({ by: ["membershipId", "kind"], _sum: { amount: true }, where: { membershipId: { in: membershipIds }, kind: { in: ["CATCHUP", "PENALTY"] } } }),
     prisma.entry.findMany({
       where: { transaction: { membershipId: { in: membershipIds }, type: { in: ["CATCHUP", "PENALTY"] }, id: { notIn: reversedIds } }, account: { kind: { in: ["MEMBER_EQUITY", "OTHER_INCOME"] } } },
@@ -113,6 +116,7 @@ export async function getMembers(): Promise<MemberDTO[]> {
   ]);
   const expectedDeposit = expectedClubDeposit((cfg?.stages as Stage[] | undefined) ?? []);
   const depByAcct = new Map(depGroups.map((d) => [d.accountId, -(d._sum.amount ?? 0n)])); // equity is credit → negate
+  const periodicByAcct = new Map(periodicGroups.map((d) => [d.accountId, -(d._sum.amount ?? 0n)])); // display-only (excludes catch-up)
   const raisedByMsKind = new Map(raisedGroups.map((g) => [`${g.membershipId}:${g.kind}`, g._sum.amount ?? 0n]));
   // Pay-downs credit the charge account with a negative leg; outstanding = raised + Σ pay-down legs.
   // Match `outstandingCharge`'s account filter exactly: CATCHUP pays down MEMBER_EQUITY, PENALTY OTHER_INCOME.
@@ -131,20 +135,21 @@ export async function getMembers(): Promise<MemberDTO[]> {
     const equity = m.memberships.flatMap((s) => s.accounts)[0];
     const value = -(equity?.balance ?? 0n);
     const deposits = equity ? depByAcct.get(equity.id) ?? 0n : 0n;
+    const periodic = equity ? periodicByAcct.get(equity.id) ?? 0n : 0n; // display-only (deposits column)
     const membershipId = m.memberships[0]?.id;
     const penalty = membershipId ? outstandingOf(membershipId, "PENALTY") : 0n;
     const catchup = membershipId ? outstandingOf(membershipId, "CATCHUP") : 0n;
     const adjustment = (penalty > 0n ? penalty : 0n) + (catchup > 0n ? catchup : 0n);
     const charged = membershipId ? (raisedByMsKind.get(`${membershipId}:CATCHUP`) ?? 0n) + (raisedByMsKind.get(`${membershipId}:PENALTY`) ?? 0n) : 0n;
     const pending = active && expectedDeposit > deposits ? expectedDeposit - deposits : 0n;
-    return { m, active, value, deposits, pending, adjustment, charged };
+    return { m, active, value, deposits, periodic, pending, adjustment, charged };
   });
   const activeCount = rows.filter((r) => r.active).length;
   const shareOf = (deposits: bigint, active: boolean) =>
     active ? profitShare(clubProfit, deposits, activeCount, expectedDeposit) : 0n;
 
   return rows
-    .map(({ m, active, value, deposits, pending, adjustment, charged }) => {
+    .map(({ m, active, value, deposits, periodic, pending, adjustment, charged }) => {
       const profit = shareOf(deposits, active);
       const worth = value + profit; // Value column = deposits + adjust (paid) + profit
       const pendingTotal = pending + adjustment; // Pending column = deposit pending + adjust pending
@@ -153,7 +158,7 @@ export async function getMembers(): Promise<MemberDTO[]> {
       name: [m.firstName, m.lastName].filter(Boolean).join(" "),
       avatarUrl: m.avatarUrl,
       joined: monthYear(m.customerSince),
-      deposits: formatPaise(deposits),
+      deposits: formatPaise(periodic), // monthly deposits only; catch-up shows under Adjustment
       profit: formatPaise(profit),
       value: active ? formatPaise(worth) : "—",
       held: m.treasury && m.treasury.balance !== 0n ? formatPaise(m.treasury.balance) : null,
@@ -163,7 +168,7 @@ export async function getMembers(): Promise<MemberDTO[]> {
       status: memberStatus(active, m.archivedAt),
       sort: {
         name: [m.firstName, m.lastName].filter(Boolean).join(" "),
-        deposits: Number(deposits),
+        deposits: Number(periodic),
         profit: Number(profit),
         value: Number(worth),
         held: Number(m.treasury?.balance ?? 0n),
