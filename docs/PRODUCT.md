@@ -213,12 +213,18 @@ member and any date, **how much they should have paid in total so far**.
 
 **Everyone is measured against the full club life.** A member's *expected* total is the sum of the
 monthly amounts **from the club's start to today** (today that's ₹1,00,000 = ₹1,000 × 36 months +
-₹2,000 × 32 months, **counting the current month**) — the **same for every active member**. Late
-joiners reach that same baseline via their **catch-up** (§7), so "expected" is equal for all, and a
-member's *paid* total counts their deposits **plus** any catch-up.
+₹2,000 × 32 months, **counting the current month**) — the **same for every active member**.
+
+A member's **deposit pending** is measured against their **monthly (periodic) deposits only** —
+**catch-up does *not* count toward it.** Catch-up is *profit-gap equalisation* (§7), not a monthly
+deposit, so it builds the member's value but does not reduce their deposit shortfall. Late/returning
+members owe their missed months as **back deposits**, which are paid as ordinary periodic deposits
+(§12), separately from catch-up.
 
 - **Paid vs expected:** Peacock always shows what a member *has* paid against what they *should*
-  have paid. The difference is their **pending** deposit.
+  have paid. The difference between expected and **periodic deposits paid** is their **pending**
+  deposit. Any catch-up or penalty still owed is tracked separately and adds into the member's
+  **total pending** (deposit due + catch-up due + penalty due).
 - **Late deposits** are flagged as **pending / overdue** in the UI. There's an optional penalty
   for lateness (off today — see §13).
 - Deposits are **capital, not profit** — they're the member's own money working in the club.
@@ -251,8 +257,11 @@ Each catch-up charge has:
 - a **reason** — *First-time join · Rejoin · Profit-gap top-up · Mid-term equalisation · Other*,
 - a **date**.
 
-Catch-up money **counts as the member's own** (it builds their capital/value in the club). It is
-**auto-added** at first join and at each rejoin (see §12), and the admin can edit the amount.
+Catch-up money **counts as the member's own** (it builds their capital/value in the club, and it
+counts toward their **profit share**). But because catch-up is *profit-gap equalisation* — not a
+monthly deposit — it **does not reduce their deposit pending** (§6): a member's monthly-deposit
+shortfall is always measured against **periodic deposits only**. It is **auto-added** at first join
+and at each rejoin (see §12), and the admin can edit the amount.
 
 ```mermaid
 flowchart TD
