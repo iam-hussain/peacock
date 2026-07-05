@@ -23,15 +23,15 @@ export function PublicShell({
   showHowItWorks?: boolean;
   children: React.ReactNode;
 }) {
+  // Headers must be DIRECT children of the page wrapper: position:sticky only sticks within
+  // its parent, so an intermediate visibility div (its own height) would let them scroll away.
+  // --stick-top = header height (+8px gap on desktop, where the tab bar is a floating card) so
+  // in-page sticky elements (the guide's tab bar) dock exactly under whichever header is shown.
   if (!user) {
     return (
-      <div className="min-h-screen bg-sf">
-        <div className="hidden md:block">
-          <PublicHeader showTerms={showTerms} showHowItWorks={showHowItWorks} />
-        </div>
-        <div className="md:hidden">
-          <MobileBackHeader title={title} backHref="/" />
-        </div>
+      <div className="min-h-screen bg-sf [--stick-top:51px] md:[--stick-top:83px]">
+        <PublicHeader showTerms={showTerms} showHowItWorks={showHowItWorks} />
+        <MobileBackHeader title={title} backHref="/" />
         {children}
       </div>
     );
@@ -40,7 +40,7 @@ export function PublicShell({
     <AdminProvider isAdmin={user.isAdmin}>
       <QueryProvider>
         <AddEntryProvider>
-          <div className="min-h-screen bg-sf pb-16 md:pb-0">
+          <div className="min-h-screen bg-sf pb-16 md:pb-0 [--stick-top:73px] md:[--stick-top:77px]">
             <TopNav user={user} />
             <MobileTopBar user={user} />
             {children}

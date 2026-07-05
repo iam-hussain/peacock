@@ -34,7 +34,7 @@ export function HowTabs() {
   return (
     <div>
       {/* Tab bar — horizontally scrollable on mobile, wraps on desktop. Sticky under the header. */}
-      <div className="sticky top-14 z-20 -mx-4 mb-5 border-b border-hair bg-sf/85 px-4 backdrop-blur md:top-16 md:mx-0 md:rounded-14 md:border md:bg-sf md:px-2 md:py-2">
+      <div className="sticky top-(--stick-top) z-20 -mx-4 mb-5 border-b border-hair bg-sf/85 px-4 backdrop-blur md:mx-0 md:rounded-14 md:border md:bg-sf md:px-2 md:py-2">
         <div
           role="tablist"
           aria-label="How Peacock works"
