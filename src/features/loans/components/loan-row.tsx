@@ -16,7 +16,7 @@ function AmtCol({ label, value, tone, align = "end", className = "" }: { label: 
 /** Mobile: each loan is its own card — identity + amount/status, no progress bar. */
 export function MobileLoanCard({ l }: { l: Loan }) {
   return (
-    <Link href={`/members/${l.memberId}`} className={`block rounded-2xl border px-4 py-3.5 active:bg-sf2 ${l.interestUnpaid ? "border-wfg/40 bg-wbg" : "border-bd bg-sf"}`}>
+    <Link prefetch={false} href={`/members/${l.memberId}`} className={`block rounded-2xl border px-4 py-3.5 active:bg-sf2 ${l.interestUnpaid ? "border-wfg/40 bg-wbg" : "border-bd bg-sf"}`}>
       {/* Header: identity + status */}
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
@@ -72,6 +72,7 @@ export function MobileLoanCard({ l }: { l: Loan }) {
 export function LoanRowDesktop({ l }: { l: Loan }) {
   return (
     <Link
+      prefetch={false}
       href={`/members/${l.memberId}`}
       className={`flex items-center gap-3.5 border-b border-hr2 px-4.5 py-3.75 transition-colors last:border-b-0 hover:bg-sf2 ${
         l.interestUnpaid ? "bg-wbg" : ""

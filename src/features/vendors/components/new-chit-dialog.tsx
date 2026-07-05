@@ -3,7 +3,7 @@
 import { useId, useState, useTransition } from "react";
 import { Modal, ModalActions } from "@/components/shared/modal";
 import { Field, TextInput, FieldRow } from "@/components/shared/form";
-import { formAction } from "@/server/actions";
+import { formAction } from "@/lib/actions-client";
 
 const digits = (s: string) => s.replace(/[^\d]/g, "");
 

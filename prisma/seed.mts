@@ -100,6 +100,7 @@ await prisma.account.deleteMany();
 await prisma.session.deleteMany();
 await prisma.user.deleteMany();
 await prisma.clubConfig.deleteMany();
+await prisma.statsCache.deleteMany();
 
 // ---------------------------------------------------------------- config
 await prisma.clubConfig.create({

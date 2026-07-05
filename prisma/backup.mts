@@ -19,7 +19,10 @@ import { PrismaClient, Prisma } from "@prisma/client";
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-const prisma = new PrismaClient({ datasourceUrl: process.env.DIRECT_URL }); // bypass PgBouncer for bulk
+// DIRECT_URL only existed on Postgres (to bypass PgBouncer for bulk); on Mongo there is one URL.
+// This makes the script the PG->Mongo migration tool: run `db:backup` on main (Postgres client +
+// legacy URL), then `db:seed:new` on this branch to restore the same JSON into Mongo.
+const prisma = new PrismaClient({ datasourceUrl: process.env.DIRECT_URL || process.env.DATABASE_URL });
 const FILE = fileURLToPath(new URL("../data/peacock-new-backup.json", import.meta.url));
 
 // FK-safe insert order (parents before children). Reverse it to delete children first.
@@ -31,7 +34,8 @@ const ORDER = [
   "Entry",
 ] as const;
 
-const delegate = (model: string) => (prisma as any)[model[0].toLowerCase() + model.slice(1)];
+type Delegate = { findMany: () => Promise<Record<string, unknown>[]>; deleteMany: () => Promise<unknown>; createMany: (args: { data: Record<string, unknown>[] }) => Promise<unknown> };
+const delegate = (model: string) => (prisma as unknown as Record<string, Delegate>)[model[0].toLowerCase() + model.slice(1)];
 
 // { Model: [bigintFieldNames] } from the DMMF — drives backup serialisation and restore coercion.
 const bigintFields = new Map<string, string[]>(
@@ -47,13 +51,14 @@ async function backup() {
 }
 
 async function restore() {
-  const dump: Record<string, any[]> = JSON.parse(readFileSync(FILE, "utf8"));
+  const dump: Record<string, Record<string, unknown>[]> = JSON.parse(readFileSync(FILE, "utf8"));
   for (const model of [...ORDER].reverse()) await delegate(model).deleteMany();
+  await prisma.statsCache.deleteMany(); // snapshots of the old data are meaningless now
   let total = 0;
   for (const model of ORDER) {
     const bigints = bigintFields.get(model) ?? [];
     const rows = (dump[model] ?? []).map((row) => {
-      for (const f of bigints) if (row[f] != null) row[f] = BigInt(row[f]);
+      for (const f of bigints) if (row[f] != null) row[f] = BigInt(row[f] as string | number);
       return row;
     });
     if (rows.length) {

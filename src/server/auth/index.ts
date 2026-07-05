@@ -24,10 +24,15 @@ const authEnv = z
  * Member.mustChangePassword forces a change on first login (enforced in the UI seam).
  */
 export const auth = betterAuth({
-  database: prismaAdapter(prisma, { provider: "postgresql" }),
+  database: prismaAdapter(prisma, { provider: "mongodb" }),
   emailAndPassword: {
     enabled: true,
     requireEmailVerification: false,
+  },
+  session: {
+    // Short-lived signed cookie mirror of the session: most getSession calls skip the DB
+    // entirely and only re-verify against Mongo every 5 minutes (or on sign-out).
+    cookieCache: { enabled: true, maxAge: 5 * 60 },
   },
   secret: authEnv.BETTER_AUTH_SECRET,
   baseURL: authEnv.BETTER_AUTH_URL,

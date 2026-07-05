@@ -18,6 +18,15 @@
 >
 > **Audience:** the engineer(s) building this. Everything needed to start typing lives here.
 > **Out of scope:** visual styling (see `DESIGN_PROMPTS.md`). Functionally the UI mirrors v1.
+>
+> **Revision 9 (Jul 2026) — platform shift, executed:** the app now runs on **MongoDB Atlas**
+> (Prisma `mongodb` provider) in **AWS Mumbai**, with Vercel functions pinned to **`bom1`**; reads
+> are **client-side via React Query** hitting thin `/api/*` route handlers; those handlers serve
+> from a **DB-backed `StatsCache`** (key → page DTO JSON, busted on every mutation, stale after
+> midnight IST). This replaced the Postgres + tag-cache design after production showed connection-pool
+> exhaustion and cross-region latency (§3.1 has the details). Sections that describe Postgres/Neon or
+> `revalidateTag` describe the superseded v2 design — the domain model, ledger engine, posting spec,
+> and money/date contracts are all unchanged.
 
 ---
 
@@ -139,8 +148,8 @@ writes, derive time-based values on read, one cache layer, server actions instea
 |-------|--------|-----|
 | Language | **TypeScript** (strict) | End-to-end type safety. |
 | Framework | **Next.js App Router**, RSC + Server Actions | One codebase, minimal client JS, no REST. |
-| Database | **PostgreSQL** (Neon) | Relational + ACID; ideal for a ledger; free tier. |
-| ORM | **Prisma** | Typed queries, migrations, `$transaction` for atomic posting. |
+| Database | **MongoDB Atlas** (AWS Mumbai, `ap-south-1`) | Free tier, ~500 connections (serverless-safe), replica set gives the ledger its multi-document `$transaction`. Colocated with `bom1` functions. |
+| ORM | **Prisma** (`mongodb` provider) | Typed queries, `db push`, `$transaction` for atomic posting (Atlas replica set). |
 | Money | **`BigInt` paise** | Exact integer math; format to ₹ only at the display edge. |
 | Auth | **Better Auth** (Prisma adapter) | Lightweight; owns User/Session/Account/Verification. |
 | Validation | **Zod** | One validation source for actions and forms. |
@@ -150,43 +159,47 @@ writes, derive time-based values on read, one cache layer, server actions instea
 | Icons | **lucide-react** | Ships with shadcn; consistent, tree-shakeable. |
 | Forms | **react-hook-form** + `@hookform/resolvers` (Zod) | Don't hand-roll forms; shared Zod schemas. |
 | Tables | **@tanstack/react-table** (headless) | Ledger/member/loan tables without reinventing. |
-| Optimistic UI | React `useOptimistic` / `useActionState` (React Query optional) | RSC + actions usually remove the need for a client cache lib. |
-| Caching | **Next.js cache + `revalidateTag()`** | One predictable layer; invalidation clears local **and** Vercel/CDN. |
+| Data fetching (reads) | **TanStack React Query** + `/api/*` route handlers | Pages are client components; one query per page, 30s staleTime, `invalidateQueries()` after every mutation (`lib/actions-client.ts`). |
+| Caching | **`StatsCache` (Mongo) + React Query** | Server: key → page-DTO JSON memo, rebuilt lazily, `bustStats()` clears all keys after any mutation, snapshots stale after midnight IST (daily interest). Client: React Query cache. No Next tag cache. |
 | File storage | **Vercel Blob** | Avatars/files. |
 | Charts | a maintained chart lib (pick in P3) | Series come pre-computed from the ledger. |
 | Testing | **Vitest** (unit) + **Playwright** (e2e later) | Heavy unit testing on the ledger/interest. |
-| Hosting | **Vercel** + **Neon** | Serverless-friendly; no required background workers. |
+| Hosting | **Vercel (`bom1`)** + **MongoDB Atlas (Mumbai)** | Same region as the users and the data; no pooler needed. |
 | Timezone | **Asia/Kolkata (IST)** | All month boundaries. |
 
-### 3.1 Database choice & portability (PostgreSQL now, MongoDB later?)
+### 3.1 Database choice — MongoDB Atlas (the PG→Mongo move, executed Jul 2026)
 
-**Decision for now: PostgreSQL + Prisma.** The owner may revisit MongoDB later; the plan keeps the
-door open with a clean seam, but is honest about the trade-offs.
+**v2 launched on PostgreSQL and it failed operationally, not relationally.** Production ran Vercel
+serverless (`sin1`) against a raw Postgres on a Bengaluru droplet: every lambda held its own
+Prisma pool (`connection_limit=5`), the server had a hard slot ceiling, and link prefetching could
+spawn dozens of concurrent renders. Result (from Vercel logs): `P2024` pool timeouts,
+`FATAL: remaining connection slots are reserved`, intermittent `Can't reach database server`, and
+~40–50ms cross-region tax on every one of the ~25 queries a page ran. The fix had to remove the
+connection ceiling and the distance — the swap-seam this section reserved got used.
 
-**Why PG is the better fit for *this* app:** a ledger lives or dies on **atomic multi-row writes**
-(`postTransaction` updates several account balances + entries + loan/chit rows in one transaction).
-PG gives that natively. The analytics are **grouped aggregates** (`GROUP BY month`, running
-`SUM`) — SQL's home turf.
+**What the move required (all done, keep these invariants):**
+- **Atlas is a replica set**, so `prisma.$transaction` and the ledger's atomicity carry over
+  unchanged. Local dev needs `mongod --replSet rs0` (see `.env` comments).
+- **BigInt paise map to Mongo `Long`** transparently through Prisma; the `lib/money` contract is
+  untouched.
+- **Nullable uniques became plain indexes** (Mongo allows only one `null` in a unique index):
+  `LedgerAccount.memberId`, `@@unique([membershipId|vendorId, kind])`, `Transaction.reversesId`,
+  `Submission.postedTxnId`, `Member.username/userId`. Uniqueness is enforced by the single
+  services that write them (`ensure*` account resolvers, reverse, approve). Non-null uniques
+  (`Member.phone`, `@@unique([memberId, seq])`, `Session.token`, …) remain DB-enforced.
+- **`skipDuplicates` doesn't exist on Mongo** — restore paths filter against existing ids instead.
+- **Data migration** = `npm run db:backup` on the old branch (Postgres client) →
+  `npm run db:seed:new` on this one (same JSON, BigInt-tagged); verified with
+  `scripts/rebuild-balances.mts` (ledger balances re-derived from entries, 0 drift).
 
-**Keeping it swappable (so a later move isn't a rewrite):**
-- **Prisma is the single data layer** and supports **both** PostgreSQL and MongoDB, so the schema
-  and most queries port with modest changes.
-- All DB access goes through **`server/queries/*` and the `ledger` engine** — no Prisma calls
-  scattered in components. Swapping the datasource touches a contained layer.
-- Avoid PG-only escapes in app logic: prefer Prisma's `groupBy`/aggregations over raw SQL so the
-  analytics layer has a portable path (a raw-SQL fast path can be added later for PG only).
-
-**Caveats to accept if Mongo is chosen later (flagged, not blocking):**
-- **Transactions need a replica set** in Mongo (Atlas provides this); single-node dev Mongo can't
-  do the multi-document `$transaction` the ledger relies on.
-- **`BigInt` mapping differs** — PG stores it natively; Mongo uses `Long`/`Decimal128`. The
-  `lib/money` boundary localizes this, but the Prisma field type changes.
-- **Referential integrity / unique compound constraints** (`@@unique([memberId, kind])`,
-  `onDelete: Restrict`) are weaker/different in Mongo and would shift enforcement into the service
-  layer.
-- Net: **migrating is "not a big deal" for the *schema*, but the *transaction guarantees* are the
-  thing to validate** on Mongo. Recommendation: build on PG; only move if there's a strong external
-  reason, and keep the ledger engine the single place that assumes ACID.
+**Read path (replaces the tag-cache design in §5/§12 diagrams):** pages are client components;
+each fetches one composed DTO from `/api/<page>` (auth-guarded route handlers). Handlers serve
+through `server/stats.ts` → `StatsCache` (key → JSON snapshot computed by the existing
+`server/queries/*` functions — never a second source of truth). Any successful mutation calls
+`bustStats()` (drop every key; recomputes are cheap at club scale) and the client wrapper
+(`lib/actions-client.ts`) calls `queryClient.invalidateQueries()`. Snapshots also expire at
+midnight IST so daily interest/pending figures roll without a write. Per-user payloads
+(`/api/me`, notifications, settings) are never stats-cached.
 
 ---
 

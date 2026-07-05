@@ -214,11 +214,6 @@ export async function getVendorStats(): Promise<{ label: string; value: string; 
   ];
 }
 
-export async function getVendorIds(): Promise<string[]> {
-  const rows = await prisma.vendor.findMany({ select: { id: true } });
-  return rows.map((r) => r.id);
-}
-
 // ---------------- details ----------------
 export interface ChitDetailDTO extends VendorDTO {
   start: string; months: number; paidCount: number; valueDisp: string; marginDisp: string;

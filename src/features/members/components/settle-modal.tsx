@@ -4,7 +4,7 @@ import { useId, useState, useTransition } from "react";
 import { LogOut } from "lucide-react";
 import { Modal, ModalActions } from "@/components/shared/modal";
 import { SelectorCard, PickerSheet, type PickOption } from "@/components/shared/entity-picker";
-import { formAction } from "@/server/actions";
+import { formAction } from "@/lib/actions-client";
 import { AmountInput } from "@/components/shared/amount-input";
 import { SectionLabel } from "@/components/shared/section-label";
 import { today } from "./catchup-penalty-modals";

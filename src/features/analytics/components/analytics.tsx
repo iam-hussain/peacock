@@ -1,26 +1,35 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { ChevronDown } from "lucide-react";
+import { BrandLoader } from "@/components/shared/brand-loader";
+import { fetchJson } from "@/lib/use-page-query";
 import type { GraphSeries } from "@/server/queries/analytics";
-import { AN_RANGES, AN_DEFAULT_RANGE, AN_CHIPS } from "../data";
-import { fetchSeries } from "../actions";
+import { AN_RANGES, AN_DEFAULT_METRIC, AN_DEFAULT_RANGE, AN_CHIPS } from "../data";
 import { MetricPicker } from "./metric-picker";
 import { AxisChart } from "./axis-chart";
 import { ChartFullscreen } from "./chart-fullscreen";
 
-export function Analytics({ initial }: { initial: GraphSeries }) {
-  const [data, setData] = useState<GraphSeries>(initial);
+export function Analytics() {
+  const [metric, setMetric] = useState<string>(AN_DEFAULT_METRIC);
   const [range, setRange] = useState<string>(AN_DEFAULT_RANGE);
   const [breakdownOpen, setBreakdownOpen] = useState(true);
-  const [pending, startTransition] = useTransition();
+  // Every metric+range pair is its own cache entry, so revisiting a tab is instant; the previous
+  // series stays on screen (dimmed) while the next one loads.
+  const { data, isFetching: pending } = useQuery({
+    queryKey: ["analytics", metric, range],
+    queryFn: () => fetchJson<GraphSeries>(`/api/analytics?metric=${encodeURIComponent(metric)}&range=${encodeURIComponent(range)}`),
+    placeholderData: keepPreviousData,
+  });
 
-  function load(metric: string, r: string) {
+  function load(m: string, r: string) {
+    setMetric(m);
     setRange(r);
-    startTransition(async () => setData(await fetchSeries({ metric, range: r })));
   }
 
-  const { metric, unit, hero, stats, breakdown, points, labels } = data;
+  if (!data) return <BrandLoader />;
+  const { unit, hero, stats, breakdown, points, labels } = data;
 
   return (
     <div className="mx-auto max-w-320 p-4 pb-19.5 md:p-6.5 md:pb-6.5">

@@ -14,7 +14,7 @@ export function MemberCard({ m }: { m: Member }) {
   ].filter((c): c is { label: string; v: string; cls: string } => c !== null);
 
   return (
-    <Link href={`/members/${m.id}`} className="block rounded-2xl border border-bd bg-sf p-4 active:bg-sf2">
+    <Link prefetch={false} href={`/members/${m.id}`} className="block rounded-2xl border border-bd bg-sf p-4 active:bg-sf2">
       <div className="flex items-center gap-3">
         <ListAvatar name={m.name} src={m.avatarUrl} size={44} />
         <div className="min-w-0 flex-1">

@@ -3,7 +3,7 @@
 import { useId, useRef, useState, useTransition } from "react";
 import { Modal, ModalActions } from "@/components/shared/modal";
 import { Field, TextInput, FieldRow } from "@/components/shared/form";
-import { formAction } from "@/server/actions";
+import { formAction } from "@/lib/actions-client";
 import { isoDate } from "@/lib/date";
 import { initials } from "@/lib/avatar";
 import type { JoinPreviewDTO } from "@/server/queries/members";

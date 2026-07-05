@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { Check, TriangleAlert } from "lucide-react";
 import { initials } from "@/lib/avatar";
-import { decideSubmission, loadActivity, markAllRead } from "@/server/actions";
+import { decideSubmission, loadActivity, markAllRead } from "@/lib/actions-client";
 import { useIsAdmin } from "@/lib/admin";
 import { ACTIVITY_PAGE, type ActivityEvent, type NotificationsData } from "@/features/notifications/types";
 

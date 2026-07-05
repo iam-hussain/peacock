@@ -84,7 +84,7 @@ export async function getCashHolderOptions(): Promise<PickOptionDTO[]> {
   });
   return members
     .map((m) => {
-      const balance = m.treasury?.balance ?? 0n;
+      const balance = m.treasury[0]?.balance ?? 0n;
       const active = m.memberships.some((s) => s.status === "ACTIVE");
       const rank = balance > 0n ? 0 : active ? 1 : 2; // holding money → active → inactive
       return { id: m.id, name: fullName(m.firstName, m.lastName), sub: `Holds ${formatLakh(balance)}`, avatar: m.avatarUrl, rank };

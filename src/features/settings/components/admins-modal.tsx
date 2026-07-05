@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Search } from "lucide-react";
 import { Modal } from "@/components/shared/modal";
 import { Avatar } from "@/components/shared/avatar";
-import { setAdmin } from "@/server/actions";
+import { setAdmin } from "@/lib/actions-client";
 import type { SettingsData } from "@/server/queries/settings";
 
 export function AdminsButton({

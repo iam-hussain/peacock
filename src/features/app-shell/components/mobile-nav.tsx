@@ -7,6 +7,7 @@ import { BrandLockup } from "@/components/shared/brand-lockup";
 import { NAV } from "../nav";
 import { useAddEntry } from "@/features/entries/add-entry";
 import { UserAvatar } from "./user-avatar";
+import { useUnread } from "../use-unread";
 import type { CurrentUser } from "@/server/queries/session";
 
 const EXTRA_TITLES: Record<string, string> = {
@@ -26,7 +27,8 @@ function sectionTitle(pathname: string): string | null {
 }
 
 /** Mobile top bar: brand + section title + share / notifications / avatar. */
-export function MobileTopBar({ user, unread = 0 }: { user: CurrentUser; unread?: number }) {
+export function MobileTopBar({ user }: { user: CurrentUser }) {
+  const unread = useUnread();
   const pathname = usePathname();
   const title = sectionTitle(pathname);
   return (

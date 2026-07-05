@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Lock } from "lucide-react";
 import { Modal, ModalActions } from "@/components/shared/modal";
-import { saveClubSettings } from "@/server/actions";
+import { saveClubSettings } from "@/lib/actions-client";
 import type { SettingsData } from "@/server/queries/settings";
 
 const label = "text-11 font-bold uppercase leading-none tracking-6 text-fnt";

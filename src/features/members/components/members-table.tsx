@@ -76,6 +76,7 @@ export function MembersTable({ members }: { members: Member[] }) {
 function Row({ m }: { m: Member }) {
   return (
     <Link
+      prefetch={false}
       href={`/members/${m.id}`}
       className={`grid ${MEMBERS_GRID} items-center gap-3 border-b border-hr2 px-5 py-3 transition-colors last:border-b-0 hover:bg-sf2`}
     >

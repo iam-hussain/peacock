@@ -6,12 +6,14 @@ import { Bell, Upload, Sun, Plus } from "lucide-react";
 import { BrandLockup } from "@/components/shared/brand-lockup";
 import { NAV } from "../nav";
 import { UserMenu } from "./user-menu";
+import { useUnread } from "../use-unread";
 import { useAddEntry } from "@/features/entries/add-entry";
 import { toggleTheme } from "@/lib/theme";
 import type { CurrentUser } from "@/server/queries/session";
 
 /** Desktop top navigation bar. */
-export function TopNav({ user, unread = 0 }: { user: CurrentUser; unread?: number }) {
+export function TopNav({ user }: { user: CurrentUser }) {
+  const unread = useUnread();
   const pathname = usePathname();
   const addEntry = useAddEntry();
   return (
