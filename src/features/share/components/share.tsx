@@ -84,7 +84,12 @@ export function Share() {
   const filename = mode === "member" ? `peacock-${selected?.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}` : "peacock-club-report";
   const sectionNote = SECTION_KEYS.filter((k) => sections[k]).map((k) => SECTION_LABELS[k].toLowerCase()).join(" · ");
 
-  async function render(kind: "png" | "blob") {
+  // Everything that changes what the poster shows — the key for the pre-rendered PNG below.
+  const sig = JSON.stringify([mode, sections, incInactive, incClosedLoans, incClosedVendors, effSelId]);
+  const shot = useRef<{ sig: string; blob: Blob } | null>(null);
+  const capturing = useRef<Promise<Blob> | null>(null);
+
+  async function capture(forSig: string): Promise<Blob> {
     const node = posterRef.current;
     if (!node) throw new Error("not ready");
     // Heavy client-only lib — loaded on demand so it stays out of the initial bundle.
@@ -98,17 +103,48 @@ export function Share() {
     try {
       const width = parseInt(node.style.width, 10);
       const opts = { pixelRatio: 2, cacheBust: true, backgroundColor: "#F7F8F7", width, height: node.offsetHeight };
-      return kind === "blob" ? await htmlToImage.toBlob(node, opts) : await htmlToImage.toPng(node, opts);
+      // WebKit warm-up: Safari's first foreignObject rasterization often drops fonts/avatars.
+      if (/^((?!chrome|android).)*safari/i.test(navigator.userAgent)) await htmlToImage.toBlob(node, opts);
+      const blob = await htmlToImage.toBlob(node, opts);
+      if (!blob) throw new Error("empty render");
+      shot.current = { sig: forSig, blob };
+      return blob;
     } finally {
       wrap.style.zoom = prevZoom;
     }
+  }
+
+  // Serialized + memoized capture: one at a time (it mutates the shared preview zoom),
+  // and an already-rendered blob for the current settings is returned instantly.
+  function makeBlob(): Promise<Blob> {
+    const prev = capturing.current;
+    const run = (async () => {
+      if (prev) await prev.catch(() => {});
+      if (shot.current?.sig === sig) return shot.current.blob;
+      return capture(sig);
+    })();
+    capturing.current = run;
+    return run;
+  }
+
+  // Pre-render as soon as the poster is ready: iOS only allows the share sheet inside the
+  // tap's activation window, so the blob must already exist when Share is tapped.
+  useEffect(() => {
+    if (stage !== "ready") return;
+    makeBlob().catch(() => {}); // failures surface on the actual button press
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stage, sig]);
+
+  function saveBlob(blob: Blob) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = `${filename}.png`; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 5000); // keep alive until the save sheet finishes (iOS)
   }
   async function doDownload() {
     if (busy) return;
     setBusy("dl");
     try {
-      const url = (await render("png")) as string;
-      const a = document.createElement("a"); a.href = url; a.download = `${filename}.png`; a.click();
+      saveBlob(await makeBlob());
       flash("Image downloaded");
     } catch { setStage("error"); } finally { setBusy(null); }
   }
@@ -116,16 +152,20 @@ export function Share() {
     if (busy) return;
     setBusy("sh");
     try {
-      const blob = (await render("blob")) as Blob | null;
-      if (!blob) throw new Error("no blob");
+      const blob = await makeBlob();
       const file = new File([blob], `${filename}.png`, { type: "image/png" });
       const text = mode === "member" ? "Peacock member statement" : "Peacock Investment Club — club report";
       if (navigator.canShare?.({ files: [file] })) {
-        try { await navigator.share({ files: [file], title: "Peacock Investment Club", text }); flash("Shared"); } catch { /* cancelled */ }
+        try {
+          await navigator.share({ files: [file], title: "Peacock Investment Club", text });
+          flash("Shared");
+        } catch (e) {
+          // AbortError = user closed the sheet. Anything else (e.g. expired tap
+          // activation) falls back to saving the file instead of failing silently.
+          if ((e as Error).name !== "AbortError") { saveBlob(blob); flash("Share blocked — image saved instead"); }
+        }
       } else {
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a"); a.href = url; a.download = `${filename}.png`; a.click();
-        URL.revokeObjectURL(url);
+        saveBlob(blob);
         flash("Saved — sharing not supported here");
       }
     } catch { setStage("error"); } finally { setBusy(null); }
