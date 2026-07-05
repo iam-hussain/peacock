@@ -1,38 +1,3 @@
-// Public "How Peacock works" content. Plain-language, consistent with PRODUCT.md / ABOUT.md.
-export const HOW_STEPS = [
-  {
-    n: 1,
-    title: "Members pay a monthly deposit",
-    body: "Everyone contributes the same fixed amount each month. The club holds no central account — a member-treasurer physically holds the cash, and every deposit is recorded to the rupee.",
-  },
-  {
-    n: 2,
-    title: "The club lends to members",
-    body: "One loan at a time, funded in tranches as cash is needed, at a fixed daily interest rate locked in when the loan starts and running over a five-month term.",
-  },
-  {
-    n: 3,
-    title: "Interest and repayments flow back",
-    body: "Borrowers repay principal plus interest. Each repayment is posted against the loan, so the outstanding balance and interest earned are always current.",
-  },
-  {
-    n: 4,
-    title: "Spare cash is invested with vendors",
-    body: "Idle money is placed with banks, chit funds and other vendors. Investments and returns are recorded, and profit accrues to the club.",
-  },
-  {
-    n: 5,
-    title: "Profit is shared fairly",
-    body: "At close, profit is split in proportion to what each member actually paid in. A catch-up mechanism keeps every member's value equal over time.",
-  },
-];
-
-export const HOW_FACTS = [
-  { v: "1% / mo", l: "Loan interest", s: "Fixed at origination, charged daily." },
-  { v: "₹5,00,000", l: "Maximum loan", s: "The most a member can borrow at once." },
-  { v: "5 months", l: "Loan term", s: "One loan at a time, per member." },
-];
-
 // Terms & conditions — icon tint keys map to token classes in the component.
 export type TermsIcon = "people" | "bank" | "gavel";
 
