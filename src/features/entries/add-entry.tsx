@@ -1,9 +1,11 @@
 "use client";
 
-import { createContext, Suspense, use, useContext, useMemo, useState, useTransition } from "react";
+import { createContext, useContext, useMemo, useState, useTransition } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { fetchJson } from "@/lib/use-page-query";
 import { Modal } from "@/components/shared/modal";
 import { PickerSheet, type PickOption } from "@/components/shared/entity-picker";
-import { formAction } from "@/server/actions";
+import { formAction } from "@/lib/actions-client";
 import type { EntryPickerOptions } from "@/server/queries/entries";
 import { INTENT_DIR, MEMBER_CTX_KEY } from "./entry-constants";
 import { IntentPicker } from "./intent-picker";
@@ -24,25 +26,26 @@ export const useAddEntry = () => {
   return c;
 };
 
-export function AddEntryProvider({ children, optionsPromise }: { children: React.ReactNode; optionsPromise: Promise<EntryPickerOptions> }) {
+export function AddEntryProvider({ children }: { children: React.ReactNode }) {
   // Picker data (a slow, non-critical query) is fetched lazily and never blocks page render —
-  // the dialog only mounts, and only then unwraps the promise, when the user opens Add-Entry.
+  // the dialog only mounts, and only then fetches, when the user opens Add-Entry.
   const [preset, setPreset] = useState<AddEntryPreset | null>(null);
   const [open, setOpen] = useState(false);
   return (
     <Ctx.Provider value={{ open: (p) => { setPreset(p ?? null); setOpen(true); } }}>
       {children}
-      {open && (
-        <Suspense fallback={null}>
-          <AddEntryDialog optionsPromise={optionsPromise} preset={preset} onClose={() => setOpen(false)} />
-        </Suspense>
-      )}
+      {open && <AddEntryDialog preset={preset} onClose={() => setOpen(false)} />}
     </Ctx.Provider>
   );
 }
 
-function AddEntryDialog({ optionsPromise, preset, onClose }: { optionsPromise: Promise<EntryPickerOptions>; preset: AddEntryPreset | null; onClose: () => void }) {
-  const options = use(optionsPromise);
+function AddEntryDialog({ preset, onClose }: { preset: AddEntryPreset | null; onClose: () => void }) {
+  const { data: options } = useQuery({ queryKey: ["entry-options"], queryFn: () => fetchJson<EntryPickerOptions>("/api/entry-options") });
+  if (!options) return null;
+  return <AddEntryDialogInner options={options} preset={preset} onClose={onClose} />;
+}
+
+function AddEntryDialogInner({ options, preset, onClose }: { options: EntryPickerOptions; preset: AddEntryPreset | null; onClose: () => void }) {
   const MEMBER_OPTS = options.members;
   const VENDOR_OPTS = options.vendors;
   const TREASURER_OPTS = options.treasurers;

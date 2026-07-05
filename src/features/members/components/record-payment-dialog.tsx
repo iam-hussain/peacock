@@ -5,7 +5,7 @@ import { Modal, ModalActions } from "@/components/shared/modal";
 import { SelectorCard, PickerSheet, type PickOption } from "@/components/shared/entity-picker";
 import { AmountInput } from "@/components/shared/amount-input";
 import { SectionLabel } from "@/components/shared/section-label";
-import { formAction } from "@/server/actions";
+import { formAction } from "@/lib/actions-client";
 import { type Bucket, Trigger, today } from "./catchup-penalty-shared";
 
 const round = (n: number) => String(Math.round(n));

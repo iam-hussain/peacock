@@ -4,7 +4,7 @@ import { useId, useState, useTransition } from "react";
 import { Modal, ModalActions } from "./modal";
 import { Field, TextInput, Textarea, Select, FieldRow, type SelectOption } from "./form";
 import { SelectorCard, PickerSheet, type PickOption } from "./entity-picker";
-import { formAction } from "@/server/actions";
+import { formAction } from "@/lib/actions-client";
 
 export interface FieldDef {
   name: string;

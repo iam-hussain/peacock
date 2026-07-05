@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Cropper, { type Area } from "react-easy-crop";
 import { Pencil } from "lucide-react";
 import { Modal, ModalActions } from "@/components/shared/modal";
-import { updateAvatar } from "@/server/actions";
+import { updateAvatar } from "@/lib/actions-client";
 
 const OUT_SIZE = 256; // square avatar, resized down before base64 encoding
 

@@ -41,7 +41,7 @@ async function main() {
   const unrecoverable: { id: string; reason: string }[] = [];
 
   for (const txn of orphans) {
-    const sub = await prisma.submission.findUnique({ where: { postedTxnId: txn.id }, select: { payload: true } });
+    const sub = await prisma.submission.findFirst({ where: { postedTxnId: txn.id }, select: { payload: true } });
     if (!sub) {
       unrecoverable.push({ id: txn.id, reason: "no Submission (admin-posted or imported)" });
       continue;

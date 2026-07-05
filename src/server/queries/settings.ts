@@ -47,11 +47,12 @@ export async function getSettingsData(): Promise<SettingsData> {
   const rateBps = rateSched.length ? rateSched[rateSched.length - 1].rateBps : 100;
   const rateLabel = `${rateBps / 100}% / mo`;
 
-  const treasurers = await prisma.member.findMany({
-    where: { treasury: { isNot: null } },
-    select: { firstName: true, lastName: true, treasury: { select: { balance: true } } },
-    orderBy: { treasury: { balance: "desc" } },
-  });
+  const treasurers = (
+    await prisma.member.findMany({
+      where: { treasury: { some: {} } },
+      select: { firstName: true, lastName: true, treasury: { select: { balance: true } } },
+    })
+  ).sort((a, b) => Number((b.treasury[0]?.balance ?? 0n) - (a.treasury[0]?.balance ?? 0n)));
 
   const user = await getCurrentUser();
   const me = user ? await prisma.member.findUnique({ where: { id: user.id }, select: { phone: true, username: true, avatarUrl: true, role: true, isTreasurer: true } }) : null;
@@ -100,7 +101,7 @@ export async function getSettingsData(): Promise<SettingsData> {
         dailyFrom: cfg ? dayMonthYear(cfg.dayInterestFrom) : "—",
       },
     },
-    treasury: treasurers.map((t) => ({ name: fullName(t.firstName, t.lastName), holds: formatLakh(t.treasury?.balance ?? 0n) })),
+    treasury: treasurers.map((t) => ({ name: fullName(t.firstName, t.lastName), holds: formatLakh(t.treasury[0]?.balance ?? 0n) })),
     profile: {
       id: user?.id ?? "",
       name: user?.name ?? "",
@@ -111,7 +112,7 @@ export async function getSettingsData(): Promise<SettingsData> {
       isTreasurer: me?.isTreasurer ?? false,
       avatarUrl: me?.avatarUrl ?? "",
     },
-    admins: adminRows.map((a) => ({ id: a.id, name: fullName(a.firstName, a.lastName), holds: a.treasury ? formatLakh(a.treasury.balance) : "" })),
+    admins: adminRows.map((a) => ({ id: a.id, name: fullName(a.firstName, a.lastName), holds: a.treasury[0] ? formatLakh(a.treasury[0].balance) : "" })),
     memberOptions: members.map((m) => ({ label: fullName(m.firstName, m.lastName), value: m.id, sub: m.phone })),
     quarter,
     auditCount,

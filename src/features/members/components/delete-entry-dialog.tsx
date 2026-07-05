@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { Modal } from "@/components/shared/modal";
-import { formAction } from "@/server/actions";
+import { formAction } from "@/lib/actions-client";
 import { type Bucket, Trigger } from "./catchup-penalty-shared";
 
 /** Delete a catch-up / penalty CHARGE or PAYMENT, with a confirm step. */

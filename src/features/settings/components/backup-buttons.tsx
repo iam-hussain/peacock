@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState, useTransition } from "react";
-import { exportBackup, importBackup } from "@/server/backup";
+import { exportBackup, importBackup } from "@/lib/actions-client";
 
 /** Download the whole club DB as a JSON file. */
 export function CreateBackupButton() {

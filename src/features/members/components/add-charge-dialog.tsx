@@ -5,7 +5,7 @@ import { Sparkles } from "lucide-react";
 import { Modal, ModalActions } from "@/components/shared/modal";
 import { AmountInput } from "@/components/shared/amount-input";
 import { SectionLabel } from "@/components/shared/section-label";
-import { formAction } from "@/server/actions";
+import { formAction } from "@/lib/actions-client";
 import type { ChargeSuggest } from "@/server/queries/members";
 import { type Bucket, Trigger, today } from "./catchup-penalty-shared";
 

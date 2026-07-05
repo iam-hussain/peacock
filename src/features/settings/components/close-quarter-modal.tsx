@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { AlertTriangle } from "lucide-react";
 import { Modal, ModalActions } from "@/components/shared/modal";
-import { closeQuarterNow } from "@/server/actions";
+import { closeQuarterNow } from "@/lib/actions-client";
 import type { QuarterPreview } from "@/server/queries/close-quarter";
 
 export function CloseQuarterButton({ quarter, className, children }: { quarter: QuarterPreview; className?: string; children: React.ReactNode }) {

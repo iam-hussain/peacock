@@ -1,8 +1,7 @@
-import { Analytics } from "@/features/analytics/components/analytics";
-import { getGraphSeries } from "@/server/queries/analytics";
-import { AN_DEFAULT_METRIC, AN_DEFAULT_RANGE } from "@/features/analytics/data";
+"use client";
 
-export default async function AnalyticsPage() {
-  const initial = await getGraphSeries(AN_DEFAULT_METRIC, AN_DEFAULT_RANGE);
-  return <Analytics initial={initial} />;
+import { Analytics } from "@/features/analytics/components/analytics";
+
+export default function AnalyticsPage() {
+  return <Analytics />;
 }

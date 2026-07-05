@@ -2,7 +2,7 @@
 
 import { useId, useState, useTransition } from "react";
 import { Modal, ModalActions } from "@/components/shared/modal";
-import { formAction } from "@/server/actions";
+import { formAction } from "@/lib/actions-client";
 import { formatPaise } from "@/lib/money";
 import { AmountInput } from "@/components/shared/amount-input";
 import { SectionLabel } from "@/components/shared/section-label";

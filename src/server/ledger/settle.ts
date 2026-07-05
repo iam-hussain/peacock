@@ -18,7 +18,7 @@ export interface SettlementGuide {
 
 /** Server-authoritative settlement breakdown for an active membership (§12). */
 export async function computeSettlement(membershipId: string): Promise<SettlementGuide> {
-  const equity = await prisma.ledgerAccount.findUnique({ where: { membershipId_kind: { membershipId, kind: "MEMBER_EQUITY" } }, select: { balance: true } });
+  const equity = await prisma.ledgerAccount.findFirst({ where: { membershipId, kind: "MEMBER_EQUITY" }, select: { balance: true } });
   const capital = -(equity?.balance ?? 0n); // equity holds deposits+catch-up as a negative balance
   const cfg = await prisma.clubConfig.findUnique({ where: { id: "singleton" }, select: { stages: true } });
   const expectedDeposit = expectedClubDeposit((cfg?.stages as Stage[] | undefined) ?? []);

@@ -2,6 +2,7 @@
 
 import { prisma } from "@/server/db";
 import { getCurrentUser } from "@/server/queries/session";
+import { bustStats } from "@/server/stats";
 
 // Every table, in FK-safe insert order (parents first). Restore inserts in this order, skipping duplicates.
 const TABLES = [
@@ -13,7 +14,7 @@ const TABLES = [
 // Minimal shape we invoke on each model delegate. Keyed by the exact TABLES names
 // (camelCased Prisma delegate keys) so dynamic dispatch stays checked, not `any`.
 type ModelDelegate = {
-  findMany: () => Promise<unknown[]>;
+  findMany: (args?: object) => Promise<unknown[]>;
   createMany: (args: object) => Promise<unknown>;
 };
 type ModelClient = Record<(typeof TABLES)[number], ModelDelegate>;
@@ -54,11 +55,14 @@ export async function importBackup(json: string): Promise<{ ok: boolean; error?:
     await prisma.$transaction(
       async (tx) => {
         const txModels = tx as unknown as ModelClient;
-        // Insert parents-first, skipping rows whose id (or any unique key) already exists.
+        // Insert parents-first, skipping rows whose id already exists (Mongo has no skipDuplicates,
+        // so filter against existing ids up front).
         for (const t of TABLES) {
-          const rows = data[t] as object[];
-          if (rows.length) {
-            const res = (await txModels[t].createMany({ data: rows, skipDuplicates: true })) as { count: number };
+          const rows = data[t] as { id: string }[];
+          const existing = new Set(((await txModels[t].findMany({ select: { id: true } })) as { id: string }[]).map((r) => r.id));
+          const fresh = rows.filter((r) => !existing.has(r.id));
+          if (fresh.length) {
+            const res = (await txModels[t].createMany({ data: fresh })) as { count: number };
             counts[t] = res.count;
           } else {
             counts[t] = 0;
@@ -70,5 +74,6 @@ export async function importBackup(json: string): Promise<{ ok: boolean; error?:
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Restore failed — no changes were made." };
   }
+  await bustStats();
   return { ok: true, counts };
 }

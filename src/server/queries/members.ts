@@ -163,7 +163,7 @@ export async function getMembers(): Promise<MemberDTO[]> {
       deposits: formatPaise(periodic), // monthly deposits only; catch-up shows under Adjustment
       profit: formatPaise(profit),
       value: active ? formatPaise(worth) : "—",
-      held: m.treasury && m.treasury.balance !== 0n ? formatPaise(m.treasury.balance) : null,
+      held: m.treasury[0] && m.treasury[0].balance !== 0n ? formatPaise(m.treasury[0].balance) : null,
       adjustment: adjustment > 0n ? formatPaise(adjustment) : null,
       adjustmentCharged: charged > 0n ? formatPaise(charged) : null,
       pending: pendingTotal > 0n ? formatPaise(pendingTotal) : null,
@@ -173,7 +173,7 @@ export async function getMembers(): Promise<MemberDTO[]> {
         deposits: Number(periodic),
         profit: Number(profit),
         value: Number(worth),
-        held: Number(m.treasury?.balance ?? 0n),
+        held: Number(m.treasury[0]?.balance ?? 0n),
         adjustment: Number(charged),
         pending: Number(pendingTotal),
         status: active ? 0 : m.archivedAt ? 2 : 1,
@@ -265,11 +265,6 @@ export async function chargeTotals(kind: "CATCHUP" | "PENALTY"): Promise<{ assig
   return { assigned, collected, pending: assigned - collected };
 }
 
-
-export async function getMemberIds(): Promise<string[]> {
-  const rows = await prisma.member.findMany({ select: { id: true } });
-  return rows.map((r) => r.id);
-}
 
 // What a brand-new member is expected to bring in on joining (mirrors addMember, §6/§7): the
 // full-club-life deposit baseline plus the first-join catch-up (average per-member profit).
@@ -675,13 +670,13 @@ export async function getMemberDetail(id: string, ctx?: MemberDetailContext): Pr
     deposits: formatPaise(deposits),
     profit: formatPaise(profit),
     value: active ? formatPaise(value) : "—",
-    held: m.treasury ? formatPaise(m.treasury.balance) : null,
+    held: m.treasury[0] ? formatPaise(m.treasury[0].balance) : null,
     adjustment: pendingCharge + penaltyCharge > 0n ? formatPaise(pendingCharge + penaltyCharge) : null,
     adjustmentCharged: assigned + penaltyAssigned > 0n ? formatPaise(assigned + penaltyAssigned) : null,
     pending: pendingCharge > 0n ? formatPaise(pendingCharge) : null,
     status: memberStatus(active, m.archivedAt),
     tenure: tenure(m.customerSince),
-    managing: m.treasury ? formatPaise(m.treasury.balance) : null,
+    managing: m.treasury[0] ? formatPaise(m.treasury[0].balance) : null,
     loanTaken: formatPaise(loanTaken),
     interestDue: formatPaise(interestDue),
     returnsActual: formatPaise(profit),

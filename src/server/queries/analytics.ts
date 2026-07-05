@@ -262,11 +262,15 @@ async function vendorProfitSeries(cutoffs: Date[]): Promise<{ raw: bigint[]; bre
 async function getBreakdown(kind: "treasurer" | "vendor"): Promise<GraphSeries["breakdown"]> {
   if (kind === "treasurer") {
     const treasurers = await prisma.member.findMany({
-      where: { treasury: { isNot: null } },
+      where: { treasury: { some: {} } },
       select: { firstName: true, lastName: true, treasury: { select: { balance: true } } },
-      orderBy: { treasury: { balance: "desc" } },
     });
-    return rowsFrom("By treasurer", treasurers.map((t) => ({ name: [t.firstName, t.lastName].filter(Boolean).join(" "), bal: t.treasury?.balance ?? 0n })));
+    return rowsFrom(
+      "By treasurer",
+      treasurers
+        .map((t) => ({ name: [t.firstName, t.lastName].filter(Boolean).join(" "), bal: t.treasury[0]?.balance ?? 0n }))
+        .sort((a, b) => (b.bal > a.bal ? 1 : b.bal < a.bal ? -1 : 0)),
+    );
   }
   const vendors = await prisma.ledgerAccount.findMany({
     where: { kind: "VENDOR_RECEIVABLE" },

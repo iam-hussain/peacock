@@ -3,35 +3,41 @@ generator client {
 }
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL") // pooled (PgBouncer) for the app
-  directUrl = env("DIRECT_URL") // direct for migrations & seed
+  provider = "mongodb"
+  url      = env("DATABASE_URL") // MongoDB Atlas (mongodb+srv://…); local dev needs a replica set for $transaction
 }
+
+// MongoDB note: unique indexes here treat null as a value (only ONE null allowed), unlike Postgres.
+// Nullable fields that were `@unique` on Postgres are plain indexes now; the few code paths that set
+// them enforce uniqueness themselves (they always did — each is written once by a controlled service).
 
 // ---------- Identity (banker model: Member = the person/customer; Membership = an account/stint) ----------
 model Member {
-  id                 String         @id @default(cuid())
+  id                 String         @id @default(cuid()) @map("_id")
   firstName          String
   lastName           String?
   phone              String         @unique // REQUIRED + unique; also the default password seed
   email              String? // optional contact
-  username           String?        @unique // optional handle; auto-generated from name if blank
+  username           String? // optional handle; auto-generated from name if blank (uniqueness enforced in code — Mongo nullable-unique)
   avatarUrl          String?
   role               MemberRole     @default(MEMBER) // ADMIN or MEMBER (admin = write access)
   isTreasurer        Boolean        @default(false) // person-level: they physically hold club cash
-  userId             String?        @unique // Better Auth user link
-  user               User?          @relation("MemberUser", fields: [userId], references: [id])
+  userId             String? // Better Auth user link (set once at member creation; uniqueness enforced in code)
+  user               User?          @relation("MemberUser", fields: [userId], references: [id]) // modelled many-to-one only because Mongo can't unique a nullable FK
   mustChangePassword Boolean        @default(true) // first login forces a change (default pw = phone)
   customerSince      DateTime // first-ever join date (display)
   memberships        Membership[] // one per stint (join → leave → rejoin opens a new one)
-  treasury           LedgerAccount? @relation("MemberTreasury") // TREASURY_CASH lives on the PERSON
+  treasury           LedgerAccount[] @relation("MemberTreasury") // TREASURY_CASH lives on the PERSON (at most one — ensureTreasury; list only because Mongo can't unique a nullable FK)
   archivedAt         DateTime?
   createdAt          DateTime       @default(now())
   updatedAt          DateTime       @updatedAt
+
+  @@index([userId])
+  @@index([username])
 }
 
 model Membership {
-  id            String           @id @default(cuid())
+  id            String           @id @default(cuid()) @map("_id")
   memberId      String // the person
   member        Member           @relation(fields: [memberId], references: [id])
   seq           Int // 1, 2, 3… ("Membership #N") per member
@@ -50,7 +56,7 @@ model Membership {
 }
 
 model Vendor {
-  id         String          @id @default(cuid())
+  id         String          @id @default(cuid()) @map("_id")
   name       String
   type       VendorType // GENERAL or CHIT (behavioral: how postings/profit work)
   category   String? // display label only (e.g. "Bank", "Stocks"); no behavior
@@ -65,7 +71,7 @@ model Vendor {
 }
 
 model ChitFund {
-  id                String     @id @default(cuid())
+  id                String     @id @default(cuid()) @map("_id")
   vendorId          String     @unique
   vendor            Vendor     @relation(fields: [vendorId], references: [id])
   chitValue         BigInt // face value, e.g. ₹5,00,000
@@ -81,12 +87,12 @@ model ChitFund {
 
 // ---------- Auth (Better Auth) ----------
 model User {
-  id            String    @id
+  id            String    @id @map("_id")
   name          String
   email         String    @unique
   emailVerified Boolean   @default(false)
   image         String?
-  member        Member?   @relation("MemberUser")
+  members       Member[]  @relation("MemberUser") // at most one — see Member.userId
   sessions      Session[]
   accounts      Account[]
   createdAt     DateTime  @default(now())
@@ -96,7 +102,7 @@ model User {
 }
 
 model Session {
-  id        String   @id
+  id        String   @id @map("_id")
   expiresAt DateTime
   token     String   @unique
   ipAddress String?
@@ -111,7 +117,7 @@ model Session {
 }
 
 model Account {
-  id                    String    @id
+  id                    String    @id @map("_id")
   accountId             String
   providerId            String
   userId                String
@@ -131,7 +137,7 @@ model Account {
 }
 
 model Verification {
-  id         String   @id
+  id         String   @id @map("_id")
   identifier String
   value      String
   expiresAt  DateTime
@@ -143,30 +149,31 @@ model Verification {
 
 // ---------- Ledger ----------
 model LedgerAccount {
-  id           String            @id @default(cuid())
+  id           String            @id @default(cuid()) @map("_id")
   kind         LedgerAccountKind
   balance      BigInt            @default(0) // cached running balance (paise)
   membershipId String? // for MEMBER_EQUITY / LOAN_RECEIVABLE — scoped to a STINT
   membership   Membership?       @relation(fields: [membershipId], references: [id])
-  memberId     String?           @unique // for TREASURY_CASH — the PERSON holds cash (one per person)
+  memberId     String? // for TREASURY_CASH — the PERSON holds cash (one per person; enforced in ensureTreasury)
   member       Member?           @relation("MemberTreasury", fields: [memberId], references: [id])
   vendorId     String? // for VENDOR_RECEIVABLE / VENDOR_PROFIT
   vendor       Vendor?           @relation(fields: [vendorId], references: [id])
   entries      Entry[]
   createdAt    DateTime          @default(now())
 
-  @@unique([membershipId, kind]) // one equity / one loan-acct per stint, per kind
-  @@unique([vendorId, kind])
+  @@index([membershipId, kind]) // one equity / one loan-acct per stint, per kind — enforced by the account services
+  @@index([vendorId, kind])
+  @@index([memberId])
   @@index([kind])
 }
 
 model Transaction {
-  id           String   @id @default(cuid())
+  id           String   @id @default(cuid()) @map("_id")
   type         TxnType // CATCHUP/PENALTY here = cash pay-downs of a Charge (§ Charge model)
   occurredAt   DateTime // drives month bucketing (UTC stored, IST bucketed)
   description  String?
   reference    String?
-  reversesId   String?  @unique // set when this reverses another txn
+  reversesId   String? // set when this reverses another txn (one reversal per txn — enforced by reverse service)
   membershipId String? // member-scoped txns belong to a STINT (deposits, pay-downs, loans, settle, rejoin)
   loanId       String? // link for loan-related txns (tranches, repay, interest)
   vendorId     String? // link for vendor/chit txns
@@ -176,6 +183,7 @@ model Transaction {
   updatedAt    DateTime @updatedAt
 
   @@index([occurredAt])
+  @@index([reversesId])
   @@index([type, occurredAt])
   @@index([membershipId, occurredAt])
   @@index([loanId, occurredAt])
@@ -183,7 +191,7 @@ model Transaction {
 }
 
 model Entry {
-  id            String        @id @default(cuid())
+  id            String        @id @default(cuid()) @map("_id")
   transactionId String
   accountId     String
   amount        BigInt // signed paise
@@ -195,7 +203,7 @@ model Entry {
 }
 
 model Loan {
-  id                   String     @id @default(cuid())
+  id                   String     @id @default(cuid()) @map("_id")
   membershipId         String // belongs to a STINT (a member must clear loans before leaving)
   membership           Membership @relation(fields: [membershipId], references: [id])
   requestedAmount      BigInt // what the member asked for (funded via tranches)
@@ -212,7 +220,7 @@ model Loan {
 
 // ---------- Config & audit ----------
 model ClubConfig {
-  id                 String              @id @default("singleton")
+  id                 String              @id @default("singleton") @map("_id")
   name               String
   startedAt          DateTime
   stages             Json // [{ name, amountPaise, startDate, endDate? }]
@@ -234,14 +242,14 @@ model ClubConfig {
 // raises (Charge model), paid down via PENALTY transactions → OTHER_INCOME. See §16.2.
 
 model Submission {
-  id            String           @id @default(cuid())
+  id            String           @id @default(cuid()) @map("_id")
   intent        String // the "What happened?" intent (maps to a TxnType or charge)
   payload       Json // the entry's fields (member/amount/treasury/date/…)
   status        SubmissionStatus @default(PENDING)
   submittedById String // the member who submitted it
   decidedById   String? // admin who approved/rejected
   decidedAt     DateTime?
-  postedTxnId   String?          @unique // set to the Transaction created on approval
+  postedTxnId   String? // set to the Transaction created on approval (write-once by approve service)
   createdAt     DateTime         @default(now())
 
   @@index([status])
@@ -252,7 +260,7 @@ model Submission {
 // Reject → status=REJECTED, nothing posts. The ledger only ever contains APPROVED, posted entries.
 
 model PeriodClose {
-  id          String   @id @default(cuid())
+  id          String   @id @default(cuid()) @map("_id")
   periodStart DateTime // quarter start (IST)
   periodEnd   DateTime // quarter end (IST)
   snapshot    Json // the §17.3 figures frozen at close (for the year-/quarter-end statement)
@@ -266,7 +274,7 @@ model PeriodClose {
 // a snapshot. Profit still ACCUMULATES (no distribution); the "reinvest" is just the snapshot + lock.
 
 model Notification {
-  id           String           @id @default(cuid())
+  id           String           @id @default(cuid()) @map("_id")
   recipientId  String // member/user who should see it
   kind         NotificationKind @default(EVENT) // EVENT (something happened) or APPROVAL (actionable)
   type         String // e.g. "password.reset_requested", "entry.created", "submission.pending"
@@ -285,7 +293,7 @@ model Notification {
 // and merged into the list when the bell opens. See §18 (getNotifications).
 
 model Charge {
-  id           String     @id @default(cuid())
+  id           String     @id @default(cuid()) @map("_id")
   membershipId String // belongs to a STINT
   membership   Membership @relation(fields: [membershipId], references: [id])
   kind         ChargeKind // CATCHUP or PENALTY
@@ -305,7 +313,7 @@ model Charge {
 // member page. A member may have many charges of each kind over time (e.g. one catch-up per rejoin).
 
 model AuditLog {
-  id         String   @id @default(cuid())
+  id         String   @id @default(cuid()) @map("_id")
   actorId    String?
   action     String
   entityType String
@@ -316,8 +324,15 @@ model AuditLog {
   @@index([entityType, entityId])
 }
 
-// Optional cache, rebuilt deterministically from the ledger (added only if profiling needs it):
-// model MonthlyRollup { month DateTime @id; data Json; builtAt DateTime }
+// DB-backed read cache: key → the exact DTO a page/API returns, computed by the existing query
+// functions and stored as JSON. Lazily rebuilt on read (stale = computed before today IST, so daily
+// interest/pending figures roll over); ALL rows are deleted after any mutation (bustStats). This is
+// deliberately a memo of the query output — never a second source of truth for money.
+model StatsCache {
+  key        String   @id @map("_id") // "dashboard" | "members" | "member:<id>" | "loans" | "vendors" | "analytics" | "share" | …
+  data       Json
+  computedAt DateTime
+}
 
 enum LedgerAccountKind {
   TREASURY_CASH

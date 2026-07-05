@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import { headers } from "next/headers";
 import { auth } from "@/server/auth";
 import { prisma } from "@/server/db";
@@ -15,8 +16,9 @@ export interface CurrentUser {
   isAdmin: boolean;
 }
 
-/** The signed-in member, resolved from the Better Auth session. Null if signed out. */
-export async function getCurrentUser(): Promise<CurrentUser | null> {
+/** The signed-in member, resolved from the Better Auth session. Null if signed out.
+ *  React.cache: layout + page + API guards all share one lookup per request. */
+export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session?.user) return null;
   const member = await prisma.member.findFirst({
@@ -36,4 +38,4 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
     role,
     isAdmin: member.role === "ADMIN",
   };
-}
+});

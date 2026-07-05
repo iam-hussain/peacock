@@ -88,6 +88,7 @@ export function VendorsList({ vendors, stats }: { vendors: Vendor[]; stats: Vend
 function VendorRow({ v }: { v: Vendor }) {
   return (
     <Link
+      prefetch={false}
       href={`/vendors/${v.id}`}
       className="flex items-center gap-3.5 border-b border-hr2 px-4.5 py-4 transition-colors last:border-b-0 hover:bg-sf2"
     >

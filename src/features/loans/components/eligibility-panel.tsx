@@ -37,6 +37,7 @@ export function EligibilityPanel({ members }: { members: LoanEligibility[] }) {
           {members.map((m) => (
             <Link
               key={m.memberId}
+              prefetch={false}
               href={`/members/${m.memberId}`}
               className="flex items-center gap-2.5 border-b border-hr2 py-2.5 leading-none last:border-b-0 hover:opacity-70"
             >

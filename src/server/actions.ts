@@ -15,6 +15,7 @@ import { shareableClubProfit } from "@/server/queries/members";
 import { getActivity } from "@/server/queries/notifications";
 import { quarterBounds } from "@/lib/quarter";
 import { quarterFigures } from "@/server/queries/close-quarter";
+import { bustStats } from "@/server/stats";
 
 // One admin gate for every mutation. Reads = free; writes below the line are admin-only.
 async function requireAdmin(): Promise<string | null> {
@@ -31,6 +32,7 @@ export async function decideSubmission(id: string, decision: "approve" | "reject
     else await rejectSubmission(id, me.id);
     // An approval posts to the ledger, touching every money view — invalidate them all, not just three.
     revalidateLedger();
+    await bustStats();
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Could not process the approval." };
@@ -86,7 +88,9 @@ export async function formAction(kind: string, fd: FormData): Promise<ActionResu
       const denied = await requireAdmin();
       if (denied) return { ok: false, error: denied };
     }
-    return await dispatch(kind, fd);
+    const res = await dispatch(kind, fd);
+    if (res.ok) await bustStats(); // every form mutates something a snapshot shows
+    return res;
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Something went wrong" };
   }
@@ -536,6 +540,7 @@ export async function closeQuarterNow(): Promise<ActionResult> {
     },
   });
   revalidatePath("/settings");
+  await bustStats();
   return { ok: true };
 }
 
@@ -615,6 +620,7 @@ export async function updateAvatar(dataUrl: string): Promise<ActionResult> {
   await prisma.member.update({ where: { id: me.id }, data: { avatarUrl: cleared ? null : dataUrl } });
   revalidatePath("/settings");
   revalidatePath(`/members/${me.id}`);
+  await bustStats();
   return { ok: true };
 }
 
@@ -629,6 +635,7 @@ export async function setAdmin(memberId: string, makeAdmin: boolean): Promise<Ac
   }
   await prisma.member.update({ where: { id: memberId }, data: { role: makeAdmin ? "ADMIN" : "MEMBER" } });
   revalidatePath("/settings");
+  await bustStats();
   return { ok: true };
 }
 
@@ -685,6 +692,7 @@ export async function saveClubSettings(input: {
 
   await prisma.clubConfig.update({ where: { id: "singleton" }, data });
   for (const p of ["/settings", "/members", "/loans", "/dashboard", "/analytics"]) revalidatePath(p);
+  await bustStats();
   return { ok: true };
 }
 
