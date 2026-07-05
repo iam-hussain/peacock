@@ -118,7 +118,7 @@ export function CatchupPenaltyCard({ m }: { m: MemberDetail }) {
   );
 }
 
-function EntriesList({ entries, bucket, styles, hidden, memberName }: { entries: LedgerEntryDTO[]; bucket: Bucket; styles: { chargeIcon: string; amt: string; suggest: ChargeSuggest }; hidden: Record<string, string>; memberName: string }) {
+function EntriesList({ entries, bucket, styles, hidden, memberName }: { entries: LedgerEntryDTO[]; bucket: Bucket; styles: { chargeIcon: string; amt: string; suggest?: ChargeSuggest }; hidden: Record<string, string>; memberName: string }) {
   const inPoster = useInPoster();
   const [open, setOpen] = useState(true);
   if (!entries.length) {

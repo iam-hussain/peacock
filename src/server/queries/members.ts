@@ -398,7 +398,7 @@ export interface MemberDetailDTO extends MemberDTO {
   penaltyPct: number;
   ledgerRemainingRupees: number;
   penaltyRemainingRupees: number;
-  catchupSuggest: ChargeSuggest;
+  catchupSuggest?: ChargeSuggest; // active members: manual only (no auto profit-gap suggestion)
   penaltySuggest: ChargeSuggest;
   catchupEntries: LedgerEntryDTO[];
   penaltyEntries: LedgerEntryDTO[];
@@ -570,11 +570,14 @@ export async function getMemberDetail(id: string, ctx?: MemberDetailContext): Pr
   const fullShare = active ? profitShare(clubProfit, expectedDeposit, activeCount, expectedDeposit) : 0n;
   const paidRatioPct = pct(deposits, expectedDeposit);
 
-  // Auto-suggested charge amounts (FORMS_AND_FIELDS §Add charge):
-  //   catch-up = avg per-member profit − this member's profit;  penalty = 2% of pending dues.
+  // Auto-suggested charge amounts (FORMS_AND_FIELDS §Add charge). Active members get NO catch-up
+  // suggestion: they equalise by paying their Deposit due (measured over the full club life), which
+  // also restores their full profit share — an auto profit-gap catch-up would double-count that same
+  // shortfall (PRODUCT.md §7). Catch-up stays admin-manual for active members; the rejoin flow (below)
+  // still auto-suggests for returning members. Penalty = 2% of pending dues.
   const avgProfit = activeCount > 0 ? clubProfit / BigInt(activeCount) : 0n;
   const suggest = (paise: bigint, hint: string): ChargeSuggest => ({ rupees: String(Number(paise) / 100), label: formatPaise(paise), hint });
-  const catchupSuggest = suggest(avgProfit > profit ? avgProfit - profit : 0n, "avg per-member profit minus this member's profit");
+  const catchupSuggest = undefined; // manual only for active members (see above)
   // Rejoin quote (inactive members only): the FULL monthly deposits since club start + equal
   // per-member profit. A prior stint's deposits were paid back at settlement, so the new membership
   // starts at 0 paid — they owe the whole baseline afresh (PRODUCT.md §12).

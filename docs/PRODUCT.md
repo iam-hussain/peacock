@@ -252,8 +252,11 @@ A catch-up is **not a single payment** — it's a **charge** (an amount the memb
 time** (e.g. one each time they rejoin); they all **accumulate** and are shown on the member's page.
 
 Each catch-up charge has:
-- an **amount** — **auto-suggested but admin-editable** (suggestion = *average per-member profit −
-  this member's profit*, i.e. the profit gap that brings them to equal value),
+- an **amount** — for a **new or returning member** it is **auto-suggested** (= the per-member
+  profit gap that brings them to equal value) and admin-editable. For an **existing active member**,
+  catch-up is **entered manually** — there is **no auto-suggestion**, because an active member
+  equalises by paying their **Deposit due** (§6), which also restores their full profit share; an
+  auto profit-gap catch-up on top would double-count the same shortfall,
 - a **reason** — *First-time join · Rejoin · Profit-gap top-up · Mid-term equalisation · Other*,
 - a **date**.
 

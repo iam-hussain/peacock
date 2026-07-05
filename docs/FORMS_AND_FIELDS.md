@@ -132,7 +132,7 @@ transaction above.
 | Field | R/O/A | Notes |
 |-------|:-----:|-------|
 | Member | A | The member the charge is for (from their page). |
-| Amount | R | Auto-**suggested**, **editable**. Catch-up suggestion = *avg per-member profit − this member's profit*; penalty suggestion = *2% of this member's pending dues* (**not** the full accumulated dues). |
+| Amount | R | **Editable.** Catch-up: **no auto-suggestion for an active member** (entered manually — they equalise via their Deposit due, §6); the **rejoin** flow still auto-suggests (= per-member profit). Penalty suggestion = *2% of this member's pending dues* (**not** the full accumulated dues). |
 | Reason | R | Catch-up: **First-time join · Rejoin · Profit-gap top-up · Mid-term equalisation · Other**. Penalty: **Delayed payment · Loan repayment delay · Holding club money too long · Missed deposit · Other**. |
 | Date | R | When the charge applies. |
 | Note | O | Free text. |
