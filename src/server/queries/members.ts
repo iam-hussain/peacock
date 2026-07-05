@@ -1,6 +1,6 @@
 import "server-only";
 import { prisma } from "@/server/db";
-import { formatLakh, formatPaise, profitShare } from "@/lib/money";
+import { formatPaise, profitShare } from "@/lib/money";
 import { monthYear, monthsDays, tenure, daysBetween, dayMonthYear } from "@/lib/date";
 import { loanEventsMap, reconstructCycles, loanConfig, isOverdue, interestOwedTotal, type LoanCfg } from "./loans";
 import { vendorProfitAndObligation } from "./vendors";
@@ -252,14 +252,6 @@ export async function chargeTotals(kind: "CATCHUP" | "PENALTY"): Promise<{ assig
   return { assigned, collected, pending: assigned - collected };
 }
 
-/** Headline for the members page, e.g. "11 members · 9 active". */
-export async function getMemberSummary(): Promise<{ text: string; totalDeposits: string }> {
-  const members = await prisma.member.findMany({ select: { memberships: { select: { status: true } } } });
-  const total = members.length;
-  const active = members.filter((m) => m.memberships.some((s) => s.status === "ACTIVE")).length;
-  const dep = await prisma.entry.aggregate({ _sum: { amount: true }, where: { transaction: { type: "PERIODIC_DEPOSIT", id: { notIn: await reversedTxnIds() } }, account: { kind: "MEMBER_EQUITY" } } });
-  return { text: `${total} members · ${active} active`, totalDeposits: formatLakh(-(dep._sum.amount ?? 0n)) };
-}
 
 export async function getMemberIds(): Promise<string[]> {
   const rows = await prisma.member.findMany({ select: { id: true } });
