@@ -3,6 +3,7 @@ import { prisma } from "@/server/db";
 import { formatLakh } from "@/lib/money";
 import { getLoanEligibility, interestOwedByMembership, type LoanPriority } from "./loans";
 import { expectedClubDeposit, type Stage } from "./members";
+import { reversedTxnIds } from "./shared";
 import type { PickBadgeTone } from "@/components/shared/entity-picker";
 
 // Per-action context shown under a member's name in the Add-Entry picker — the figure relevant to
@@ -20,6 +21,7 @@ const PRIORITY_TONE: Record<LoanPriority, PickBadgeTone> = { High: "high", Mediu
 
 /** Per active member, the figures the Add-Entry picker surfaces per action (paise). */
 async function getMemberEntryContext(): Promise<Map<string, { value: bigint; dues: bigint; loan: bigint; interest: bigint; catchup: bigint; penalty: bigint }>> {
+  const reversedIds = await reversedTxnIds();
   const [cfg, owedByMs, memberships, deposits, chargePaid] = await Promise.all([
     prisma.clubConfig.findUnique({ where: { id: "singleton" }, select: { stages: true } }),
     interestOwedByMembership(),
@@ -33,8 +35,8 @@ async function getMemberEntryContext(): Promise<Map<string, { value: bigint; due
         charges: { select: { kind: true, amount: true } },
       },
     }),
-    prisma.entry.groupBy({ by: ["accountId"], _sum: { amount: true }, where: { account: { kind: "MEMBER_EQUITY" }, transaction: { type: { in: ["PERIODIC_DEPOSIT", "CATCHUP"] } } } }),
-    prisma.entry.findMany({ where: { transaction: { type: { in: ["CATCHUP", "PENALTY"] } } }, select: { amount: true, transaction: { select: { membershipId: true, type: true } } } }),
+    prisma.entry.groupBy({ by: ["accountId"], _sum: { amount: true }, where: { account: { kind: "MEMBER_EQUITY" }, transaction: { type: { in: ["PERIODIC_DEPOSIT", "CATCHUP"] }, id: { notIn: reversedIds } } } }),
+    prisma.entry.findMany({ where: { transaction: { type: { in: ["CATCHUP", "PENALTY"] }, id: { notIn: reversedIds } } }, select: { amount: true, transaction: { select: { membershipId: true, type: true } } } }),
   ]);
   const expected = expectedClubDeposit((cfg?.stages as Stage[] | undefined) ?? []);
   const depByAcct = new Map(deposits.map((d) => [d.accountId, -(d._sum.amount ?? 0n)])); // equity is credit → negate

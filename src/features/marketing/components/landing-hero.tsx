@@ -13,7 +13,7 @@ export function LandingHero() {
     <section className="flex flex-1 items-center justify-center px-7 pb-16 pt-8">
       <div className="grid w-full max-w-[1100px] items-center gap-12 grid-cols-[1.05fr_0.95fr]">
         {/* copy — centered column, matching the design */}
-        <div className="flex animate-in fade-in slide-in-from-bottom-2 flex-col items-center text-center">
+        <div className="flex flex-col items-center text-center">
           {/* margin stays outside the zoom (the design nests zoom inside the mb-24 wrapper) */}
           <div className="mb-6">
             <div style={{ zoom: 1.6 }}>

@@ -9,7 +9,7 @@ const MINI = [
 export function PortfolioPreview({ compact = false }: { compact?: boolean }) {
   return (
     <div
-      className={`animate-in fade-in zoom-in-95 border border-bd bg-sf shadow-pop ${
+      className={`border border-bd bg-sf shadow-pop ${
         compact ? "rounded-18 p-4.5" : "rounded-20 p-5.5"
       }`}
     >

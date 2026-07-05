@@ -31,7 +31,7 @@ export function CreateBackupButton() {
   );
 }
 
-/** Restore the DB from a JSON backup file — replaces ALL current data. */
+/** Merge a JSON backup into the DB — adds rows that don't already exist, keeps current data. */
 export function ImportButton() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [pending, start] = useTransition();
@@ -40,7 +40,7 @@ export function ImportButton() {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
-    if (!confirm("Restore will REPLACE all current club data with this backup. This cannot be undone. Continue?")) return;
+    if (!confirm("Restore will add any rows from this backup that aren't already in the club. Existing data is kept unchanged. Continue?")) return;
     const reader = new FileReader();
     reader.onload = () =>
       start(async () => {

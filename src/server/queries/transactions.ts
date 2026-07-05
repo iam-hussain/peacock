@@ -2,7 +2,7 @@ import "server-only";
 import { prisma } from "@/server/db";
 import { formatPaise } from "@/lib/money";
 import { dayMonthYear } from "@/lib/date";
-import { OPENING_ACCOUNT_ID } from "./shared";
+import { OPENING_ACCOUNT_ID, reversedTxnIds } from "./shared";
 import { UNSAFE_TO_DELETE } from "@/server/ledger/reverse";
 import type { TxnType } from "@prisma/client";
 
@@ -64,11 +64,7 @@ function partiesFor(type: TxnType, entries: EntryRow[]): { from: Party; to: Part
 /** The ledger feed — real postings only. Opening-import scaffolding, reversal entries, and any
  *  posting that has since been reversed (§16) are all excluded so a deleted/edited row drops out. */
 export async function getTransactions(limit?: number, offset?: number): Promise<TxnDTO[]> {
-  const reversed = await prisma.transaction.findMany({
-    where: { type: "REVERSAL", reversesId: { not: null } },
-    select: { reversesId: true },
-  });
-  const reversedIds = reversed.map((r) => r.reversesId!).filter(Boolean);
+  const reversedIds = await reversedTxnIds();
 
   const txns = await prisma.transaction.findMany({
     where: {

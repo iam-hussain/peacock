@@ -5,6 +5,7 @@ import { monthYear, monthsDays, tenure, daysBetween, dayMonthYear } from "@/lib/
 import { loanEventsMap, reconstructCycles, loanConfig, isOverdue, interestOwedTotal, type LoanCfg } from "./loans";
 import { vendorProfitAndObligation } from "./vendors";
 import { getCashHolderOptions } from "./entries";
+import { reversedTxnIds } from "./shared";
 import type { Status } from "@/components/shared/status-badge";
 
 export interface MemberDTO {
@@ -38,11 +39,12 @@ export interface MemberSort {
 // Sum of a charge kind still outstanding for a membership (raised − paid down).
 // Pay-downs credit MEMBER_EQUITY / OTHER_INCOME with a NEGATIVE leg (−A), so the paid
 // magnitude is −sum; outstanding = raised + sum(paid legs).
-async function outstandingCharge(membershipId: string, kind: "CATCHUP" | "PENALTY"): Promise<bigint> {
+async function outstandingCharge(membershipId: string, kind: "CATCHUP" | "PENALTY", reversedIds?: string[]): Promise<bigint> {
+  const reversed = reversedIds ?? (await reversedTxnIds());
   const raised = await prisma.charge.aggregate({ _sum: { amount: true }, where: { membershipId, kind } });
   const paid = await prisma.entry.aggregate({
     _sum: { amount: true },
-    where: { transaction: { membershipId, type: kind }, account: { kind: kind === "CATCHUP" ? "MEMBER_EQUITY" : "OTHER_INCOME" } },
+    where: { transaction: { membershipId, type: kind, id: { notIn: reversed } }, account: { kind: kind === "CATCHUP" ? "MEMBER_EQUITY" : "OTHER_INCOME" } },
   });
   return (raised._sum.amount ?? 0n) + (paid._sum.amount ?? 0n);
 }
@@ -94,6 +96,7 @@ export async function getMembers(): Promise<MemberDTO[]> {
   // deposits per equity account, charges raised per membership+kind, and charge pay-down legs.
   const equityIds = members.flatMap((m) => m.memberships.flatMap((s) => s.accounts)).map((a) => a.id);
   const membershipIds = members.map((m) => m.memberships[0]?.id).filter((x): x is string => !!x);
+  const reversedIds = await reversedTxnIds();
   const [cfg, clubProfit, depGroups, raisedGroups, paidRows] = await Promise.all([
     prisma.clubConfig.findUnique({ where: { id: "singleton" }, select: { stages: true } }),
     // Profit isn't posted to member equity in this ledger — it pools in the club (interest + vendor
@@ -101,10 +104,10 @@ export async function getMembers(): Promise<MemberDTO[]> {
     // fully-paid member always earns their full share regardless of others, each underpayer bears
     // their own shortfall, and the club never distributes more than it earned (§11, see `profitShare`).
     shareableClubProfit(),
-    prisma.entry.groupBy({ by: ["accountId"], _sum: { amount: true }, where: { accountId: { in: equityIds }, transaction: { type: { in: ["PERIODIC_DEPOSIT", "CATCHUP"] } } } }),
+    prisma.entry.groupBy({ by: ["accountId"], _sum: { amount: true }, where: { accountId: { in: equityIds }, transaction: { type: { in: ["PERIODIC_DEPOSIT", "CATCHUP"] }, id: { notIn: reversedIds } } } }),
     prisma.charge.groupBy({ by: ["membershipId", "kind"], _sum: { amount: true }, where: { membershipId: { in: membershipIds }, kind: { in: ["CATCHUP", "PENALTY"] } } }),
     prisma.entry.findMany({
-      where: { transaction: { membershipId: { in: membershipIds }, type: { in: ["CATCHUP", "PENALTY"] } }, account: { kind: { in: ["MEMBER_EQUITY", "OTHER_INCOME"] } } },
+      where: { transaction: { membershipId: { in: membershipIds }, type: { in: ["CATCHUP", "PENALTY"] }, id: { notIn: reversedIds } }, account: { kind: { in: ["MEMBER_EQUITY", "OTHER_INCOME"] } } },
       select: { amount: true, account: { select: { kind: true } }, transaction: { select: { membershipId: true, type: true } } },
     }),
   ]);
@@ -217,7 +220,7 @@ export async function getMemberFunds(): Promise<{
   const expected = expectedClubDeposit((cfg?.stages as Stage[] | undefined) ?? []);
   // One grouped query for all active equity accounts instead of an aggregate per membership.
   const equityIds = active.flatMap((ms) => ms.accounts).map((a) => a.id);
-  const depGroups = await prisma.entry.groupBy({ by: ["accountId"], _sum: { amount: true }, where: { accountId: { in: equityIds }, transaction: { type: { in: ["PERIODIC_DEPOSIT", "CATCHUP"] } } } });
+  const depGroups = await prisma.entry.groupBy({ by: ["accountId"], _sum: { amount: true }, where: { accountId: { in: equityIds }, transaction: { type: { in: ["PERIODIC_DEPOSIT", "CATCHUP"] }, id: { notIn: await reversedTxnIds() } } } });
   const depByAcct = new Map(depGroups.map((d) => [d.accountId, -(d._sum.amount ?? 0n)]));
   let activeDeposits = 0n, value = 0n, pendingTotal = 0n, pendingCount = 0;
   for (const ms of active) {
@@ -237,7 +240,7 @@ export async function chargeTotals(kind: "CATCHUP" | "PENALTY"): Promise<{ assig
   const raised = await prisma.charge.aggregate({ _sum: { amount: true }, where: { kind } });
   const paid = await prisma.entry.aggregate({
     _sum: { amount: true },
-    where: { transaction: { type: kind }, account: { kind: kind === "CATCHUP" ? "MEMBER_EQUITY" : "OTHER_INCOME" } },
+    where: { transaction: { type: kind, id: { notIn: await reversedTxnIds() } }, account: { kind: kind === "CATCHUP" ? "MEMBER_EQUITY" : "OTHER_INCOME" } },
   });
   const assigned = raised._sum.amount ?? 0n;
   const collected = -(paid._sum.amount ?? 0n); // pay-down legs are negative
@@ -249,7 +252,7 @@ export async function getMemberSummary(): Promise<{ text: string; totalDeposits:
   const members = await prisma.member.findMany({ select: { memberships: { select: { status: true } } } });
   const total = members.length;
   const active = members.filter((m) => m.memberships.some((s) => s.status === "ACTIVE")).length;
-  const dep = await prisma.entry.aggregate({ _sum: { amount: true }, where: { transaction: { type: "PERIODIC_DEPOSIT" }, account: { kind: "MEMBER_EQUITY" } } });
+  const dep = await prisma.entry.aggregate({ _sum: { amount: true }, where: { transaction: { type: "PERIODIC_DEPOSIT", id: { notIn: await reversedTxnIds() } }, account: { kind: "MEMBER_EQUITY" } } });
   return { text: `${total} members · ${active} active`, totalDeposits: formatLakh(-(dep._sum.amount ?? 0n)) };
 }
 
@@ -370,9 +373,9 @@ export interface MemberDetailDTO extends MemberDTO {
   returnsActual: string;
   fullShare: string;
   paidRatioPct: number;
-  periodic: string;
-  catchup: string;
-  totalDeposit: string;
+  periodic: string;         // pure periodic deposits
+  catchupPenalty: string;   // catch-up + penalty deposits paid
+  depositsTotal: string;    // periodic + catch-up + penalty (Member deposits headline)
   depositPending: string | null;
   overallPending: string | null;
   ledgerAssigned: string;
@@ -462,23 +465,29 @@ export async function getMemberDetail(id: string, ctx?: MemberDetailContext): Pr
 
   // All per-member reads in one batch (deposits, charge pay-downs, ledger payments, loan-interest
   // paid, loan events for every loan) — no await-per-charge / await-per-loan waterfalls.
-  const [dep, catchupOut, penaltyOut, payments, intPaidAgg, eventsMap] = await Promise.all([
+  const reversedIds = await reversedTxnIds();
+  const [dep, depCatchup, catchupOut, penaltyOut, payments, intPaidAgg, eventsMap] = await Promise.all([
     equity
-      ? prisma.entry.aggregate({ _sum: { amount: true }, where: { accountId: equity.id, transaction: { type: { in: ["PERIODIC_DEPOSIT", "CATCHUP"] } } } })
+      ? prisma.entry.aggregate({ _sum: { amount: true }, where: { accountId: equity.id, transaction: { type: { in: ["PERIODIC_DEPOSIT", "CATCHUP"] }, id: { notIn: reversedIds } } } })
       : Promise.resolve({ _sum: { amount: null } }),
-    ms ? outstandingCharge(ms.id, "CATCHUP") : Promise.resolve(0n),
-    ms ? outstandingCharge(ms.id, "PENALTY") : Promise.resolve(0n),
+    equity
+      ? prisma.entry.aggregate({ _sum: { amount: true }, where: { accountId: equity.id, transaction: { type: "CATCHUP", id: { notIn: reversedIds } } } })
+      : Promise.resolve({ _sum: { amount: null } }),
+    ms ? outstandingCharge(ms.id, "CATCHUP", reversedIds) : Promise.resolve(0n),
+    ms ? outstandingCharge(ms.id, "PENALTY", reversedIds) : Promise.resolve(0n),
     ms
       ? prisma.transaction.findMany({
-          where: { membershipId: ms.id, type: { in: ["CATCHUP", "PENALTY"] } },
+          where: { membershipId: ms.id, type: { in: ["CATCHUP", "PENALTY"] }, id: { notIn: reversedIds } },
           orderBy: { occurredAt: "desc" },
           select: { id: true, type: true, occurredAt: true, entries: { select: { amount: true } } },
         })
       : Promise.resolve([]),
-    prisma.entry.aggregate({ _sum: { amount: true }, where: { amount: { gt: 0 }, transaction: { type: "LOAN_INTEREST", membershipId: { in: m.memberships.map((x) => x.id) } } } }),
+    prisma.entry.aggregate({ _sum: { amount: true }, where: { amount: { gt: 0 }, transaction: { type: "LOAN_INTEREST", membershipId: { in: m.memberships.map((x) => x.id) }, id: { notIn: reversedIds } } } }),
     loanEventsMap(loans.map((l) => l.id)),
   ]);
-  const deposits = -(dep._sum.amount ?? 0n);
+  const deposits = -(dep._sum.amount ?? 0n); // periodic + catch-up equity money (feeds profit share — do not repurpose)
+  const catchupDeposit = -(depCatchup._sum.amount ?? 0n);
+  const periodicPure = deposits - catchupDeposit;
 
   const assigned = ms ? ms.charges.filter((c) => c.kind === "CATCHUP").reduce((s, c) => s + c.amount, 0n) : 0n;
   const penaltyAssigned = ms ? ms.charges.filter((c) => c.kind === "PENALTY").reduce((s, c) => s + c.amount, 0n) : 0n;
@@ -664,9 +673,9 @@ export async function getMemberDetail(id: string, ctx?: MemberDetailContext): Pr
     returnsActual: formatPaise(profit),
     fullShare: formatPaise(fullShare),
     paidRatioPct: paidRatioPct,
-    periodic: formatPaise(deposits),
-    catchup: formatPaise(paidDown),
-    totalDeposit: formatPaise(deposits),
+    periodic: formatPaise(periodicPure),
+    catchupPenalty: formatPaise(catchupDeposit + penaltyPaidDown),
+    depositsTotal: formatPaise(deposits + penaltyPaidDown),
     depositPending: depositPending > 0n ? formatPaise(depositPending) : null,
     overallPending: overallPending > 0n ? formatPaise(overallPending) : null,
     ledgerAssigned: formatPaise(assigned),

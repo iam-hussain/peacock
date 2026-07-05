@@ -23,7 +23,7 @@ export function ContributionCard({ m }: { m: MemberDetail }) {
       <div className="my-4 grid grid-cols-2">
         <div className="border-r border-hr2 px-5.5">
           <div className="text-10 font-semibold uppercase leading-none tracking-5 text-fnt">Member deposits</div>
-          <div className={`mt-2.75 font-mono text-28 font-semibold leading-none text-ink ${strike}`}>{m.deposits}</div>
+          <div className={`mt-2.75 font-mono text-28 font-semibold leading-none text-ink ${strike}`}>{m.depositsTotal}</div>
         </div>
         <div className="px-5.5">
           <div className="text-10 font-semibold uppercase leading-none tracking-5 text-fnt">
@@ -38,9 +38,9 @@ export function ContributionCard({ m }: { m: MemberDetail }) {
       </div>
       <div className="grid grid-cols-4 border-t border-hr2">
         <FourCell label="Periodic" value={m.periodic} strike={strike} />
-        <FourCell label="Catch-up" value={m.catchup} border strike={strike} />
-        <FourCell label="Total" value={m.totalDeposit} border strike={strike} />
-        <FourCell label="Pending dues" value={m.depositPending ?? "₹0"} border accent={!!m.depositPending} strike={strike} />
+        <FourCell label="Catch-up & Penalty" value={m.catchupPenalty} border strike={strike} />
+        <FourCell label="Pending dues" value={m.overallPending ?? "₹0"} border accent={!!m.overallPending} strike={strike} />
+        <FourCell label="Interest due" value={m.interestDue} border accent={m.interestDue !== "₹0"} strike={strike} />
       </div>
     </CardShell>
   );

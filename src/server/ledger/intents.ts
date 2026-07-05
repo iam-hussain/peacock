@@ -97,9 +97,9 @@ export async function postIntent(payload: EntryPayload, actorId?: string, outerT
     }
     // TREASURY +A, OTHER_INCOME −A (penalty pay-down = club income)
     case "PENALTY": {
-      await withMember();
+      const { ms } = await withMember();
       const [t, o] = await Promise.all([treasuryId(), ensureIncome("OTHER_INCOME")]);
-      return postTransaction({ type, occurredAt, description: note, lines: [ { accountId: t, amount: A }, { accountId: o, amount: -A } ], actorId }, outerTx);
+      return postTransaction({ type, occurredAt, description: note, membershipId: ms.id, lines: [ { accountId: t, amount: A }, { accountId: o, amount: -A } ], actorId }, outerTx);
     }
     // TREASURY −A, MEMBER_EQUITY +A (settle & leave); membership → CLOSED
     case "WITHDRAW": {

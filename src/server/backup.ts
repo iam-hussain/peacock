@@ -3,7 +3,7 @@
 import { prisma } from "@/server/db";
 import { getCurrentUser } from "@/server/queries/session";
 
-// Every table, in FK-safe insert order (parents first). Restore deletes in reverse, re-inserts here.
+// Every table, in FK-safe insert order (parents first). Restore inserts in this order, skipping duplicates.
 const TABLES = [
   "user", "member", "membership", "vendor", "chitFund", "ledgerAccount", "loan",
   "transaction", "entry", "charge", "clubConfig", "submission", "notification",
@@ -14,7 +14,6 @@ const TABLES = [
 // (camelCased Prisma delegate keys) so dynamic dispatch stays checked, not `any`.
 type ModelDelegate = {
   findMany: () => Promise<unknown[]>;
-  deleteMany: (args: object) => Promise<unknown>;
   createMany: (args: object) => Promise<unknown>;
 };
 type ModelClient = Record<(typeof TABLES)[number], ModelDelegate>;
@@ -36,7 +35,7 @@ export async function exportBackup(): Promise<{ ok: boolean; json?: string; erro
   return { ok: true, json: JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), data }, replacer) };
 }
 
-/** Replace the entire DB from a backup JSON (admin only). All-or-nothing. */
+/** Merge a backup JSON into the DB (admin only), skipping rows whose id already exists. All-or-nothing. */
 export async function importBackup(json: string): Promise<{ ok: boolean; error?: string; counts?: Record<string, number> }> {
   const me = await getCurrentUser();
   if (!me?.isAdmin) return { ok: false, error: "Only an admin can restore a backup." };
@@ -55,12 +54,15 @@ export async function importBackup(json: string): Promise<{ ok: boolean; error?:
     await prisma.$transaction(
       async (tx) => {
         const txModels = tx as unknown as ModelClient;
-        // Wipe children-first (reverse order), then repopulate parents-first.
-        for (const t of [...TABLES].reverse()) await txModels[t].deleteMany({});
+        // Insert parents-first, skipping rows whose id (or any unique key) already exists.
         for (const t of TABLES) {
           const rows = data[t] as object[];
-          if (rows.length) await txModels[t].createMany({ data: rows });
-          counts[t] = rows.length;
+          if (rows.length) {
+            const res = (await txModels[t].createMany({ data: rows, skipDuplicates: true })) as { count: number };
+            counts[t] = res.count;
+          } else {
+            counts[t] = 0;
+          }
         }
       },
       { timeout: 30_000 },

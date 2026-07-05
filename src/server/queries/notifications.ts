@@ -3,6 +3,7 @@ import { prisma } from "@/server/db";
 import { formatPaise, formatLakh } from "@/lib/money";
 import { daysBetween } from "@/lib/date";
 import { getTransactions } from "./transactions";
+import { reversedTxnIds } from "./shared";
 import { getCurrentUser } from "./session";
 import { ACTIVITY_PAGE, type ActivityEvent, type NotificationsData } from "@/features/notifications/types";
 export async function getActivity(offset = 0, limit = ACTIVITY_PAGE): Promise<ActivityEvent[]> {
@@ -33,7 +34,7 @@ export async function getNotifications(): Promise<NotificationsData> {
     // Pending deposits = catch-up raised − paid, per member. Raised charges…
     prisma.charge.groupBy({ by: ["membershipId"], where: { kind: "CATCHUP" }, _sum: { amount: true } }),
     // …and the pay-down legs (negative on MEMBER_EQUITY, see outstandingCharge), netted below.
-    prisma.entry.findMany({ where: { transaction: { type: "CATCHUP" }, account: { kind: "MEMBER_EQUITY" } }, select: { amount: true, transaction: { select: { membershipId: true } } } }),
+    prisma.entry.findMany({ where: { transaction: { type: "CATCHUP", id: { notIn: await reversedTxnIds() } }, account: { kind: "MEMBER_EQUITY" } }, select: { amount: true, transaction: { select: { membershipId: true } } } }),
     prisma.chitFund.findMany({ where: { status: "RUNNING" }, take: 1, select: { marginInstallment: true, durationMonths: true, vendor: { select: { name: true } } } }),
     // Events ← recent ledger activity (first page; "Load more" fetches the rest).
     getActivity(0),

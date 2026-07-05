@@ -2,6 +2,7 @@ import "server-only";
 import { Prisma, type LedgerAccountKind } from "@prisma/client";
 import { prisma } from "@/server/db";
 import { formatPaise, formatLakh } from "@/lib/money";
+import { reversedTxnIds } from "./shared";
 
 // The analytics page is a metric × time-range explorer (PRODUCT.md §11, IMPLEMENTATION_PLAN §19).
 // Every series here is computed honestly from the ledger at each time-bucket cutoff — a single
@@ -18,8 +19,12 @@ export type Range = (typeof AN_RANGES)[number];
 // label → how to build its series. Keep the label set in sync with data.ts AN_METRIC_GROUPS.
 // A money metric sums signed entries matching `where` (sign flips credit accounts positive);
 // `members` counts active memberships as-of each cutoff.
+// `byType` marks a metric filtered by transaction.type (not just account kind). Those must exclude
+// reversed originals — the negating REVERSAL leg carries type=REVERSAL so the type filter hides it,
+// and the original would otherwise keep counting after a delete/edit. Account-kind-only metrics need
+// no such filter: they already see the reversal leg (same account) and net out on their own.
 type MetricDef =
-  | { kind: "money"; where: Prisma.EntryWhereInput; sign: bigint; breakdown?: "treasurer" | "vendor" }
+  | { kind: "money"; where: Prisma.EntryWhereInput; sign: bigint; breakdown?: "treasurer" | "vendor"; byType?: true }
   | { kind: "count"; source: "members" }
   | { kind: "vendorProfit" }; // chit-aware P/L — matches the vendor page (see vendorProfitSeries)
 
@@ -28,10 +33,10 @@ const K = (kind: LedgerAccountKind): Prisma.EntryWhereInput => ({ account: { is:
 const METRICS: Record<string, MetricDef> = {
   "Total Portfolio Value": { kind: "money", where: K("MEMBER_EQUITY"), sign: -1n },
   "Available Cash": { kind: "money", where: K("TREASURY_CASH"), sign: 1n, breakdown: "treasurer" },
-  "Member Deposits": { kind: "money", where: { account: { is: { kind: "MEMBER_EQUITY" } }, transaction: { is: { type: "PERIODIC_DEPOSIT" } } }, sign: -1n },
+  "Member Deposits": { kind: "money", where: { account: { is: { kind: "MEMBER_EQUITY" } }, transaction: { is: { type: "PERIODIC_DEPOSIT" } } }, sign: -1n, byType: true },
   "Active Members": { kind: "count", source: "members" },
   "Current Loan Taken": { kind: "money", where: K("LOAN_RECEIVABLE"), sign: 1n },
-  "Total Loan Given": { kind: "money", where: { account: { is: { kind: "LOAN_RECEIVABLE" } }, transaction: { is: { type: "LOAN_TAKEN" } } }, sign: 1n },
+  "Total Loan Given": { kind: "money", where: { account: { is: { kind: "LOAN_RECEIVABLE" } }, transaction: { is: { type: "LOAN_TAKEN" } } }, sign: 1n, byType: true },
   "Total Interest Collected": { kind: "money", where: K("INTEREST_INCOME"), sign: -1n },
   "Vendor Investment": { kind: "money", where: K("VENDOR_RECEIVABLE"), sign: 1n, breakdown: "vendor" },
   "Vendor Profit": { kind: "vendorProfit" },
@@ -67,8 +72,13 @@ export async function getGraphSeries(metric: string, range: Range): Promise<Grap
     return assemble(label, "money", raw, labels, range, breakdown);
   }
 
+  let where = def.where;
+  if (def.byType) {
+    const is = (def.where.transaction as { is?: Prisma.TransactionWhereInput }).is ?? {};
+    where = { ...def.where, transaction: { is: { ...is, id: { notIn: await reversedTxnIds() } } } };
+  }
   const rows = await prisma.entry.findMany({
-    where: def.where,
+    where,
     select: { amount: true, transaction: { select: { occurredAt: true } } },
     orderBy: { transaction: { occurredAt: "asc" } },
   });

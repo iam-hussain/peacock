@@ -12,7 +12,9 @@
     "db:studio": "prisma studio",
     "db:generate": "prisma generate",
     "db:seed": "node --env-file=.env --import tsx prisma/transform.mts",
-    "db:seed:display": "node --env-file=.env --import tsx prisma/seed.mts"
+    "db:seed:display": "node --env-file=.env --import tsx prisma/seed.mts",
+    "db:backup": "node --env-file=.env --import tsx prisma/backup.mts",
+    "db:seed:new": "node --env-file=.env --import tsx prisma/backup.mts restore"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",

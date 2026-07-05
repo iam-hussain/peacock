@@ -3,6 +3,7 @@ import { cache } from "react";
 import { prisma } from "@/server/db";
 import { formatLakh, formatPaise, roundToWholeRupee } from "@/lib/money";
 import { monthYear, dayMonthYear, daysBetween, monthsDays, ist, addMonths } from "@/lib/date";
+import { reversedTxnIds } from "./shared";
 import type { Status } from "@/components/shared/status-badge";
 
 const rateLabel = (bps: number) => `${bps / 100}% / mo`;
@@ -230,7 +231,7 @@ export async function getLoans(): Promise<LoanDTO[]> {
     if (l.status === "ACTIVE") hasActiveByMs.add(l.membership.id);
   }
   const interestTxns = await prisma.transaction.findMany({
-    where: { type: "LOAN_INTEREST" },
+    where: { type: "LOAN_INTEREST", id: { notIn: await reversedTxnIds() } },
     select: { membershipId: true, entries: { where: { amount: { gt: 0 } }, select: { amount: true } } },
   });
   const paidByMs = new Map<string, bigint>();
@@ -279,7 +280,7 @@ export async function interestOwedByMembership(): Promise<Map<string, bigint>> {
   const now = new Date();
   const [eventsMap, interestTxns] = await Promise.all([
     loanEventsMap(loans.map((l) => l.id)),
-    prisma.transaction.findMany({ where: { type: "LOAN_INTEREST" }, select: { membershipId: true, entries: { where: { amount: { gt: 0 } }, select: { amount: true } } } }),
+    prisma.transaction.findMany({ where: { type: "LOAN_INTEREST", id: { notIn: await reversedTxnIds() } }, select: { membershipId: true, entries: { where: { amount: { gt: 0 } }, select: { amount: true } } } }),
   ]);
   const perLoan = loans.map((l) => {
     const cycleInterest = reconstructCycles(eventsMap.get(l.id) ?? [], l.monthlyRateBps, now, cfg.dayInterestFrom).reduce((s, c) => s + c.interest, 0n);
@@ -313,7 +314,7 @@ export async function interestOwedForMembership(membershipId: string): Promise<b
   const now = new Date();
   const [eventsMap, interestTxns] = await Promise.all([
     loanEventsMap(loans.map((l) => l.id)),
-    prisma.transaction.findMany({ where: { type: "LOAN_INTEREST", membershipId }, select: { entries: { where: { amount: { gt: 0 } }, select: { amount: true } } } }),
+    prisma.transaction.findMany({ where: { type: "LOAN_INTEREST", membershipId, id: { notIn: await reversedTxnIds() } }, select: { entries: { where: { amount: { gt: 0 } }, select: { amount: true } } } }),
   ]);
   let accrued = 0n;
   for (const l of loans) {
