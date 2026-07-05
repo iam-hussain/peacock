@@ -30,12 +30,16 @@ function pct(profit: bigint, invested: bigint): string {
   return `${p >= 0 ? "+" : "−"}${Math.abs(p).toFixed(1)}%`;
 }
 
+// A chit's lifecycle is DERIVED from the ledger, not the stored ChitStatus flag: postings never
+// advance that flag (see `chitLedger` note below), so a fully-paid chit would otherwise read
+// "Running" forever. Completed once every installment is paid; Paid out once the payout is taken.
+interface ChitLifecycle { paidCount: number; durationMonths: number; taken: boolean }
+
 // Vendor status → badge tone + label. Chits show their own lifecycle (Running/Paid out/Completed).
-function vendorStatus(v: { type: "GENERAL" | "CHIT"; status: string; chit: { status?: string } | null }): { status: Status; label: string } {
+function vendorStatus(v: { type: "GENERAL" | "CHIT"; status: string }, chit?: ChitLifecycle): { status: Status; label: string } {
   if (v.type === "CHIT") {
-    const cs = v.chit?.status ?? "RUNNING";
-    if (cs === "PAID_OUT") return { status: "settled", label: "Paid out" };
-    if (cs === "COMPLETED") return { status: "settled", label: "Completed" };
+    if (chit && chit.paidCount >= chit.durationMonths) return { status: "settled", label: "Completed" };
+    if (chit?.taken) return { status: "settled", label: "Paid out" };
     return { status: "active", label: "Running" };
   }
   if (v.status === "CLOSED") return { status: "settled", label: "Closed" };
@@ -44,13 +48,14 @@ function vendorStatus(v: { type: "GENERAL" | "CHIT"; status: string; chit: { sta
 }
 
 function toDTO(
-  v: { id: string; name: string; type: "GENERAL" | "CHIT"; category: string | null; status: string; startedAt: Date; chit: { durationMonths: number; status?: string } | null },
+  v: { id: string; name: string; type: "GENERAL" | "CHIT"; category: string | null; status: string; startedAt: Date; chit: { durationMonths: number } | null },
   invested: bigint,
   profit: bigint, // net: realized − obligation
   obligation: bigint = 0n,
+  chitLifecycle?: ChitLifecycle,
 ): VendorDTO {
   const isChit = v.type === "CHIT";
-  const { status, label: statusLabel } = vendorStatus(v);
+  const { status, label: statusLabel } = vendorStatus(v, chitLifecycle);
   return {
     id: v.id,
     name: v.name,
@@ -136,7 +141,7 @@ async function lifetimeInvested(vendorId: string): Promise<bigint> {
   return r._sum.amount ?? 0n;
 }
 
-const CHIT_TERMS = { select: { chitValue: true, durationMonths: true, marginInstallment: true, status: true } } as const;
+const CHIT_TERMS = { select: { chitValue: true, durationMonths: true, marginInstallment: true } } as const;
 
 type ChitFin = { profit: bigint; obligation: bigint };
 
@@ -180,8 +185,10 @@ export async function getVendors(): Promise<VendorDTO[]> {
   return vendors.map((v) => {
     const recvId = v.accounts.find((a) => a.kind === "VENDOR_RECEIVABLE")?.id;
     const invested = recvId ? investedByAcct.get(recvId) ?? 0n : 0n;
-    const fin = finFromStats(v, v.type === "CHIT" && v.chit ? chitStatsFrom(chitByVendor.get(v.id) ?? [], v.chit) : null);
-    return toDTO(v, invested, fin.profit, fin.obligation);
+    const s = v.type === "CHIT" && v.chit ? chitStatsFrom(chitByVendor.get(v.id) ?? [], v.chit) : null;
+    const fin = finFromStats(v, s);
+    const lifecycle = v.chit && s ? { paidCount: s.paidCount, durationMonths: v.chit.durationMonths, taken: s.taken } : undefined;
+    return toDTO(v, invested, fin.profit, fin.obligation, lifecycle);
   });
 }
 
@@ -240,7 +247,7 @@ export async function getChitDetail(id: string): Promise<ChitDetailDTO | null> {
   const { paidCount, totalPaid, payout, taken, payoutMonth, obligation, paidInstallments } = s;
   // Summary P/L = eventual receipt (payout if taken, else face value) − (paid to date + obligation).
   const receipt = taken ? payout : c.chitValue;
-  const base = toDTO(v, await lifetimeInvested(id), receipt - (totalPaid + obligation), obligation);
+  const base = toDTO(v, await lifetimeInvested(id), receipt - (totalPaid + obligation), obligation, { paidCount, durationMonths: months, taken });
 
   return {
     ...base,
