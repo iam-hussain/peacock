@@ -1,11 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Upload, Download, Check, Users, TriangleAlert, Loader2, ChevronDown } from "lucide-react";
 import { PeacockMark } from "@/components/shared/peacock-logo";
 import { initials } from "@/lib/avatar";
-import { ClubReportPoster, MemberStatementPoster, type ClubSections } from "./posters";
-import type { ShareData } from "@/server/queries/share";
+import { usePageQuery, fetchJson } from "@/lib/use-page-query";
+import { ClubReportPoster, MemberStatementPoster, type ClubSections, type ClubData } from "./posters";
+import type { CurrentUser } from "@/server/queries/session";
+import type { MemberDetailDTO } from "@/server/queries/members";
 
 type Mode = "club" | "member";
 type Stage = "generating" | "ready" | "error" | "empty";
@@ -13,19 +16,45 @@ const SECTION_KEYS = ["club", "members", "loans", "vendors"] as const;
 const SECTION_LABELS: Record<keyof ClubSections, string> = { club: "Club", members: "Members", loans: "Loans", vendors: "Vendors" };
 const statusLabel = (s: string) => (s === "active" ? "Active" : s === "left" ? "Left" : "Inactive");
 
-export function Share({ data }: { data: ShareData }) {
+export function Share() {
   const [mode, setMode] = useState<Mode>("club");
   const [sections, setSections] = useState<ClubSections>({ club: true, members: true, loans: true, vendors: true });
   const [incInactive, setIncInactive] = useState(false);
   const [incClosedLoans, setIncClosedLoans] = useState(false);
   const [incClosedVendors, setIncClosedVendors] = useState(false);
-  const [selId, setSelId] = useState<string | null>(data.defaultMemberId);
+  const [selId, setSelId] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [stage, setStage] = useState<Stage>("generating");
   const [busy, setBusy] = useState<"dl" | "sh" | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [asOf, setAsOf] = useState("");
   const posterRef = useRef<HTMLDivElement>(null);
+
+  // Same endpoints + query keys as the real pages, so the posters assemble from the app's shared
+  // client cache — the page shell renders instantly and each piece streams in as it resolves.
+  const dash = usePageQuery<ClubData["dashboard"]>(["dashboard"], "/api/dashboard");
+  const mem = usePageQuery<{ members: ClubData["members"] }>(["members"], "/api/members");
+  const loan = usePageQuery<{ loans: ClubData["loans"]; stats: ClubData["loanStats"]; rate: ClubData["rate"] }>(["loans"], "/api/loans");
+  const ven = usePageQuery<{ vendors: ClubData["vendors"]; stats: ClubData["vendorStats"] }>(["vendors"], "/api/vendors");
+  const me = usePageQuery<{ user: CurrentUser }>(["me"], "/api/me");
+
+  const members = mem.data?.members ?? [];
+  const meId = me.data?.user.id ?? null;
+  const effSelId = selId ?? meId ?? members[0]?.id ?? null;
+
+  // Member statement is fetched per selection, on demand — same key the member page uses.
+  const detail = useQuery({
+    queryKey: ["member", effSelId],
+    queryFn: () => fetchJson<MemberDetailDTO>(`/api/members/${effSelId}`),
+    enabled: mode === "member" && !!effSelId,
+  });
+
+  const club: ClubData | null =
+    dash.data && mem.data && loan.data && ven.data
+      ? { dashboard: dash.data, members: mem.data.members, loans: loan.data.loans, loanStats: loan.data.stats, rate: loan.data.rate, vendors: ven.data.vendors, vendorStats: ven.data.stats }
+      : null;
+  const err = dash.error ?? mem.error ?? loan.error ?? ven.error ?? me.error ?? (mode === "member" ? detail.error : null);
+  if (err) throw err;
 
   useEffect(() => {
     const d = new Date();
@@ -34,21 +63,24 @@ export function Share({ data }: { data: ShareData }) {
   }, []);
 
   const sectionCount = SECTION_KEYS.filter((k) => sections[k]).length;
-  const selected = data.details.find((d) => d.id === selId) ?? data.details[0];
-  const noContent = mode === "club" ? sectionCount === 0 : !selected;
+  const selected = members.find((m) => m.id === effSelId);
+  const noContent = mode === "club" ? sectionCount === 0 : !!mem.data && !selected;
+  const dataReady = mode === "club" ? !!club : !!detail.data || noContent;
 
   useEffect(() => {
     let live = true;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- reset to spinner, then transition after fonts settle
     setStage("generating");
+    if (!dataReady) return; // stay on the spinner until the queries resolve
     const done = () => live && setStage(noContent ? "empty" : "ready");
     const fonts = (document as Document & { fonts?: FontFaceSet }).fonts;
     Promise.all([fonts?.ready ?? Promise.resolve(), new Promise((r) => setTimeout(r, 450))]).then(done);
     return () => { live = false; };
-  }, [mode, noContent]);
+  }, [mode, noContent, dataReady]);
 
   const flash = (m: string) => { setToast(m); setTimeout(() => setToast(null), 2600); };
-  const pickerMembers = incInactive ? data.members : data.members.filter((m) => m.status === "active");
+  const by = me.data?.user.name ?? "Peacock admin";
+  const pickerMembers = incInactive ? members : members.filter((m) => m.status === "active");
   const filename = mode === "member" ? `peacock-${selected?.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}` : "peacock-club-report";
   const sectionNote = SECTION_KEYS.filter((k) => sections[k]).map((k) => SECTION_LABELS[k].toLowerCase()).join(" · ");
 
@@ -154,7 +186,7 @@ export function Share({ data }: { data: ShareData }) {
                   {selected && <span className="flex size-9 flex-none items-center justify-center rounded-full bg-bg2 text-12 font-bold leading-none text-mut">{initials(selected.name)}</span>}
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-15 font-bold leading-none text-ink">{selected?.name ?? "Select a member"}</span>
-                    <span className="mt-1.5 block text-11 font-medium leading-none text-fnt">{selId === data.defaultMemberId ? "Defaults to you · click to change" : "click to change"}</span>
+                    <span className="mt-1.5 block text-11 font-medium leading-none text-fnt">{effSelId === meId ? "Defaults to you · click to change" : "click to change"}</span>
                   </span>
                   <ChevronDown className={`size-4 flex-none text-fnt transition-transform ${pickerOpen ? "rotate-180" : ""}`} strokeWidth={2} />
                 </button>
@@ -208,8 +240,8 @@ export function Share({ data }: { data: ShareData }) {
             <div className="pk-stage relative flex max-h-50 justify-center overflow-auto p-7 md:max-h-[78vh]">
               <div style={{ zoom: mode === "club" ? 0.5 : 0.62, filter: "drop-shadow(0 18px 44px rgba(20,32,30,0.28))" }}>
                 {mode === "club"
-                  ? <ClubReportPoster ref={posterRef} data={data} sections={sections} incInactive={incInactive} incClosedLoans={incClosedLoans} incClosedVendors={incClosedVendors} asOf={asOf} by={data.generatedBy} />
-                  : selected && <MemberStatementPoster ref={posterRef} detail={selected} asOf={asOf} by={data.generatedBy} />}
+                  ? club && <ClubReportPoster ref={posterRef} data={club} sections={sections} incInactive={incInactive} incClosedLoans={incClosedLoans} incClosedVendors={incClosedVendors} asOf={asOf} by={by} />
+                  : detail.data && <MemberStatementPoster ref={posterRef} detail={detail.data} asOf={asOf} by={by} />}
               </div>
             </div>
           )}
