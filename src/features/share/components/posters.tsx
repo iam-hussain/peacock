@@ -9,10 +9,25 @@ import { MembersTable } from "@/features/members/components/members-table";
 import { LoansList } from "@/features/loans/components/loans-list";
 import { VendorsList } from "@/features/vendors/components/vendors-list";
 import { MemberDetailView } from "@/features/members/components/member-detail";
-import type { ShareData } from "@/server/queries/share";
+import type { DashboardData } from "@/server/queries/dashboard";
 import type { MemberDetailDTO } from "@/server/queries/members";
+import type * as MQ from "@/server/queries/members";
+import type * as LQ from "@/server/queries/loans";
+import type * as VQ from "@/server/queries/vendors";
 
 export interface ClubSections { club: boolean; members: boolean; loans: boolean; vendors: boolean }
+
+// Assembled client-side from the same endpoints the real pages use (/api/dashboard, /api/members,
+// /api/loans, /api/vendors) — there is no dedicated share payload.
+export interface ClubData {
+  dashboard: DashboardData;
+  members: Awaited<ReturnType<typeof MQ.getMembers>>;
+  loans: Awaited<ReturnType<typeof LQ.getLoans>>;
+  loanStats: Awaited<ReturnType<typeof LQ.getLoanStats>>;
+  rate: Awaited<ReturnType<typeof LQ.getCurrentRate>>;
+  vendors: Awaited<ReturnType<typeof VQ.getVendors>>;
+  vendorStats: Awaited<ReturnType<typeof VQ.getVendorStats>>;
+}
 
 // Header/footer are a fixed light brand frame — the poster is always exported light.
 function PosterHeader({ title, asOf, subtitle }: { title: string; asOf: string; subtitle: string }) {
@@ -65,7 +80,7 @@ function Frame({ children }: { children: React.ReactNode }) {
 }
 
 /* ============================ CLUB REPORT ============================ */
-export const ClubReportPoster = forwardRef<HTMLDivElement, { data: ShareData; sections: ClubSections; incInactive: boolean; incClosedLoans: boolean; incClosedVendors: boolean; asOf: string; by: string }>(
+export const ClubReportPoster = forwardRef<HTMLDivElement, { data: ClubData; sections: ClubSections; incInactive: boolean; incClosedLoans: boolean; incClosedVendors: boolean; asOf: string; by: string }>(
   function ClubReportPoster({ data, sections, incInactive, incClosedLoans, incClosedVendors, asOf, by }, ref) {
     const members = incInactive ? data.members : data.members.filter((m) => m.status === "active");
     // Closed off → the loans page's default "Pending" view (open loans + closed still owing interest).
