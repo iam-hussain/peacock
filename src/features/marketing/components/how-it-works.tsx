@@ -7,7 +7,7 @@ import { HowTabs } from "./how/how-tabs";
    Page chrome (public header or the signed-in app bars) comes from PublicShell. */
 export function HowItWorks({ signedIn = false }: { signedIn?: boolean }) {
   return (
-    <main className="mx-auto w-full max-w-270 px-4 pb-14 pt-5 md:px-7 md:pb-20 md:pt-10">
+    <main className="mx-auto w-full max-w-270 px-4 pb-14 pt-5 md:px-6.5 md:pb-20 md:pt-10">
       {/* Hero */}
       <div className="mb-6 md:mb-8">
         <div className="text-11 font-semibold uppercase tracking-12 text-teal md:tracking-14">

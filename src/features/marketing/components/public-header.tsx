@@ -10,7 +10,7 @@ export function PublicHeader({
   showHowItWorks?: boolean;
 }) {
   return (
-    <header className="sticky top-0 z-30 flex items-center gap-2.75 border-b border-hair bg-sf px-7 py-4">
+    <header className="sticky top-0 z-30 flex items-center gap-2.75 border-b border-hair bg-sf px-6.5 py-4">
       <BrandLockup href="/" markPx={42} wordSize={21} />
       <div className="flex-1" />
       {showHowItWorks && (

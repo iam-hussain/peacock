@@ -13,7 +13,7 @@ export function Terms() {
     <>
       {/* Desktop — page chrome comes from PublicShell */}
       <div className="hidden md:block">
-        <main className="px-7 pb-16 pt-11.5">
+        <main className="px-6.5 pb-16 pt-11.5">
           <div className="mx-auto max-w-270 animate-in fade-in">
             <div className="mb-3 text-11 font-semibold uppercase tracking-14 text-teal">Policy</div>
             <h1 className="mb-2 font-display text-38 font-extrabold leading-103 tracking-[-0.025em] text-ink">
