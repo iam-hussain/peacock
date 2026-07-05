@@ -38,7 +38,7 @@ export function VendorsList({ vendors, stats }: { vendors: Vendor[]; stats: Vend
   const inPoster = useInPoster();
   const cycles = quarterOptions();
   return (
-    <div className="mx-auto max-w-320 p-4 pb-19.5 md:p-6.5 md:pb-6.5">
+    <div className={`mx-auto max-w-320 ${inPoster ? "p-6.5" : "p-4 pb-19.5 md:p-6.5 md:pb-6.5"}`}>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         {/* Title — desktop only (forced in the poster regardless of viewport) */}
         <h1 className={`text-2xl font-bold leading-none tracking-[-0.02em] text-ink ${inPoster ? "block" : "hidden md:block"}`}>Vendors &amp; chits</h1>

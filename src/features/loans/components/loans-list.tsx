@@ -22,7 +22,7 @@ export function LoansList({ loans, stats, rate, eligibility }: { loans: Loan[]; 
   });
 
   return (
-    <div className="mx-auto max-w-320 p-4 pb-19.5 md:p-6.5 md:pb-6.5">
+    <div className={`mx-auto max-w-320 ${inPoster ? "p-6.5" : "p-4 pb-19.5 md:p-6.5 md:pb-6.5"}`}>
       {/* Title — desktop only (forced in the poster regardless of viewport) */}
       <div className={`mb-4 flex-wrap items-baseline gap-3 ${inPoster ? "flex" : "hidden md:flex"}`}>
         <h1 className="text-2xl font-bold leading-none tracking-[-0.02em] text-ink">Loans</h1>
