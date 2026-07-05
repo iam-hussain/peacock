@@ -21,10 +21,7 @@ export function MembersMobile({ members, joinPreview }: { members: Member[]; joi
 
   return (
     <div className="pb-19.5 md:hidden">
-      <div className="flex items-center justify-between gap-2 px-4 pb-3 pt-3.5">
-        <span className="min-w-0 truncate text-xs font-medium leading-130 text-fnt">
-          {summary.text} · {summary.totalDeposits} deposits
-        </span>
+      <div className="flex items-center justify-end gap-2 px-4 pb-3 pt-3.5">
         <div className="flex flex-none items-center gap-2">
           <MemberStatusFilter value={filter} onChange={setFilter} />
           <AdminOnly>
