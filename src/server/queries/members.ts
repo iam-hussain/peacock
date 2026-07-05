@@ -15,12 +15,12 @@ export interface MemberDTO {
   joined: string;
   deposits: string;
   profit: string;
-  value: string;
+  value: string; // deposits + adjust (paid) + profit share
   held: string | null;
   adjustment: string | null; // catch-up + penalty STILL OUTSTANDING, combined
   adjustmentCharged: string | null; // catch-up + penalty EVER charged (shown even once fully paid)
   sort?: MemberSort; // raw numeric keys for client-side column sorting (list rows only)
-  pending: string | null;
+  pending: string | null; // deposit pending + adjust (outstanding) pending
   status: Status;
 }
 
@@ -144,30 +144,35 @@ export async function getMembers(): Promise<MemberDTO[]> {
     active ? profitShare(clubProfit, deposits, activeCount, expectedDeposit) : 0n;
 
   return rows
-    .map(({ m, active, value, deposits, pending, adjustment, charged }) => ({
+    .map(({ m, active, value, deposits, pending, adjustment, charged }) => {
+      const profit = shareOf(deposits, active);
+      const worth = value + profit; // Value column = deposits + adjust (paid) + profit
+      const pendingTotal = pending + adjustment; // Pending column = deposit pending + adjust pending
+      return {
       id: m.id,
       name: [m.firstName, m.lastName].filter(Boolean).join(" "),
       avatarUrl: m.avatarUrl,
       joined: monthYear(m.customerSince),
       deposits: formatPaise(deposits),
-      profit: formatPaise(shareOf(deposits, active)),
-      value: active ? formatPaise(value) : "—",
+      profit: formatPaise(profit),
+      value: active ? formatPaise(worth) : "—",
       held: m.treasury && m.treasury.balance !== 0n ? formatPaise(m.treasury.balance) : null,
       adjustment: adjustment > 0n ? formatPaise(adjustment) : null,
       adjustmentCharged: charged > 0n ? formatPaise(charged) : null,
-      pending: pending > 0n ? formatPaise(pending) : null,
+      pending: pendingTotal > 0n ? formatPaise(pendingTotal) : null,
       status: memberStatus(active, m.archivedAt),
       sort: {
         name: [m.firstName, m.lastName].filter(Boolean).join(" "),
         deposits: Number(deposits),
-        profit: Number(shareOf(deposits, active)),
-        value: Number(value),
+        profit: Number(profit),
+        value: Number(worth),
         held: Number(m.treasury?.balance ?? 0n),
         adjustment: Number(charged),
-        pending: Number(pending),
+        pending: Number(pendingTotal),
         status: active ? 0 : m.archivedAt ? 2 : 1,
       },
-    }))
+      };
+    })
     // Active members first, then alphabetical by name.
     .sort((a, b) => Number(b.status === "active") - Number(a.status === "active") || a.name.localeCompare(b.name));
 }

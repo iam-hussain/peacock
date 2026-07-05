@@ -9,7 +9,7 @@ import { ListAvatar } from "./list-avatar";
 import { SortArrow } from "./sort-arrow";
 
 export const MEMBERS_GRID =
-  "grid-cols-[minmax(10rem,1.6fr)_minmax(6rem,1fr)_minmax(6rem,1fr)_minmax(6rem,1fr)_minmax(6rem,1fr)_minmax(8rem,1.4fr)_minmax(6rem,1fr)_minmax(5rem,0.8fr)]";
+  "grid-cols-[minmax(10rem,1.6fr)_minmax(6rem,1fr)_minmax(6rem,1fr)_minmax(8rem,1.4fr)_minmax(6rem,1fr)_minmax(6rem,1fr)_minmax(6rem,1fr)_minmax(5rem,0.8fr)]";
 
 // Column key → the raw MemberSort field it sorts by.
 const COL_SORT_KEY: Record<string, keyof MemberSort> = {
@@ -86,11 +86,11 @@ function Row({ m }: { m: Member }) {
           <div className="mt-0.75 whitespace-nowrap text-11 font-medium leading-130 text-fnt">Joined {m.joined}</div>
         </div>
       </div>
+      <Cell v={m.held ?? "—"} cls={m.held ? "text-teal" : "text-fnt"} />
       <Cell v={m.deposits} />
+      <AdjustmentCell total={m.adjustmentCharged} pending={m.adjustment} />
       <Cell v={m.profit} cls="text-in" />
       <Cell v={m.value} />
-      <Cell v={m.held ?? "—"} cls={m.held ? "text-teal" : "text-fnt"} />
-      <AdjustmentCell total={m.adjustmentCharged} pending={m.adjustment} />
       <Cell v={m.pending ?? "—"} cls={m.pending ? "text-outfg" : "text-fnt"} />
       <div className="flex justify-end">
         <StatusBadge status={m.status} />
