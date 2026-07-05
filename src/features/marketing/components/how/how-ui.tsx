@@ -117,15 +117,17 @@ export function Callout({
   icon: Icon,
   title,
   tone = "teal",
+  className,
   children,
 }: {
   icon: LucideIcon;
   title?: string;
   tone?: CalloutTone;
+  className?: string;
   children: React.ReactNode;
 }) {
   return (
-    <div className={cn("flex items-start gap-3 rounded-14 border p-3.5 md:p-4", CALLOUT[tone])}>
+    <div className={cn("flex items-start gap-3 rounded-14 border p-3.5 md:p-4", CALLOUT[tone], className)}>
       <Icon className="mt-0.25 size-4.5 flex-none" strokeWidth={2.2} />
       <div className="min-w-0">
         {title && <div className="text-13 font-bold leading-120">{title}</div>}

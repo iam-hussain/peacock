@@ -35,7 +35,7 @@ export function TabExit() {
           <LedgerRow label="Any unpaid interest" value="− interest" tone="out" />
           <LedgerRow label="Suggested settlement" hint="Admin confirms the final amount" value="= paid out" tone="teal" emphasize />
         </Ledger>
-        <Callout icon={Info} tone="neutral" title="After settling">
+        <Callout icon={Info} tone="neutral" className="mt-3.5" title="After settling">
           The member&rsquo;s profit becomes zero and their current membership is marked Closed (with leave
           date and settled amount). Nothing is deleted &mdash; it becomes a previous membership in their
           history. Their profit is tracked as paid out, so it correctly leaves the pool.

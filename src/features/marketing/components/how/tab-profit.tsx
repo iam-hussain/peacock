@@ -54,7 +54,7 @@ export function TabProfit() {
           <LedgerRow label="Their actual profit share" value="₹6,000" tone="teal" emphasize />
           <LedgerRow label="The missing ₹3,000" hint="Stays pooled until they catch up — given to no one" value="held back" tone="out" />
         </Ledger>
-        <Callout icon={Percent} tone="teal" title="A fully-paid member is never affected by anyone else">
+        <Callout icon={Percent} tone="teal" className="mt-3.5" title="A fully-paid member is never affected by anyone else">
           They always earn their full per-head share, no matter how far behind others are. And because
           every share is capped and reduced for underpayment, the club can never share out more than it
           earned &mdash; even if everyone settled at once, its value would never go negative.
