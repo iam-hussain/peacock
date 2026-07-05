@@ -107,9 +107,9 @@ function Meta({ icon, children }: { icon: ReactNode; children: ReactNode }) {
 
 function LoanStat({ label, value, accent = false, border = false }: { label: string; value: string; accent?: boolean; border?: boolean }) {
   return (
-    <div className={`px-5.5 ${border ? "border-l border-hr2" : ""}`}>
-      <div className="text-10 font-semibold uppercase leading-none tracking-5 text-fnt">{label}</div>
-      <div className={`mt-2.25 font-mono text-xl font-semibold leading-none ${accent ? "text-in" : "text-ink"}`}>
+    <div className={`min-w-0 px-3 sm:px-5.5 ${border ? "border-l border-hr2" : ""}`}>
+      <div className="truncate text-10 font-semibold uppercase leading-none tracking-5 text-fnt">{label}</div>
+      <div className={`mt-2.25 truncate font-mono text-15 font-semibold leading-none sm:text-xl ${accent ? "text-in" : "text-ink"}`}>
         {value}
       </div>
     </div>
@@ -118,9 +118,9 @@ function LoanStat({ label, value, accent = false, border = false }: { label: str
 
 function LoanSmall({ label, value, accent = false, warn = false, border = false }: { label: string; value: string; accent?: boolean; warn?: boolean; border?: boolean }) {
   return (
-    <div className={`px-5.5 py-3.5 ${border ? "border-l border-hr2" : ""}`}>
-      <div className="text-11 font-medium leading-none text-mut">{label}</div>
-      <div className={`mt-2 font-mono text-sm font-semibold leading-none ${warn && accent ? "text-wfg" : accent ? "text-in" : "text-ink"}`}>
+    <div className={`min-w-0 px-3 py-3.5 sm:px-5.5 ${border ? "border-l border-hr2" : ""}`}>
+      <div className="truncate text-11 font-medium leading-none text-mut">{label}</div>
+      <div className={`mt-2 truncate font-mono text-sm font-semibold leading-none ${warn && accent ? "text-wfg" : accent ? "text-in" : "text-ink"}`}>
         {value}
       </div>
     </div>
