@@ -35,15 +35,17 @@ export function LoansCard({ m }: { m: MemberDetail }) {
             <div key={c.n} className="relative pb-4.5 last:pb-0">
               <span className="absolute -left-5.5 top-0.5 size-3 rounded-full border-2 border-sf bg-mut shadow-[0_0_0_1px_var(--hair)]" />
               <div className="rounded-10 border border-hair bg-sf2 p-2.75">
-                <div className="flex flex-wrap items-center gap-2.5">
+                <div className="flex flex-wrap items-start gap-2.5">
                   <span className="text-sm font-bold leading-none text-ink">Loan Cycle #{c.n}</span>
                   <StatusBadge status={c.status === "active" ? "active" : c.status === "overdue" ? "left" : "settled"} label={c.statusLabel} />
                   <span className="flex-1" />
-                  <span className="font-mono text-sm font-semibold leading-none text-ink">{c.amt}</span>
+                  <div className="flex flex-col items-end gap-1.25">
+                    <span className="font-mono text-sm font-semibold leading-none text-ink">{c.amt}</span>
+                    <span className="font-mono text-11 font-medium leading-none text-fnt">interest <span className="font-semibold text-in">{c.interest}</span></span>
+                  </div>
                 </div>
                 <div className="mt-1.25 text-11 font-medium leading-140 text-fnt">
-                  {c.start} → {c.end} · {c.rate}% · {c.days} · interest{" "}
-                  <span className="font-semibold text-in">{c.interest}</span>
+                  {c.start} → {c.end} · {c.rate}% · {c.days}
                 </div>
               </div>
             </div>
