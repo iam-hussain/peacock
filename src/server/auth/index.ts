@@ -36,6 +36,14 @@ export const auth = betterAuth({
   },
   secret: authEnv.BETTER_AUTH_SECRET,
   baseURL: authEnv.BETTER_AUTH_URL,
+  // Mobile clients: Expo web dev server + the native app scheme. Without these,
+  // better-auth CSRF-rejects cross-origin sign-in POSTs. CORS_ORIGINS mirrors the
+  // /api CORS allowlist in src/proxy.ts so both layers trust the same origins.
+  trustedOrigins: [
+    "http://localhost:8081",
+    "peacock://",
+    ...(process.env.CORS_ORIGINS ?? "").split(",").map((s) => s.trim()).filter(Boolean),
+  ],
 });
 
 export type Session = typeof auth.$Infer.Session;
