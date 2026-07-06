@@ -217,11 +217,9 @@ function PasswordStep({ profile, onBack }: { profile: LoginProfile; onBack: () =
       <div className="mb-3.5 flex gap-2 rounded-9 bg-bg2 px-2.75 py-2.25">
         <Info className="mt-px size-3.5 flex-none text-mut" strokeWidth={2} />
         <p className="text-11 font-medium leading-145 text-mut">
-          First time, or just reset? Try your{" "}
-          <span className="font-semibold text-ink">registered phone number</span> as the password —
-          with or without <span className="font-semibold text-ink">+91</span> (e.g.{" "}
-          <span className="font-semibold text-ink">+919876543210</span> or{" "}
-          <span className="font-semibold text-ink">9876543210</span>).
+          Never changed your password, or just had it reset? Try the{" "}
+          <span className="font-semibold text-ink">phone number you use in the club group</span> as
+          the password (e.g. <span className="font-semibold text-ink">+919876543210</span>).
         </p>
       </div>
 
