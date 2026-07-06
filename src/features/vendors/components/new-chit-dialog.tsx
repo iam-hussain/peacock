@@ -4,6 +4,7 @@ import { useId, useState, useTransition } from "react";
 import { Modal, ModalActions } from "@/components/shared/modal";
 import { Field, TextInput, FieldRow } from "@/components/shared/form";
 import { AmountInput } from "@/components/shared/amount-input";
+import { MonthInput } from "@/components/shared/month-input";
 import { formAction } from "@/lib/actions-client";
 
 const digits = (s: string) => s.replace(/[^\d]/g, "");
@@ -90,7 +91,7 @@ export function NewChitDialog({ children, buttonClassName }: { children: React.R
               />
             </Field>
             <Field label="Start date">
-              <TextInput type="month" value={start} onChange={(e) => setStart(e.target.value)} />
+              <MonthInput value={start} onChange={setStart} />
             </Field>
           </FieldRow>
 

@@ -9,6 +9,7 @@ import { AmountInput } from "@/components/shared/amount-input";
 import { SectionLabel } from "@/components/shared/section-label";
 import { today } from "./catchup-penalty-modals";
 import type { SettleDTO } from "@/server/queries/members";
+import { DateInput } from "@/components/shared/date-input";
 
 /**
  * Settle up & leave (PRODUCT.md §12): shows the computed settlement guide (capital + profit −
@@ -118,12 +119,7 @@ export function SettleDialog({
 
             <div>
               <SectionLabel>Leave date</SectionLabel>
-              <input
-                type="date"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-                className="w-full rounded-xl border border-bd2 bg-transparent px-4 py-3 text-sm font-medium text-ink outline-none focus:border-teal"
-              />
+              <DateInput value={date} onChange={setDate} />
             </div>
 
             <div className="flex items-start gap-2.5 rounded-xl border border-outbd bg-outbg px-4 py-3">

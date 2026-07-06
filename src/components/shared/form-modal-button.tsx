@@ -6,6 +6,8 @@ import { Field, TextInput, Textarea, Select, FieldRow, type SelectOption } from 
 import { AmountInput } from "./amount-input";
 import { SelectorCard, PickerSheet, type PickOption } from "./entity-picker";
 import { formAction } from "@/lib/actions-client";
+import { DateInput } from "@/components/shared/date-input";
+import { MonthInput } from "@/components/shared/month-input";
 
 export interface FieldDef {
   name: string;
@@ -129,6 +131,10 @@ export function FormModalButton({
         <Select name={f.name} options={f.options} defaultValue={f.defaultValue} />
       ) : f.type === "amount" ? (
         <AmountField name={f.name} defaultValue={f.defaultValue} />
+      ) : f.type === "date" ? (
+        <DateInput name={f.name} value={f.defaultValue ?? today} required={f.required} />
+      ) : f.type === "month" ? (
+        <MonthInput name={f.name} value={f.defaultValue ?? ""} required={f.required} />
       ) : f.type === "textarea" ? (
         <Textarea name={f.name} placeholder={f.placeholder} defaultValue={f.defaultValue} required={f.required} />
       ) : (
@@ -136,7 +142,7 @@ export function FormModalButton({
           name={f.name}
           type={f.type ?? "text"}
           placeholder={f.placeholder}
-          defaultValue={f.defaultValue ?? (f.type === "date" ? today : undefined)}
+          defaultValue={f.defaultValue}
           required={f.required}
         />
       )}

@@ -5,6 +5,7 @@ import { Sparkles } from "lucide-react";
 import { Modal, ModalActions } from "@/components/shared/modal";
 import { AmountInput } from "@/components/shared/amount-input";
 import { SectionLabel } from "@/components/shared/section-label";
+import { DateInput } from "@/components/shared/date-input";
 import { formAction } from "@/lib/actions-client";
 import type { ChargeSuggest } from "@/server/queries/members";
 import { type Bucket, Trigger, today } from "./catchup-penalty-shared";
@@ -131,12 +132,7 @@ export function AddChargeDialog({
 
           <div>
             <SectionLabel>Date</SectionLabel>
-            <input
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-              className="w-full rounded-xl border border-bd2 bg-transparent px-4 py-3 text-sm font-medium text-ink outline-none focus:border-teal"
-            />
+            <DateInput value={date} onChange={setDate} />
           </div>
 
           {/* "Other" already collects its wording above (stored in the same note column) */}

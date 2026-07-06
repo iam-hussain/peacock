@@ -8,9 +8,9 @@ import { RecordReturnButton } from "./record-vendor-button";
 import type { ChitDetail, GeneralDetail } from "../data";
 
 function EditVendorButton({
-  id, name, chit = false, category = "", statusLabel = "Active", value = "", months = "", margin = "",
+  id, name, chit = false, category = "", statusLabel = "Active", value = "", months = "", margin = "", start = "",
 }: {
-  id: string; name: string; chit?: boolean; category?: string; statusLabel?: string; value?: string; months?: string; margin?: string;
+  id: string; name: string; chit?: boolean; category?: string; statusLabel?: string; value?: string; months?: string; margin?: string; start?: string;
 }) {
   return (
     <FormModalButton
@@ -23,9 +23,10 @@ function EditVendorButton({
         chit
           ? [
               { name: "name", label: "Chit name", defaultValue: name, required: true },
-              { name: "value", label: "Chit value (₹)", defaultValue: value },
+              { name: "value", label: "Chit value", type: "amount", defaultValue: value },
               { name: "months", label: "Duration (months)", type: "number", defaultValue: months },
-              { name: "margin", label: "Max monthly (₹)", defaultValue: margin },
+              { name: "margin", label: "Max monthly · margin", type: "amount", defaultValue: margin },
+              { name: "start", label: "Start date", type: "month", defaultValue: start },
             ]
           : [
               { name: "name", label: "Vendor name", defaultValue: name, required: true },
@@ -55,7 +56,7 @@ function WriteOffButton({ id, name }: { id: string; name: string }) {
       destructive
       hiddenFields={{ party: name, vendorId: id }}
       fields={[
-        { name: "amount", label: "Write-off amount (₹)", placeholder: "0", required: true },
+        { name: "amount", label: "Write-off amount", type: "amount", required: true },
         { name: "reason", label: "Reason", type: "textarea", placeholder: "Why is this being written off?" },
         { name: "date", label: "Date", type: "date" },
       ]}
@@ -112,7 +113,7 @@ export function ChitDetailView({ c }: { c: ChitDetail }) {
         </div>
         <AdminOnly>
           <div className="flex items-center gap-2 md:flex-none">
-            <EditVendorButton id={c.id} name={c.name} chit value={String(c.valueRupees)} months={String(c.months)} margin={String(c.marginRupees)} />
+            <EditVendorButton id={c.id} name={c.name} chit value={String(c.valueRupees)} months={String(c.months)} margin={String(c.marginRupees)} start={c.startIso} />
           </div>
         </AdminOnly>
       </div>

@@ -3,6 +3,7 @@
 import { SelectorCard, type PickOption } from "@/components/shared/entity-picker";
 import { AmountInput } from "@/components/shared/amount-input";
 import { SectionLabel } from "@/components/shared/section-label";
+import { DateInput } from "@/components/shared/date-input";
 import type { getPartyMeta, getHolderMeta } from "./entry-meta";
 
 /** The step-2 entry form (party + amount/date + optional principal + holder + note). State lives in
@@ -58,12 +59,7 @@ export function EntryForm({
 
         <div>
           <SectionLabel>Date</SectionLabel>
-          <input
-            type="date"
-            value={txnDate}
-            onChange={(e) => setTxnDate(e.target.value)}
-            className="h-[48px] w-full rounded-xl border border-bd2 bg-transparent px-4 text-sm font-medium text-ink outline-none focus:border-teal"
-          />
+          <DateInput value={txnDate} onChange={setTxnDate} />
         </div>
       </div>
 

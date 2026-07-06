@@ -6,6 +6,7 @@ import { Lock } from "lucide-react";
 import { Modal, ModalActions } from "@/components/shared/modal";
 import { saveClubSettings } from "@/lib/actions-client";
 import type { SettingsData } from "@/server/queries/settings";
+import { DateInput } from "@/components/shared/date-input";
 
 const label = "text-11 font-bold uppercase leading-none tracking-6 text-fnt";
 const input =
@@ -83,7 +84,7 @@ export function EditClubButton({ edit, className }: { edit: SettingsData["club"]
             <span className={label}>Monthly deposit</span>
             <div className="grid grid-cols-2 gap-3">
               <input className={input} inputMode="decimal" placeholder="₹ New amount" value={depositAmount} onChange={(e) => setDepositAmount(e.target.value)} />
-              <input className={input} type="date" aria-label="Deposit effective from" value={depositFrom} onChange={(e) => setDepositFrom(e.target.value)} />
+              <DateInput value={depositFrom} onChange={setDepositFrom} />
             </div>
             <span className="text-11 font-medium text-fnt">Currently {edit.currentDeposit} / mo. Leave blank to keep it.</span>
           </div>
@@ -92,7 +93,7 @@ export function EditClubButton({ edit, className }: { edit: SettingsData["club"]
             <span className={label}>Loan interest</span>
             <div className="grid grid-cols-2 gap-3">
               <input className={input} inputMode="decimal" placeholder="New rate % / mo" value={rate} onChange={(e) => setRate(e.target.value)} />
-              <input className={input} type="date" aria-label="Rate effective from" value={rateFrom} onChange={(e) => setRateFrom(e.target.value)} />
+              <DateInput value={rateFrom} onChange={setRateFrom} />
             </div>
             <span className="text-11 font-medium leading-150 text-fnt">
               Applies to new loans only — existing loans keep their origination rate. Currently {edit.currentRate}.

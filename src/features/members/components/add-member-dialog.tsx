@@ -7,6 +7,7 @@ import { formAction } from "@/lib/actions-client";
 import { isoDate } from "@/lib/date";
 import { initials } from "@/lib/avatar";
 import type { JoinPreviewDTO } from "@/server/queries/members";
+import { MonthInput } from "@/components/shared/month-input";
 
 const OUT_SIZE = 256; // square avatar, resized down before base64 encoding
 
@@ -131,7 +132,7 @@ export function AddMemberDialog({
 
           <FieldRow>
             <Field label="Joined date *">
-              <TextInput name="joined" type="month" defaultValue={isoDate().slice(0, 7)} required />
+              <MonthInput name="joined" value={isoDate().slice(0, 7)} required />
             </Field>
             <Field label="Avatar">
               <div className="flex items-center gap-3">

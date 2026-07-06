@@ -316,10 +316,11 @@ const editVendorSchema = z.object({
   value: z.string().optional(),
   months: z.string().optional(),
   margin: z.string().optional(),
+  start: z.string().optional(),
 });
 
 async function editVendor(fd: FormData): Promise<ActionResult> {
-  const p = editVendorSchema.safeParse({ id: str(fd, "id"), name: str(fd, "name"), category: str(fd, "category"), status: str(fd, "status"), value: str(fd, "value"), months: str(fd, "months"), margin: str(fd, "margin") });
+  const p = editVendorSchema.safeParse({ id: str(fd, "id"), name: str(fd, "name"), category: str(fd, "category"), status: str(fd, "status"), value: str(fd, "value"), months: str(fd, "months"), margin: str(fd, "margin"), start: str(fd, "start") });
   if (!p.success) return { ok: false, error: p.error.issues[0].message };
   const { id } = p.data;
 
@@ -329,17 +330,19 @@ async function editVendor(fd: FormData): Promise<ActionResult> {
       name: p.data.name || undefined,
       category: p.data.category || null,
       status: (p.data.status ? (p.data.status.toUpperCase() as "ACTIVE" | "INACTIVE" | "CLOSED") : undefined),
+      ...(p.data.start ? { startedAt: parseFormDate(p.data.start) } : {}),
     },
   });
-  // Chit vendors also carry value / duration / margin — update the ChitFund when those come through.
-  const { value, months, margin } = p.data;
-  if (value || months || margin) {
+  // Chit vendors also carry value / duration / margin / start — update the ChitFund when those come through.
+  const { value, months, margin, start } = p.data;
+  if (value || months || margin || start) {
     await prisma.chitFund.updateMany({
       where: { vendorId: id },
       data: {
         ...(value ? { chitValue: rupeesToPaise(value) } : {}),
         ...(months ? { durationMonths: Number(months) } : {}),
         ...(margin ? { marginInstallment: rupeesToPaise(margin) } : {}),
+        ...(start ? { startedAt: parseFormDate(start) } : {}),
       },
     });
   }

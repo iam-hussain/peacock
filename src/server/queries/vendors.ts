@@ -1,7 +1,7 @@
 import "server-only";
 import { prisma } from "@/server/db";
 import { formatLakh, formatPaise } from "@/lib/money";
-import { monthYear, dayMonthYear } from "@/lib/date";
+import { monthYear, dayMonthYear, isoDate } from "@/lib/date";
 import { initials } from "@/lib/avatar";
 import type { Status } from "@/components/shared/status-badge";
 
@@ -217,7 +217,7 @@ export async function getVendorStats(): Promise<{ label: string; value: string; 
 // ---------------- details ----------------
 export interface ChitDetailDTO extends VendorDTO {
   start: string; months: number; paidCount: number; valueDisp: string; marginDisp: string;
-  valueRupees: number; marginRupees: number; // raw, for prefilling the edit form
+  valueRupees: number; marginRupees: number; startIso: string; // raw, for prefilling the edit form
   totalPaidDisp: string; obligationDisp: string; payoutDisp: string; taken: boolean; payoutMonth: number;
   installments: { n: number; isPayout: boolean; lbl: string; amt: string; paid: boolean }[];
 }
@@ -254,6 +254,7 @@ export async function getChitDetail(id: string): Promise<ChitDetailDTO | null> {
     marginDisp: formatPaise(margin),
     valueRupees: Number(c.chitValue) / 100,
     marginRupees: Number(margin) / 100,
+    startIso: isoDate(c.startedAt).slice(0, 7),
     totalPaidDisp: formatPaise(totalPaid),
     obligationDisp: formatPaise(obligation),
     payoutDisp: formatPaise(payout),

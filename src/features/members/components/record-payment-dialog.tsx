@@ -5,6 +5,7 @@ import { Modal, ModalActions } from "@/components/shared/modal";
 import { SelectorCard, PickerSheet, type PickOption } from "@/components/shared/entity-picker";
 import { AmountInput } from "@/components/shared/amount-input";
 import { SectionLabel } from "@/components/shared/section-label";
+import { DateInput } from "@/components/shared/date-input";
 import { formAction } from "@/lib/actions-client";
 import { type Bucket, Trigger, today } from "./catchup-penalty-shared";
 
@@ -117,12 +118,7 @@ export function RecordPaymentDialog({
 
             <div>
               <SectionLabel>Transaction date (optional)</SectionLabel>
-              <input
-                type="date"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-                className="w-full rounded-xl border border-bd2 bg-transparent px-4 py-3 text-sm font-medium text-ink outline-none focus:border-teal"
-              />
+              <DateInput value={date} onChange={setDate} />
             </div>
 
             <div>

@@ -8,6 +8,7 @@ import { AmountInput } from "@/components/shared/amount-input";
 import { SectionLabel } from "@/components/shared/section-label";
 import { today } from "./catchup-penalty-modals";
 import type { RejoinDTO } from "@/server/queries/members";
+import { DateInput } from "@/components/shared/date-input";
 
 /**
  * Rejoin flow (PRODUCT.md §12): confirm opens a fresh membership (Active) for a member whose
@@ -85,12 +86,7 @@ export function RejoinDialog({
 
           <div>
             <SectionLabel>Rejoin date</SectionLabel>
-            <input
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-              className="w-full rounded-xl border border-bd2 bg-transparent px-4 py-3 text-sm font-medium text-ink outline-none focus:border-teal"
-            />
+            <DateInput value={date} onChange={setDate} />
           </div>
 
           <div className="flex items-center justify-between rounded-xl border border-teal/30 bg-tlsf px-4 py-3">
