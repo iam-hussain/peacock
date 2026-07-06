@@ -8,6 +8,7 @@
    render light even when the app is in dark mode (tokens inherit from the nearest set). */
 :root,
 .poster-light {
+  color-scheme: light;
   --radius: 0.75rem;
 
   /* raw brand palette */
@@ -80,6 +81,7 @@
 }
 
 .dark {
+  color-scheme: dark;
   --ink: #eef4f3;
   --bg: #0e1413;
   --bg2: #131b19;

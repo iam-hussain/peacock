@@ -2,7 +2,7 @@ import "server-only";
 import { cache } from "react";
 import { prisma } from "@/server/db";
 import { formatLakh, formatPaise, roundToWholeRupee } from "@/lib/money";
-import { monthYear, dayMonthYear, daysBetween, monthsDays, istDate, addMonths } from "@/lib/date";
+import { ist, monthYear, dayMonth, dayMonthYear, daysBetween, monthsDays, istDate, addMonths } from "@/lib/date";
 import { reversedTxnIds } from "./shared";
 import type { Status } from "@/components/shared/status-badge";
 
@@ -183,10 +183,14 @@ export function loanCycleDTOs(events: { at: Date; delta: bigint }[], rateBps: nu
       status,
       statusLabel: status === "closed" ? "Closed" : status === "overdue" ? "Overdue" : "Active",
       amt: formatPaise(c.balance),
-      start: dayMonthYear(c.start),
+      // Year only where it disambiguates: "15 Jan → 26 Feb 2026", "05 Mar → now"
+      start:
+        ist(c.start).getUTCFullYear() === ist(c.open ? asOf : c.end).getUTCFullYear()
+          ? dayMonth(c.start)
+          : dayMonthYear(c.start),
       end: c.open ? "now" : dayMonthYear(c.end),
       rate: String(rateBps / 100),
-      days: monthsDays(c.start, c.end),
+      days: monthsDays(c.start, c.end, true),
       interest: formatPaise(c.interest),
       breakdown,
     });

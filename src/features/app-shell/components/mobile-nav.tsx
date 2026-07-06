@@ -1,7 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { useCallback, useRef } from "react";
 import { usePathname } from "next/navigation";
+import { useVisualViewport } from "@/lib/use-visual-viewport";
 import { Bell, Upload, LayoutDashboard, Users, HandCoins, LayoutGrid, Plus, type LucideIcon } from "lucide-react";
 import { BrandLockup } from "@/components/shared/brand-lockup";
 import { NAV } from "../nav";
@@ -78,9 +80,22 @@ const RIGHT_TABS = [
 export function MobileBottomNav() {
   const pathname = usePathname();
   const addEntry = useAddEntry();
+  const nav = useRef<HTMLElement>(null);
+  // iOS 26 WebKit (Safari + Chrome) leaves fixed bottom bars pinned to a stale
+  // keyboard/URL-bar-shrunk viewport — the bar floats mid-screen with dead space below.
+  // Re-anchor to the visual viewport bottom whenever it changes; the style write also
+  // forces the repaint WebKit missed.
+  useVisualViewport(
+    useCallback((vv) => {
+      const el = nav.current;
+      if (!el) return;
+      const off = vv.offsetTop + vv.height - document.documentElement.clientHeight;
+      el.style.transform = Math.abs(off) > 1 ? `translateY(${off}px)` : "";
+    }, []),
+  );
   const isActive = (href: string) => pathname === href || pathname.startsWith(href + "/");
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-20 flex items-stretch border-t border-hair bg-sf pb-[env(safe-area-inset-bottom)] md:hidden">
+    <nav ref={nav} className="fixed inset-x-0 bottom-0 z-20 flex items-stretch border-t border-hair bg-sf pb-[env(safe-area-inset-bottom)] md:hidden">
       {LEFT_TABS.map((n) => (
         <Tab key={n.href} {...n} active={isActive(n.href)} />
       ))}
