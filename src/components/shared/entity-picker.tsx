@@ -88,7 +88,7 @@ export function PickerSheet({
   }, [q, options]);
 
   return (
-    <div className="flex max-h-[68vh] flex-col">
+    <div className="flex h-full flex-col">
       <div className="flex items-start gap-3 pb-3.5">
         <button
           type="button"
@@ -115,9 +115,7 @@ export function PickerSheet({
         />
       </div>
 
-      {/* min-h keeps the sheet a stable size while filtering — it must not collapse to
-          "No matches." and sink behind the mobile keyboard */}
-      <div className="mt-1.5 min-h-[40vh] flex-1 overflow-y-auto">
+      <div className="mt-1.5 flex-1 overflow-y-auto">
         {list.map((o) => (
           <button
             key={o.id}
