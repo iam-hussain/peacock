@@ -1,6 +1,4 @@
-import type { ReactNode } from "react";
-import { CalendarRange, Percent, Clock } from "lucide-react";
-import { StatusBadge } from "@/components/shared/status-badge";
+import { LoanCycleCard } from "@/components/shared/loan-cycle-card";
 import { CardShell } from "./card-shell";
 import type { LoanCycleDTO, MemberDetailDTO as MemberDetail } from "@/server/queries/members";
 
@@ -42,21 +40,11 @@ export function LoansCard({ m }: { m: MemberDetail }) {
   );
 }
 
-// Status → timeline dot colour and card left-edge accent (theme tokens only).
+// Status → timeline dot colour (theme tokens only).
 const CYCLE_DOT: Record<LoanCycleDTO["status"], string> = {
   active: "bg-teal",
   overdue: "bg-wfg",
   closed: "bg-mut",
-};
-const CYCLE_EDGE: Record<LoanCycleDTO["status"], string> = {
-  active: "border-l-teal",
-  overdue: "border-l-wfg",
-  closed: "border-l-hair",
-};
-const CYCLE_BADGE: Record<LoanCycleDTO["status"], "active" | "left" | "settled"> = {
-  active: "active",
-  overdue: "left",
-  closed: "settled",
 };
 
 function LoanCycleItem({ c }: { c: LoanCycleDTO }) {
@@ -66,42 +54,8 @@ function LoanCycleItem({ c }: { c: LoanCycleDTO }) {
         className={`absolute -left-5.5 top-2 size-3 rounded-full border-2 border-sf shadow-[0_0_0_1px_var(--hair)] ${CYCLE_DOT[c.status]}`}
         aria-hidden
       />
-      <div className={`rounded-10 border border-l-2 border-hair ${CYCLE_EDGE[c.status]} bg-sf2 p-3`}>
-        {/* Header: cycle # + status on the left, loan amount + interest stacked on the right */}
-        <div className="flex items-start justify-between gap-2.5">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm font-bold leading-none text-ink">Cycle #{c.n}</span>
-            <StatusBadge status={CYCLE_BADGE[c.status]} label={c.statusLabel} />
-          </div>
-          <div className="flex flex-col items-end gap-1.25">
-            <span className="font-mono text-sm font-bold leading-none text-ink">{c.amt}</span>
-            <span className="text-10 font-medium leading-none text-fnt">
-              interest <span className="font-mono font-semibold text-in">{c.interest}</span>
-            </span>
-          </div>
-        </div>
-        {/* Metadata: period · rate · duration — icon-led, wraps on narrow screens */}
-        <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-hair pt-2.5">
-          <Meta icon={<CalendarRange className="size-3.5 text-mut" strokeWidth={2} aria-hidden />}>
-            <span className="text-ink">{c.start}</span> <span className="text-fnt">→</span>{" "}
-            <span className="text-ink">{c.end}</span>
-          </Meta>
-          <Meta icon={<Percent className="size-3.5 text-mut" strokeWidth={2} aria-hidden />}>
-            {c.rate}% <span className="text-fnt">/ mo</span>
-          </Meta>
-          <Meta icon={<Clock className="size-3.5 text-mut" strokeWidth={2} aria-hidden />}>{c.days}</Meta>
-        </div>
-      </div>
+      <LoanCycleCard c={c} />
     </li>
-  );
-}
-
-function Meta({ icon, children }: { icon: ReactNode; children: ReactNode }) {
-  return (
-    <span className="inline-flex items-center gap-1.5 text-11 font-medium leading-none text-fnt">
-      {icon}
-      <span>{children}</span>
-    </span>
   );
 }
 

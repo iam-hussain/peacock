@@ -1,8 +1,8 @@
 import "server-only";
 import { prisma } from "@/server/db";
 import { formatPaise, profitShare } from "@/lib/money";
-import { monthYear, monthsDays, tenure, daysBetween, dayMonthYear } from "@/lib/date";
-import { loanEventsMap, reconstructCycles, loanConfig, isOverdue, interestOwedTotal, type LoanCfg } from "./loans";
+import { monthYear, monthsDays, tenure, dayMonthYear } from "@/lib/date";
+import { loanEventsMap, reconstructCycles, loanConfig, isOverdue, interestOwedTotal, loanCycleDTOs, type LoanCfg, type LoanCycleDTO } from "./loans";
 import { vendorProfitAndObligation } from "./vendors";
 import { getCashHolderOptions } from "./entries";
 import { reversedTxnIds } from "./shared";
@@ -284,17 +284,7 @@ export async function getJoinPreview(): Promise<JoinPreviewDTO> {
 }
 
 // ---------------- detail ----------------
-export interface LoanCycleDTO {
-  n: number;
-  status: "closed" | "active" | "overdue";
-  statusLabel: string;
-  amt: string;
-  start: string;
-  end: string;
-  rate: string;
-  days: string;
-  interest: string;
-}
+export type { LoanCycleDTO } from "./loans";
 
 // Human labels for the Charge.reason string enum (see schema note).
 const REASON_LABEL: Record<string, string> = {
@@ -606,22 +596,10 @@ export async function getMemberDetail(id: string, ctx?: MemberDetailContext): Pr
   for (const l of [...loans].reverse()) {
     const events = eventsMap.get(l.id) ?? [];
     const overdueLoan = l.status === "ACTIVE" && isOverdue(l.startedAt, loanCfg, now);
-    for (const c of reconstructCycles(events, l.monthlyRateBps, now, loanCfg.dayInterestFrom)) {
-      interestGen += c.interest;
-      const status = !c.open ? "closed" : overdueLoan ? "overdue" : "active";
-      cycles.push({
-        n: cycles.length + 1,
-        status,
-        statusLabel: status === "closed" ? "Closed" : status === "overdue" ? "Overdue" : "Active",
-        amt: formatPaise(c.balance),
-        start: dayMonthYear(c.start),
-        end: c.open ? "now" : dayMonthYear(c.end),
-        rate: String(l.monthlyRateBps / 100),
-        days: monthsDays(daysBetween(c.start, c.end)),
-        interest: formatPaise(c.interest),
-      });
-    }
+    interestGen += reconstructCycles(events, l.monthlyRateBps, now, loanCfg.dayInterestFrom).reduce((s, c) => s + c.interest, 0n);
+    cycles.push(...loanCycleDTOs(events, l.monthlyRateBps, now, loanCfg, overdueLoan));
   }
+  cycles.forEach((c, i) => (c.n = i + 1)); // renumber 1..N across ALL the member's loans, oldest first
   cycles.reverse(); // most-recent cycle first
   const interestDue = interestGen > interestPaid ? interestGen - interestPaid : 0n;
 

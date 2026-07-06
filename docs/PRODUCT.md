@@ -342,7 +342,8 @@ hasn't been paid yet.
 - **A full "month" of a loan is counted from the day it started** (e.g. the 20th to the 20th).
   Each completed month charges the full monthly rate.
 - **Leftover days** beyond the last complete month are charged **per day**, where the daily rate
-  is the monthly rate **divided by the number of days in that incomplete month**.
+  is the monthly rate **divided by 30** — a fixed 30-day convention, whatever calendar month the
+  days fall in.
 - The principal can change over the loan's life (more disbursed, or some repaid). **Each time the
   outstanding amount changes, the month-count restarts from that day** for the new amount.
 - A loan's rate is **fixed at its start** — later rate changes don't affect it.
@@ -350,7 +351,7 @@ hasn't been paid yet.
 ```mermaid
 flowchart LR
   S["Loan starts (e.g. 20th)"] --> M1["Each full month → 1% on the outstanding"]
-  M1 --> DAYS["Leftover days → (1% ÷ days in that month) per day"]
+  M1 --> DAYS["Leftover days → (1% ÷ 30) per day"]
   CHG["Outstanding changes<br/>(repay / new tranche)"] -->|month-count restarts| M1
 ```
 
@@ -358,7 +359,7 @@ flowchart LR
 
 > A member borrows **₹50,000** and keeps it **2 months and 25 days**.
 > - 2 full months → **2 × 1% of ₹50,000**.
-> - 25 extra days → **25 × (1% of ₹50,000 ÷ days in that month)**.
+> - 25 extra days → **25 × (1% of ₹50,000 ÷ 30)**.
 >
 > If they then repay ₹20,000, the remaining **₹30,000** starts a **fresh count from that day**,
 > charged the same way until it's cleared.

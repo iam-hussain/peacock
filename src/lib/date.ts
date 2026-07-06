@@ -28,9 +28,19 @@ export function dayMonth(d: Date): string {
   return `${String(i.getUTCDate()).padStart(2, "0")} ${MON[i.getUTCMonth()]}`;
 }
 
-/** whole days between two dates (b − a), floored at 0 */
+/** The IST calendar date of an instant, as a UTC-midnight Date. Transactions are date-based —
+ * stored times-of-day vary (midnight UTC, midnight IST, real entry times), so ALL date math must
+ * go through this to compare calendar dates, never raw instants. Idempotent. */
+export function istDate(d: Date): Date {
+  const i = ist(d);
+  i.setUTCHours(0, 0, 0, 0);
+  return i;
+}
+
+/** whole IST calendar days between two dates (b − a), floored at 0 — 13 Feb → 14 Feb is 1 day
+ * regardless of the stored times-of-day */
 export function daysBetween(a: Date, b: Date): number {
-  return Math.max(0, Math.floor((b.getTime() - a.getTime()) / 86_400_000));
+  return Math.max(0, Math.round((istDate(b).getTime() - istDate(a).getTime()) / 86_400_000));
 }
 
 /** Date shifted by n whole calendar months (used for loan term-end / cooldown windows).
@@ -46,10 +56,12 @@ export function addMonths(d: Date, n: number): Date {
   return r;
 }
 
-/** "4 months 5 days" from a whole-day count (30-day months for display). */
-export function monthsDays(days: number): string {
-  const m = Math.floor(days / 30);
-  const d = days % 30;
+/** "3 months 28 days" — whole calendar months from `from`, plus leftover days (IST dates). */
+export function monthsDays(fromRaw: Date, toRaw: Date): string {
+  const from = istDate(fromRaw), to = istDate(toRaw);
+  let m = Math.max(0, (to.getUTCFullYear() - from.getUTCFullYear()) * 12 + to.getUTCMonth() - from.getUTCMonth());
+  while (m > 0 && addMonths(from, m) > to) m--;
+  const d = daysBetween(addMonths(from, m), to);
   const parts: string[] = [];
   if (m) parts.push(`${m} month${m === 1 ? "" : "s"}`);
   if (d || !m) parts.push(`${d} day${d === 1 ? "" : "s"}`);

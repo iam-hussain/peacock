@@ -67,7 +67,7 @@ export function TabLoans() {
       <Card title="How interest is counted" icon={Percent}>
         <div className="grid gap-2.5 sm:grid-cols-3">
           <MiniRule n="1" title="Full months" body="Counted from the start day (e.g. 5th → 5th). Each completed month charges the full 1%." />
-          <MiniRule n="2" title="Leftover days" body="Beyond the last full month, each day charges 1% ÷ the number of days in that month." />
+          <MiniRule n="2" title="Leftover days" body="Beyond the last full month, each day charges 1% ÷ 30 — a fixed 30-day convention." />
           <MiniRule n="3" title="Balance changes reset" body="Every time the outstanding changes (repay or new tranche), the month-count restarts for the new amount." />
         </div>
       </Card>

@@ -14,6 +14,7 @@ import { getCurrentUser } from "@/server/queries/session";
 import { shareableClubProfit } from "@/server/queries/members";
 import { getActivity } from "@/server/queries/notifications";
 import { quarterBounds } from "@/lib/quarter";
+import { istDate } from "@/lib/date";
 import { quarterFigures } from "@/server/queries/close-quarter";
 import { bustStats } from "@/server/stats";
 
@@ -62,10 +63,11 @@ export async function markAllRead(): Promise<ActionResult> {
 export type ActionResult = { ok: boolean; error?: string; deferred?: boolean };
 
 const str = (fd: FormData, k: string) => (fd.get(k) ?? "").toString().trim();
-// Parse a form date/month string ("2026-06-01" or "2026-06") to a Date; empty/invalid → now.
+// Parse a form date/month string ("2026-06-01" or "2026-06") to a Date; empty/invalid → today.
+// Normalized to the IST calendar date at UTC midnight — all stored dates are date-only.
 const parseFormDate = (s: string): Date => {
   const d = s ? new Date(s) : new Date();
-  return Number.isNaN(d.getTime()) ? new Date() : d;
+  return istDate(Number.isNaN(d.getTime()) ? new Date() : d);
 };
 const splitName = (full: string) => {
   const [first, ...rest] = full.trim().split(/\s+/);
@@ -378,7 +380,7 @@ async function addCharge(fd: FormData): Promise<ActionResult> {
   const valid = kind === "PENALTY" ? PENALTY_REASONS : CATCHUP_REASONS;
   const reason = p.data.reason && valid.has(p.data.reason) ? p.data.reason : "OTHER";
   await prisma.charge.create({
-    data: { membershipId: p.data.membershipId, kind, reason, amount, occurredAt: p.data.date ? new Date(p.data.date) : new Date(), note: p.data.note || null },
+    data: { membershipId: p.data.membershipId, kind, reason, amount, occurredAt: istDate(p.data.date ? new Date(p.data.date) : new Date()), note: p.data.note || null },
   });
   revalidatePath(`/members/${p.data.memberId}`);
   return { ok: true };
@@ -399,7 +401,7 @@ async function editCharge(fd: FormData): Promise<ActionResult> {
       amount,
       note: str(fd, "note") || null,
       ...(reason && (CATCHUP_REASONS.has(reason) || PENALTY_REASONS.has(reason)) ? { reason } : {}),
-      ...(date ? { occurredAt: new Date(date) } : {}),
+      ...(date ? { occurredAt: istDate(new Date(date)) } : {}),
     },
   });
   revalidatePath(`/members/${memberId}`);
@@ -490,7 +492,7 @@ async function rejoin(fd: FormData): Promise<ActionResult> {
 
   const catchup = rupeesToPaise(parsed.data.catchup ?? "");
   if (catchup < 0n) return { ok: false, error: "Catch-up can't be negative." };
-  const date = parsed.data.date ? new Date(parsed.data.date) : new Date();
+  const date = istDate(parsed.data.date ? new Date(parsed.data.date) : new Date());
   const nextSeq = Math.max(0, ...member.memberships.map((s) => s.seq)) + 1;
 
   await prisma.$transaction(async (tx) => {

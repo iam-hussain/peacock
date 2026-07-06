@@ -2,7 +2,7 @@ import "server-only";
 import { cache } from "react";
 import { prisma } from "@/server/db";
 import { formatLakh, formatPaise, roundToWholeRupee } from "@/lib/money";
-import { monthYear, dayMonthYear, daysBetween, monthsDays, ist, addMonths } from "@/lib/date";
+import { monthYear, dayMonthYear, daysBetween, monthsDays, istDate, addMonths } from "@/lib/date";
 import { reversedTxnIds } from "./shared";
 import type { Status } from "@/components/shared/status-badge";
 
@@ -28,30 +28,49 @@ export const loanConfig = cache(async function loanConfig(): Promise<LoanCfg> {
   return cfg ? { ...cfg } : DEFAULT_CFG;
 });
 
-// PRODUCT.md §9: full calendar months at the monthly rate + leftover days pro-rated by the number of
-// days in that incomplete month. All month/day anchoring is on the IST wall-clock (§11). Before
-// `dayInterestFrom` interest was whole-months-only (a part-month rounds UP); daily from then on.
-export function accruedInterest(principal: bigint, bps: number, start: Date, asOf: Date, dayInterestFrom: Date): bigint {
-  if (principal <= 0n || asOf <= start || bps <= 0) return 0n;
+/** The pieces of one accrual: `months` full months at `monthly`, plus `leftoverDays` charged
+ * `dayPart` in total (monthly ÷ 30, fixed convention) — or, in the pre-`dayInterestFrom` era,
+ * a part-month `roundedUp` to one full `monthly`. */
+export interface InterestBreakdown {
+  monthly: bigint;
+  months: number;
+  leftoverDays: number;
+  dayPart: bigint;
+  roundedUp: boolean;
+  total: bigint;
+}
+
+// PRODUCT.md §9: full loan-months (anniversary to anniversary) at the monthly rate + leftover days
+// pro-rated at monthly ÷ 30 — a fixed 30-day convention, whatever calendar month the days fall in.
+// All month/day anchoring is on the IST wall-clock (§11). Before `dayInterestFrom` interest was
+// whole-months-only (a part-month rounds UP); daily from then on.
+export function interestBreakdown(principal: bigint, bps: number, start: Date, asOf: Date, dayInterestFrom: Date): InterestBreakdown {
+  // All anchoring on IST calendar dates — stored times-of-day are noise (transactions are date-based).
+  const end = istDate(asOf);
+  const startD = istDate(start);
+  const zero: InterestBreakdown = { monthly: 0n, months: 0, leftoverDays: 0, dayPart: 0n, roundedUp: false, total: 0n };
+  if (principal <= 0n || end <= startD || bps <= 0) return zero;
   const monthly = interestOf(principal, bps);
-  const end = ist(asOf);
-  const startIst = ist(start);
   // Count whole monthly anniversaries. addMonths clamps at month-end and anchors each step to the
   // original start day, so a 31st-of-month loan steps 28/29→31→30… without the Feb-31→Mar-3 overflow.
   let months = 0;
-  while (addMonths(startIst, months + 1) <= end) months++;
-  const anniv = addMonths(startIst, months); // last completed anniversary (IST wall-clock)
-  let total = monthly * BigInt(months);
-  const leftover = daysBetween(anniv, end);
-  if (leftover > 0) {
-    if (anniv < ist(dayInterestFrom)) {
-      total += monthly; // whole-month era: any part-month rounds up to a full month
+  while (addMonths(startD, months + 1) <= end) months++;
+  const anniv = addMonths(startD, months); // last completed anniversary (IST calendar date)
+  const leftoverDays = daysBetween(anniv, end);
+  let dayPart = 0n, roundedUp = false;
+  if (leftoverDays > 0) {
+    if (anniv < istDate(dayInterestFrom)) {
+      roundedUp = true; // whole-month era: any part-month rounds up to a full month
+      dayPart = monthly;
     } else {
-      const dim = new Date(Date.UTC(anniv.getUTCFullYear(), anniv.getUTCMonth() + 1, 0)).getUTCDate();
-      total += (monthly * BigInt(leftover)) / BigInt(dim);
+      dayPart = (monthly * BigInt(leftoverDays)) / 30n; // fixed 30-day convention (§9)
     }
   }
-  return total;
+  return { monthly, months, leftoverDays, dayPart, roundedUp, total: monthly * BigInt(months) + dayPart };
+}
+
+export function accruedInterest(principal: bigint, bps: number, start: Date, asOf: Date, dayInterestFrom: Date): bigint {
+  return interestBreakdown(principal, bps, start, asOf, dayInterestFrom).total;
 }
 
 /** Extra interest on an overdue loan: `overduePenaltyBps` per month on the outstanding balance,
@@ -59,14 +78,14 @@ export function accruedInterest(principal: bigint, bps: number, start: Date, asO
  * applies to every overdue loan instantly. Zero unless past term and the penalty is enabled. */
 export function overduePenalty(outstanding: bigint, startedAt: Date, cfg: LoanCfg, asOf: Date): bigint {
   if (cfg.overduePenaltyBps <= 0 || outstanding <= 0n) return 0n;
-  const termEnd = addMonths(startedAt, cfg.loanTermMonths);
-  if (asOf <= termEnd) return 0n;
+  const termEnd = addMonths(istDate(startedAt), cfg.loanTermMonths);
+  if (istDate(asOf) <= termEnd) return 0n;
   return accruedInterest(outstanding, cfg.overduePenaltyBps, termEnd, asOf, cfg.dayInterestFrom);
 }
 
 /** A loan is overdue once `asOf` passes its `loanTermMonths` calendar-month term (§8). */
 export function isOverdue(startedAt: Date, cfg: LoanCfg, asOf: Date): boolean {
-  return asOf > addMonths(startedAt, cfg.loanTermMonths);
+  return istDate(asOf) > addMonths(istDate(startedAt), cfg.loanTermMonths);
 }
 
 /** A period where the outstanding balance stayed fixed (PRODUCT.md §9). Any
@@ -130,6 +149,51 @@ export function reconstructCycles(events: { at: Date; delta: bigint }[], bps: nu
 
 export type LoanStatusKey = "active" | "overdue" | "closed";
 
+// One balance-constant stretch of a loan, display-ready (member page cycle list + /loans expand).
+export interface LoanCycleDTO {
+  n: number;
+  status: LoanStatusKey;
+  statusLabel: string;
+  amt: string;
+  start: string;
+  end: string;
+  rate: string;
+  days: string;
+  interest: string;
+  breakdown: { label: string; amt: string }[]; // how the interest figure is built (months × monthly, days × ÷30)
+}
+
+/** Replay a loan's events into display-ready cycle DTOs (oldest first, n = 1..N). */
+export function loanCycleDTOs(events: { at: Date; delta: bigint }[], rateBps: number, asOf: Date, cfg: LoanCfg, loanOverdue: boolean): LoanCycleDTO[] {
+  const out: LoanCycleDTO[] = [];
+  for (const c of reconstructCycles(events, rateBps, asOf, cfg.dayInterestFrom)) {
+    const status: LoanStatusKey = !c.open ? "closed" : loanOverdue ? "overdue" : "active";
+    const bd = interestBreakdown(c.balance, rateBps, c.start, c.end, cfg.dayInterestFrom);
+    const breakdown: LoanCycleDTO["breakdown"] = [];
+    if (bd.months > 0)
+      breakdown.push({ label: `${bd.months} month${bd.months === 1 ? "" : "s"} × ${formatPaise(bd.monthly)}`, amt: formatPaise(bd.monthly * BigInt(bd.months)) });
+    if (bd.leftoverDays > 0)
+      breakdown.push(
+        bd.roundedUp
+          ? { label: `${bd.leftoverDays} day${bd.leftoverDays === 1 ? "" : "s"} → full month (pre-daily rule)`, amt: formatPaise(bd.dayPart) }
+          : { label: `${bd.leftoverDays} day${bd.leftoverDays === 1 ? "" : "s"} × ${formatPaise(bd.monthly)} ÷ 30`, amt: formatPaise(bd.dayPart) },
+      );
+    out.push({
+      n: out.length + 1,
+      status,
+      statusLabel: status === "closed" ? "Closed" : status === "overdue" ? "Overdue" : "Active",
+      amt: formatPaise(c.balance),
+      start: dayMonthYear(c.start),
+      end: c.open ? "now" : dayMonthYear(c.end),
+      rate: String(rateBps / 100),
+      days: monthsDays(c.start, c.end),
+      interest: formatPaise(c.interest),
+      breakdown,
+    });
+  }
+  return out;
+}
+
 export interface LoanDTO {
   id: string;
   memberId: string;
@@ -157,6 +221,7 @@ export interface LoanDTO {
   interestDue?: string;
   interestUnpaid?: boolean; // closed loan whose interest is still (partly) unpaid → highlight
   interestOverpaid?: string; // member paid MORE interest than accrued (e.g. rounded up on exit) → credit
+  cycles: LoanCycleDTO[]; // most-recent first, for the expandable interest breakdown
 }
 
 async function loanRows() {
@@ -171,7 +236,7 @@ async function loanRows() {
 
 // interest = Σ per-cycle accrual across every balance segment of the loan's life.
 // interestOwed (closed loans only) = still-unpaid loan interest for the borrower; >0 → highlight.
-function toDTO(l: Awaited<ReturnType<typeof loanRows>>[number], cfg: LoanCfg, tranches: number, generated: bigint, currentInterest: bigint, interestOwed: bigint, pendingInterest: boolean, overpaid: bigint, pendingPaise: bigint): LoanDTO {
+function toDTO(l: Awaited<ReturnType<typeof loanRows>>[number], cfg: LoanCfg, tranches: number, generated: bigint, currentInterest: bigint, interestOwed: bigint, pendingInterest: boolean, overpaid: bigint, pendingPaise: bigint, cycles: LoanCycleDTO[]): LoanDTO {
   const overpaidLabel = overpaid > 0n ? formatPaise(overpaid) : undefined;
   const name = [l.membership.member.firstName, l.membership.member.lastName].filter(Boolean).join(" ");
   const memberId = l.membership.member.id;
@@ -179,30 +244,32 @@ function toDTO(l: Awaited<ReturnType<typeof loanRows>>[number], cfg: LoanCfg, tr
   const memberClosed = l.membership.status === "CLOSED";
   const asOf = l.closedAt ?? new Date();
   const days = daysBetween(l.startedAt, asOf);
-  const termDays = daysBetween(l.startedAt, addMonths(l.startedAt, cfg.loanTermMonths)) || 1;
+  const termDays = daysBetween(l.startedAt, addMonths(istDate(l.startedAt), cfg.loanTermMonths)) || 1;
   const overdue = l.status === "ACTIVE" && isOverdue(l.startedAt, cfg, asOf);
   const key: LoanStatusKey = l.status === "CLOSED" ? "closed" : overdue ? "overdue" : "active";
   if (key === "closed") {
     return {
       id: l.id, memberId, member: name, avatar, status: key, statusLabel: "Closed", badge: "settled", memberClosed, pendingInterest, amount: formatLakh(l.requestedAmount), open: false,
-      closedDate: monthYear(l.closedAt ?? l.startedAt), ran: `ran ${monthsDays(days)}`,
+      closedDate: monthYear(l.closedAt ?? l.startedAt), ran: `ran ${monthsDays(l.startedAt, asOf)}`,
       interestEarned: formatPaise(generated),
       interestDue: interestOwed > 0n ? formatPaise(interestOwed) : undefined,
       interestUnpaid: interestOwed > 0n,
       interestOverpaid: overpaidLabel,
+      cycles,
     };
   }
   const pct = Math.min(100, Math.round((days * 100) / termDays)); // term elapsed
   return {
     id: l.id, memberId, member: name, avatar, status: key, statusLabel: overdue ? "Overdue" : "Active", badge: overdue ? "left" : "active", memberClosed, pendingInterest,
     amount: formatLakh(l.requestedAmount), open: true, start: monthYear(l.startedAt),
-    elapsed: monthsDays(days), overdue,
+    elapsed: monthsDays(l.startedAt, asOf), overdue,
     pct, pending: formatLakh(l.principalOutstanding),
     interest: formatPaise(pendingPaise), // net still-owed (accrued − paid), matches member detail
     interestEarned: formatPaise(generated),
     interestCurrent: currentInterest > 0n ? formatPaise(currentInterest) : undefined,
     rate: rateLabel(l.monthlyRateBps), tranches,
     interestOverpaid: overpaidLabel,
+    cycles,
   };
 }
 
@@ -219,7 +286,9 @@ export async function getLoans(): Promise<LoanDTO[]> {
     const interest = roundToWholeRupee(generated + penalty); // whole-rupee, penalty-incl — drives owed/pending math
     const currentInterest = cycles.find((c) => c.open)?.interest ?? 0n; // latest (open) cycle — active loans only
     const tranches = events.filter((e) => e.delta > 0n).length;
-    return { l, interest, generated, currentInterest, tranches };
+    const loanOverdue = l.status === "ACTIVE" && isOverdue(l.startedAt, cfg, now);
+    const cycleDtos = loanCycleDTOs(events, l.monthlyRateBps, now, cfg, loanOverdue).reverse(); // most-recent first
+    return { l, interest, generated, currentInterest, tranches, cycleDtos };
   });
 
   // Loan interest is collected per membership (LOAN_INTEREST carries no loanId), so track the
@@ -254,7 +323,7 @@ export async function getLoans(): Promise<LoanDTO[]> {
   // (rows are ordered newest-closed-first), not repeated across every past closed loan.
   const anchored = new Set<string>();
   const overAnchored = new Set<string>();
-  return computed.map(({ l, tranches }) => {
+  return computed.map(({ l, tranches, cycleDtos }) => {
     const ms = l.membership.id;
     const owed = (accruedByMs.get(ms) ?? 0n) - (paidByMs.get(ms) ?? 0n);
     let unpaidOwed = 0n;
@@ -276,7 +345,7 @@ export async function getLoans(): Promise<LoanDTO[]> {
     const pendingPaise = owed > 0n ? owed : 0n; // net owed by this member (per-member; loans are one-at-a-time)
     const memberGen = genByMs.get(ms) ?? 0n; // Generated = member's lifetime total across all loans
     const currentGen = currentByMs.get(ms) ?? 0n; // Current = latest (open) cycle interest of the member's active loan
-    return toDTO(l, cfg, tranches, memberGen, currentGen, unpaidOwed, pendingInterest, overpaid, pendingPaise);
+    return toDTO(l, cfg, tranches, memberGen, currentGen, unpaidOwed, pendingInterest, overpaid, pendingPaise, cycleDtos);
   });
 }
 
@@ -406,8 +475,8 @@ export async function getLoanEligibility(): Promise<LoanEligibilityDTO[]> {
         .filter((l) => l.status === "CLOSED" && l.closedAt)
         .map((l) => l.closedAt!)
         .sort((a, b) => b.getTime() - a.getTime())[0];
-      const cooldownEnd = lastClosed && cfg.loanCooldownMonths > 0 ? addMonths(lastClosed, cfg.loanCooldownMonths) : null;
-      const inCooldown = cooldownEnd ? now < cooldownEnd : false;
+      const cooldownEnd = lastClosed && cfg.loanCooldownMonths > 0 ? addMonths(istDate(lastClosed), cfg.loanCooldownMonths) : null;
+      const inCooldown = cooldownEnd ? istDate(now) < cooldownEnd : false;
 
       let eligible = true;
       let reason = "Ready to borrow";
