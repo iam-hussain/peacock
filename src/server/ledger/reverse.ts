@@ -1,5 +1,6 @@
 import "server-only";
 import { prisma } from "@/server/db";
+import { isoDate } from "@/lib/date";
 import { postTransaction } from "./post-transaction";
 import type { Prisma, TxnType } from "@prisma/client";
 
@@ -138,9 +139,9 @@ export async function editTransactionAmount(
   const txn = await loadCorrectable(id);
   if (newAmountPaise <= 0n) throw new Error("Amount must be greater than zero.");
   const oldA = primaryMagnitude(txn);
-  // Keep the exact original timestamp when the date is unchanged — re-posting at the date's midnight
-  // would otherwise shift daily-interest accrual by up to a day on an amount-only edit.
-  const sameDate = newDateISO === txn.occurredAt.toISOString().slice(0, 10);
+  // Keep the original instant when the (IST) date is unchanged — all date math is IST-calendar-based,
+  // so only a genuine date change should move the accrual anchor.
+  const sameDate = newDateISO === isoDate(txn.occurredAt);
   const occurredAt = newDateISO && !sameDate ? new Date(newDateISO) : txn.occurredAt;
   const lines = rebuildLines(txn, newAmountPaise); // validate shape before we touch anything
 

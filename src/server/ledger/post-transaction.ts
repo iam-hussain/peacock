@@ -1,4 +1,5 @@
 import { prisma } from "@/server/db";
+import { istDate } from "@/lib/date";
 import type { Prisma, TxnType } from "@prisma/client";
 
 export interface PostLine {
@@ -28,7 +29,10 @@ export interface PostInput {
  * side-effects commit atomically); omit it to open a fresh transaction. Never opens a nested
  * one — with an outer `tx` the same client is reused.
  */
-export async function postTransaction(input: PostInput, tx?: Prisma.TransactionClient): Promise<{ id: string }> {
+export async function postTransaction(rawInput: PostInput, tx?: Prisma.TransactionClient): Promise<{ id: string }> {
+  // Transactions are date-based (§11): normalize to the IST calendar date at UTC midnight, so
+  // stored instants never carry a stray time-of-day whatever the caller passed.
+  const input = { ...rawInput, occurredAt: istDate(rawInput.occurredAt) };
   const { lines } = input;
   if (lines.length < 2) throw new Error("A transaction needs at least two legs.");
   if (lines.some((l) => l.amount === 0n)) throw new Error("Ledger lines cannot be zero.");

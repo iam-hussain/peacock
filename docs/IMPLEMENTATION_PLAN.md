@@ -900,7 +900,7 @@ interestToDate(loan, asOf = now):
       for (ss, ee, daily) in splitAtDailyBoundary(s, e):  # split only at dayInterestFrom
           { months, extraDays } = anchoredMonths(ss, ee)  # anchored at ss (the segment's own start)
           if daily:                                       # on/after dayInterestFrom
-              dailyRate = (B*rate) / daysInIncompleteMonthIST(ss, months)   # monthlyRate ÷ days in the trailing incomplete month
+              dailyRate = (B*rate) / 30                    # monthlyRate ÷ 30 (fixed 30-day convention)
               total += B*rate*months + dailyRate*extraDays
           else:                                           # before dayInterestFrom: whole-month, round partial up
               total += B*rate * (months + (extraDays > 0 ? 1 : 0))
@@ -919,10 +919,9 @@ overduePenalty(loan, asOf):
 interestPending(loan) = interestToDate(loan) − Σ loan's LOAN_INTEREST payments
 ```
 
-- **Daily denominator (owner-confirmed):** the trailing leftover days are pro-rated over the number
-  of days in **the incomplete (next, partial) anchored month** — i.e. `daysInIncompleteMonthIST(ss,
-  months)` = days between the last completed anchor (`ss + months`) and the following anchor
-  (`ss + months + 1 month`). Daily rate = `monthlyRate ÷ that day-count`.
+- **Daily denominator (owner-confirmed, Jul 2026):** the trailing leftover days are charged at a
+  fixed `monthlyRate ÷ 30` per day — a 30-day convention independent of which calendar month the
+  days fall in. (Supersedes the earlier days-in-the-incomplete-anchored-month rule.)
 - **Worked example (owner's):** ₹1L day 0; +₹1.5L day 7 (→ ₹2.5L); single-shot repay at ~5 months
   ⇒ `accrue(₹1L, day0→day7)` + `accrue(₹2.5L, day7→repay)`. Partial: repay ₹2L mid-way, remaining
   ₹50k accrues from that day (anchor reset) until paid two weeks later at the daily rate.
@@ -1617,7 +1616,8 @@ The "very fast website" goal holds because v1's expensive move
 
 ## 28. Open questions / TBDs
 
-**Resolved (Rev 3):** daily denominator = `monthlyRate ÷ days in the incomplete trailing month`;
+**Resolved (Rev 4):** daily denominator = `monthlyRate ÷ 30` (fixed 30-day convention, owner call
+Jul 2026 — previously days-in-the-trailing-incomplete-month);
 rate changes apply to **new loans only** (each loan keeps its opening rate); chit installments
 **vary, ramping up to the margin** `chitValue/durationMonths`; migration assigns treasuries from
 **v1's recorded treasurer per transaction**; pending **interest is profit**, pending **deposits are

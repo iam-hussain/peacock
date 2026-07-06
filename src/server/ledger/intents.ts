@@ -1,7 +1,7 @@
 import { prisma } from "@/server/db";
 import type { Prisma, TxnType } from "@prisma/client";
 import { rupeesToPaise, formatPaise } from "@/lib/money";
-import { addMonths } from "@/lib/date";
+import { addMonths, istDate } from "@/lib/date";
 import { ensureTreasury, ensureEquity, ensureIncome, ensureVendorAccount, ensureLoanReceivable } from "./accounts";
 import { postTransaction } from "./post-transaction";
 
@@ -60,7 +60,9 @@ export async function postIntent(payload: EntryPayload, actorId?: string, outerT
   if (!type) throw new Error(`Unknown intent: ${payload.intent}`);
   const A = rupeesToPaise(payload.amount ?? "0");
   if (A <= 0n) throw new Error("Amount must be greater than zero.");
-  const occurredAt = payload.date ? new Date(payload.date) : new Date();
+  // Transactions are date-based: strip time-of-day so every stored instant is the IST calendar
+  // date at UTC midnight (date math across the app compares istDate()s).
+  const occurredAt = istDate(payload.date ? new Date(payload.date) : new Date());
   const note = payload.note ?? null;
 
   // Run the post + its side-effect writes atomically: reuse the caller's `outerTx` when present
@@ -227,5 +229,5 @@ async function cooldownEndsAt(membershipId: string): Promise<Date | null> {
   ]);
   const months = cfg?.loanCooldownMonths ?? 0;
   if (!last?.closedAt || months <= 0) return null;
-  return addMonths(last.closedAt, months);
+  return addMonths(istDate(last.closedAt), months);
 }

@@ -1,5 +1,6 @@
 import { prisma } from "@/server/db";
 import { profitShare } from "@/lib/money";
+import { istDate } from "@/lib/date";
 import { ensureTreasury, ensureEquity, ensureIncome, ensureLoanReceivable, ensureProfitDistributed } from "./accounts";
 import { postTransaction } from "./post-transaction";
 import { shareableClubProfit, expectedClubDeposit, type Stage } from "@/server/queries/members";
@@ -48,7 +49,8 @@ export async function settleMembership(params: {
   note?: string | null;
   actorId?: string;
 }): Promise<SettlementGuide & { paid: bigint }> {
-  const { membershipId, treasurerMemberId, finalPaise, occurredAt, note, actorId } = params;
+  const { membershipId, treasurerMemberId, finalPaise, note, actorId } = params;
+  const occurredAt = istDate(params.occurredAt); // date-based, like all transactions
   if (finalPaise <= 0n) throw new Error("Settlement amount must be greater than zero.");
   const g = await computeSettlement(membershipId);
   const reference = `settle:${membershipId}:${occurredAt.getTime()}`;

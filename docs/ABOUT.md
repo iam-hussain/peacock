@@ -102,7 +102,8 @@ When you borrow, you pay a small **interest** — today **1% per month** on what
 It's counted in a fair, easy-to-picture way:
 
 - For **each full month** you keep the loan, you pay that month's 1%.
-- For the **extra days** beyond the last full month, you pay a small per-day amount.
+- For the **extra days** beyond the last full month, you pay a small per-day amount — one
+  thirtieth of the monthly interest per day, whichever month it is.
 
 And here's the fair part: **as you repay, interest is charged only on what's still left.** So if
 you pay back a big chunk, the remaining smaller amount is what keeps earning interest from then on.
