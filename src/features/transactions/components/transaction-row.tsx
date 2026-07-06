@@ -1,6 +1,6 @@
 "use client";
 
-import { Pencil, Trash2 } from "lucide-react";
+import { Pencil, StickyNote, Trash2 } from "lucide-react";
 import { FormModalButton } from "@/components/shared/form-modal-button";
 import { useIsAdmin } from "@/lib/admin";
 import { type Txn, type Role, type Dir } from "../data";
@@ -38,6 +38,16 @@ function PartyPill({ p, tinted = false }: { p: Txn["from"]; tinted?: boolean }) 
   );
 }
 
+/** The entry's note (description), shown under the parties. Truncates in the table, wraps on the card. */
+function NoteLine({ note, className = "", iconClass = "", truncate = false }: { note: string; className?: string; iconClass?: string; truncate?: boolean }) {
+  return (
+    <div className={`flex ${truncate ? "items-center" : "items-start"} gap-1.25 font-medium text-fnt ${className}`} title={note}>
+      <StickyNote className={`flex-none ${iconClass}`} strokeWidth={2} />
+      <span className={truncate ? "truncate" : "min-w-0"}>{note}</span>
+    </div>
+  );
+}
+
 /** Mobile card — matches the "card view": type + amount, tinted party pills + method, dates. */
 export function MobileCard({ t }: { t: Txn }) {
   return (
@@ -55,6 +65,7 @@ export function MobileCard({ t }: { t: Txn }) {
         <PartyPill p={t.to} tinted />
         <span className="text-11 font-medium leading-none text-fnt">· {t.method}</span>
       </div>
+      {t.note && <NoteLine note={t.note} className="mt-2 text-11 leading-140" iconClass="mt-px size-3" />}
       <div className="mt-2.5 flex items-center justify-between gap-2">
         <span className="text-11 font-medium leading-none text-fnt">
           {t.date} · entered {t.entered}
@@ -72,10 +83,13 @@ export function Row({ t }: { t: Txn }) {
         <span className={`size-2 flex-none rounded-full ${DOT[t.dir]}`} />
         <span className="text-13 font-semibold leading-tight text-ink">{t.what}</span>
       </div>
-      <div className="flex min-w-0 flex-nowrap items-center gap-1.75">
-        <PartyPill p={t.from} tinted />
-        <span className="flex-none font-semibold text-fnt">→</span>
-        <PartyPill p={t.to} tinted />
+      <div className="flex min-w-0 flex-col gap-1.25">
+        <div className="flex min-w-0 flex-nowrap items-center gap-1.75">
+          <PartyPill p={t.from} tinted />
+          <span className="flex-none font-semibold text-fnt">→</span>
+          <PartyPill p={t.to} tinted />
+        </div>
+        {t.note && <NoteLine note={t.note} truncate className="text-10 leading-none" iconClass="size-2.75" />}
       </div>
       <div>
         <div className="whitespace-nowrap font-mono text-xs font-semibold leading-none text-ink">{t.date}</div>

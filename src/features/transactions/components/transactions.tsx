@@ -80,7 +80,8 @@ export function Transactions({ ledger }: { ledger: Txn[] }) {
           t.what.toLowerCase().includes(s) ||
           t.from.name.toLowerCase().includes(s) ||
           t.to.name.toLowerCase().includes(s) ||
-          t.amount.toLowerCase().includes(s)
+          t.amount.toLowerCase().includes(s) ||
+          (t.note?.toLowerCase().includes(s) ?? false)
         )
       )
         return false;
