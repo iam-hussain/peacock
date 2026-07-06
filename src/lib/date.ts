@@ -57,14 +57,14 @@ export function addMonths(d: Date, n: number): Date {
 }
 
 /** "3 months 28 days" — whole calendar months from `from`, plus leftover days (IST dates). */
-export function monthsDays(fromRaw: Date, toRaw: Date): string {
+export function monthsDays(fromRaw: Date, toRaw: Date, short = false): string {
   const from = istDate(fromRaw), to = istDate(toRaw);
   let m = Math.max(0, (to.getUTCFullYear() - from.getUTCFullYear()) * 12 + to.getUTCMonth() - from.getUTCMonth());
   while (m > 0 && addMonths(from, m) > to) m--;
   const d = daysBetween(addMonths(from, m), to);
   const parts: string[] = [];
-  if (m) parts.push(`${m} month${m === 1 ? "" : "s"}`);
-  if (d || !m) parts.push(`${d} day${d === 1 ? "" : "s"}`);
+  if (m) parts.push(short ? `${m}mo` : `${m} month${m === 1 ? "" : "s"}`);
+  if (d || !m) parts.push(short ? `${d}d` : `${d} day${d === 1 ? "" : "s"}`);
   return parts.join(" ");
 }
 

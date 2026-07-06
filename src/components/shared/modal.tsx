@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
+import { useVisualViewport } from "@/lib/use-visual-viewport";
 
 /**
  * Responsive modal: centered dialog on desktop, bottom sheet on mobile.
@@ -40,16 +41,35 @@ export function Modal({
     };
   }, [open, onClose]);
 
+  // The fixed container anchors to the layout viewport, whose bottom sits under the iOS
+  // keyboard — a bottom-sheet there vanishes behind it on the first re-layout while typing.
+  // Pin the container to the visual viewport instead so the sheet rides above the keyboard.
+  const box = useRef<HTMLDivElement>(null);
+  useVisualViewport(
+    useCallback(
+      (vv) => {
+        const el = box.current;
+        if (!el) return;
+        const shrunk = vv.height < document.documentElement.clientHeight - 1;
+        el.style.height = shrunk ? `${vv.height}px` : "";
+        el.style.transform = shrunk || vv.offsetTop > 1 ? `translateY(${vv.offsetTop}px)` : "";
+      },
+      // re-run when the modal (re)opens so an already-shrunk viewport is applied on mount
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      [open],
+    ),
+  );
+
   if (!open || typeof document === "undefined") return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4">
+    <div ref={box} className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4">
       <div className="absolute inset-0 bg-ink/40 backdrop-blur-[2px] animate-in fade-in" onClick={onClose} />
       <div
         role="dialog"
         aria-modal="true"
         aria-label={ariaLabel ?? (typeof title === "string" ? title : undefined)}
-        className={`relative flex max-h-[92vh] w-full flex-col overflow-hidden border border-bd bg-sf shadow-[0_20px_60px_var(--shadow)] animate-in slide-in-from-bottom-4 sm:zoom-in-95 sm:slide-in-from-bottom-0 ${
+        className={`relative flex max-h-[min(92vh,100%)] w-full flex-col overflow-hidden border border-bd bg-sf shadow-[0_20px_60px_var(--shadow)] animate-in slide-in-from-bottom-4 sm:zoom-in-95 sm:slide-in-from-bottom-0 ${
           wide ? "sm:max-w-[640px]" : "sm:max-w-120"
         } rounded-t-20 sm:rounded-2xl`}
       >
