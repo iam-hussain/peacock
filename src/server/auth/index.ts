@@ -40,9 +40,11 @@ export const auth = betterAuth({
   // better-auth CSRF-rejects cross-origin sign-in POSTs. CORS_ORIGINS mirrors the
   // /api CORS allowlist in src/proxy.ts so both layers trust the same origins.
   trustedOrigins: [
-    "http://localhost:8081",
     "peacock://",
-    ...(process.env.CORS_ORIGINS ?? "").split(",").map((s) => s.trim()).filter(Boolean),
+    ...(process.env.CORS_ORIGINS ?? "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean),
   ],
 });
 
