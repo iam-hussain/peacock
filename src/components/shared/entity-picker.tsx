@@ -115,7 +115,9 @@ export function PickerSheet({
         />
       </div>
 
-      <div className="mt-1.5 flex-1 overflow-y-auto">
+      {/* min-h keeps the sheet a stable size while filtering — it must not collapse to
+          "No matches." and sink behind the mobile keyboard */}
+      <div className="mt-1.5 min-h-[40vh] flex-1 overflow-y-auto">
         {list.map((o) => (
           <button
             key={o.id}
