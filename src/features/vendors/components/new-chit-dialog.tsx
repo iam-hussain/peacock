@@ -3,35 +3,10 @@
 import { useId, useState, useTransition } from "react";
 import { Modal, ModalActions } from "@/components/shared/modal";
 import { Field, TextInput, FieldRow } from "@/components/shared/form";
+import { AmountInput } from "@/components/shared/amount-input";
 import { formAction } from "@/lib/actions-client";
 
 const digits = (s: string) => s.replace(/[^\d]/g, "");
-
-/** ₹-prefixed amount input; `highlight` gives the teal ring used for the auto-filled margin. */
-function RupeeInput({
-  value,
-  onChange,
-  placeholder,
-  highlight,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  placeholder?: string;
-  highlight?: boolean;
-}) {
-  return (
-    <div className={`flex items-center gap-2 rounded-xl border bg-transparent px-4 py-3 ${highlight ? "border-teal bg-tlsf/40" : "border-bd2 focus-within:border-teal"}`}>
-      <span className="font-mono text-sm font-semibold leading-none text-mut">₹</span>
-      <input
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        inputMode="numeric"
-        className="w-full bg-transparent text-sm font-medium text-ink outline-none placeholder:text-fnt"
-      />
-    </div>
-  );
-}
 
 export function NewChitDialog({ children, buttonClassName }: { children: React.ReactNode; buttonClassName?: string }) {
   const formId = useId();
@@ -94,7 +69,7 @@ export function NewChitDialog({ children, buttonClassName }: { children: React.R
 
           <FieldRow>
             <Field label="Chit value (₹)">
-              <RupeeInput value={value} onChange={setValue} placeholder="5,00,000" />
+              <AmountInput size="md" value={value} onChange={setValue} placeholder="5,00,000" />
             </Field>
             <Field label="Duration (months)">
               <TextInput type="number" min={1} value={months} onChange={(e) => setMonths(e.target.value)} placeholder="20" />
@@ -103,7 +78,8 @@ export function NewChitDialog({ children, buttonClassName }: { children: React.R
 
           <FieldRow>
             <Field label="Max monthly · margin" hint="Auto = value ÷ months">
-              <RupeeInput
+              <AmountInput
+                size="md"
                 value={marginDisplay}
                 onChange={(val) => {
                   setMarginTouched(true);

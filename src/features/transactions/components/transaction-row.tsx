@@ -114,13 +114,20 @@ function RowActions({ t }: { t: Txn }) {
         <FormModalButton
           kind="editTransaction"
           title="Edit transaction"
-          subtitle={`${t.what} · ${t.from.name} → ${t.to.name}`}
           submitLabel="Save changes"
           hiddenFields={{ id: t.id }}
           buttonClassName="grid size-8 place-items-center rounded-lg text-fnt transition-colors hover:bg-bg2 hover:text-ink"
           buttonAriaLabel="Edit transaction"
+          intro={
+            <div className="mb-5 rounded-xl bg-bg2 px-3.5 py-3">
+              <div className="text-13 font-bold leading-tight text-ink">{t.what}</div>
+              <div className="mt-1 text-12 font-semibold leading-tight text-fnt">
+                {t.from.name} <span className="text-mut">→</span> {t.to.name}
+              </div>
+            </div>
+          }
           fields={[
-            { name: "amount", label: "Amount (₹)", type: "text", defaultValue: t.amountValue, required: true },
+            { name: "amount", label: "Amount", type: "amount", defaultValue: t.amountValue, required: true },
             { name: "date", label: "Transaction date", type: "date", defaultValue: t.isoDate },
           ]}
         >

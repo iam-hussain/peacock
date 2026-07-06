@@ -31,12 +31,13 @@ export function RecordPaymentDialog({
   const [amount, setAmount] = useState(remainingRupees > 0 ? round(remainingRupees) : "");
   const [treasurer, setTreasurer] = useState<PickOption | null>(null);
   const [date, setDate] = useState(today());
+  const [note, setNote] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [pending, start] = useTransition();
   const noun = bucket === "penalty" ? "penalty" : "catch-up";
 
   const submit = () => {
-    const n = Number(amount);
+    const n = Number(amount.replace(/,/g, ""));
     if (!amount.trim() || !(n > 0)) return setErr("Enter an amount greater than zero.");
     if (remainingRupees > 0 && n > remainingRupees + 0.5) return setErr(`Amount can't exceed the ${remainingLabel} remaining.`);
     if (!treasurer) return setErr("Pick the treasurer who received the cash.");
@@ -48,6 +49,7 @@ export function RecordPaymentDialog({
       fd.set("amount", amount);
       fd.set("treasurer", treasurer.name);
       fd.set("date", date);
+      fd.set("note", note.trim());
       const res = await formAction("recordPayment", fd);
       if (res.ok) { setErr(null); setOpen(false); }
       else setErr(res.error ?? "Something went wrong.");
@@ -78,9 +80,15 @@ export function RecordPaymentDialog({
           />
         ) : (
           <form id={formId} onSubmit={(e) => { e.preventDefault(); submit(); }} className="flex flex-col gap-4">
-            <div className="flex items-center justify-between rounded-xl bg-bg2 px-4 py-3">
-              <span className="text-sm font-medium leading-none text-mut">Remaining balance</span>
-              <span className="font-mono text-17 font-bold leading-none text-ink">{remainingLabel}</span>
+            <div className="rounded-xl bg-bg2 px-4 py-3">
+              <div className="mb-2.5 flex items-center justify-between border-b border-hr2 pb-2.5">
+                <span className="text-sm font-medium leading-none text-mut">Member</span>
+                <span className="text-sm font-bold leading-none text-ink">{memberName}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium leading-none text-mut">Remaining balance</span>
+                <span className="font-mono text-17 font-bold leading-none text-ink">{remainingLabel}</span>
+              </div>
             </div>
 
             <div>
@@ -114,6 +122,17 @@ export function RecordPaymentDialog({
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
                 className="w-full rounded-xl border border-bd2 bg-transparent px-4 py-3 text-sm font-medium text-ink outline-none focus:border-teal"
+              />
+            </div>
+
+            <div>
+              <SectionLabel>Note (optional)</SectionLabel>
+              <textarea
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                rows={2}
+                placeholder="Add a note…"
+                className="w-full resize-none rounded-xl border border-bd2 bg-transparent px-4 py-3 text-sm font-medium text-ink outline-none placeholder:text-fnt focus:border-teal"
               />
             </div>
 

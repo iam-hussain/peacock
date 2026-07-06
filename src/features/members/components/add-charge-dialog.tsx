@@ -28,7 +28,7 @@ const REASONS: Record<Bucket, [string, string][]> = {
 
 /** Add / edit a catch-up or penalty CHARGE. Matches the "Add catch-up charge" design. */
 export function AddChargeDialog({
-  bucket, hidden, suggest, editId, defaults, className, ariaLabel, children,
+  bucket, memberName, hidden, suggest, editId, defaults, className, ariaLabel, children,
 }: {
   bucket: Bucket;
   memberName: string;
@@ -47,6 +47,7 @@ export function AddChargeDialog({
   // Free-text reason shown for the "Other" chip (reason is a fixed enum, so the custom
   // wording is stored in the note column and rendered as the entry's reason).
   const [otherReason, setOtherReason] = useState(defaults?.note ?? "");
+  const [note, setNote] = useState(defaults?.note ?? "");
   const [date, setDate] = useState(defaults?.date ?? today());
   const [err, setErr] = useState<string | null>(null);
   const [pending, start] = useTransition();
@@ -63,7 +64,7 @@ export function AddChargeDialog({
       fd.set("type", bucket === "penalty" ? "Penalty" : "Catch-up");
       fd.set("amount", amount);
       fd.set("reason", reason);
-      fd.set("note", isOther ? otherReason.trim() : "");
+      fd.set("note", isOther ? otherReason.trim() : note.trim());
       fd.set("date", date);
       const res = await formAction(editId ? "editCharge" : "addCharge", fd);
       if (res.ok) { setErr(null); setOpen(false); }
@@ -82,6 +83,11 @@ export function AddChargeDialog({
         footer={<ModalActions onCancel={() => setOpen(false)} submitLabel={editId ? "Save changes" : "Save charge"} pending={pending} formId={formId} />}
       >
         <form id={formId} onSubmit={(e) => { e.preventDefault(); submit(); }} className="flex flex-col gap-5">
+          <div className="flex items-center justify-between rounded-xl bg-bg2 px-4 py-3">
+            <span className="text-sm font-medium leading-none text-mut">Member</span>
+            <span className="text-sm font-bold leading-none text-ink">{memberName}</span>
+          </div>
+
           <div>
             <SectionLabel>Amount</SectionLabel>
             <AmountInput value={amount} onChange={setAmount} autoFocus />
@@ -132,6 +138,20 @@ export function AddChargeDialog({
               className="w-full rounded-xl border border-bd2 bg-transparent px-4 py-3 text-sm font-medium text-ink outline-none focus:border-teal"
             />
           </div>
+
+          {/* "Other" already collects its wording above (stored in the same note column) */}
+          {!isOther && (
+            <div>
+              <SectionLabel>Note (optional)</SectionLabel>
+              <textarea
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                rows={2}
+                placeholder="Add a note…"
+                className="w-full resize-none rounded-xl border border-bd2 bg-transparent px-4 py-3 text-sm font-medium text-ink outline-none placeholder:text-fnt focus:border-teal"
+              />
+            </div>
+          )}
 
           {err && <p className="text-13 font-medium leading-140 text-out">{err}</p>}
         </form>

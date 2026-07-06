@@ -3,13 +3,14 @@
 import { useId, useState, useTransition } from "react";
 import { Modal, ModalActions } from "./modal";
 import { Field, TextInput, Textarea, Select, FieldRow, type SelectOption } from "./form";
+import { AmountInput } from "./amount-input";
 import { SelectorCard, PickerSheet, type PickOption } from "./entity-picker";
 import { formAction } from "@/lib/actions-client";
 
 export interface FieldDef {
   name: string;
   label: string;
-  type?: "text" | "tel" | "email" | "date" | "month" | "password" | "number" | "textarea";
+  type?: "text" | "tel" | "email" | "date" | "month" | "password" | "number" | "textarea" | "amount";
   options?: SelectOption[];
   placeholder?: string;
   hint?: string;
@@ -21,6 +22,18 @@ export interface FieldDef {
   pickerTitle?: string;
   pickerSubtitle?: string;
   pickerSearch?: string;
+}
+
+/** The entry form's ₹ AmountInput (live Indian grouping) adapted to field-driven forms:
+ * controlled locally, submitted through a hidden input. */
+function AmountField({ name, defaultValue }: { name: string; defaultValue?: string }) {
+  const [v, setV] = useState(defaultValue ?? "");
+  return (
+    <>
+      <AmountInput value={v} onChange={setV} />
+      <input type="hidden" name={name} value={v} />
+    </>
+  );
 }
 
 // Group fields into rows: two consecutive `half` fields pair into one 2-col row; everything else
@@ -114,6 +127,8 @@ export function FormModalButton({
         </>
       ) : f.options ? (
         <Select name={f.name} options={f.options} defaultValue={f.defaultValue} />
+      ) : f.type === "amount" ? (
+        <AmountField name={f.name} defaultValue={f.defaultValue} />
       ) : f.type === "textarea" ? (
         <Textarea name={f.name} placeholder={f.placeholder} defaultValue={f.defaultValue} required={f.required} />
       ) : (
