@@ -4,7 +4,7 @@ import { useId, useState, useTransition } from "react";
 import { Modal, ModalActions } from "./modal";
 import { Field, TextInput, Textarea, Select, FieldRow, type SelectOption } from "./form";
 import { AmountInput } from "./amount-input";
-import { SelectorCard, PickerSheet, type PickOption } from "./entity-picker";
+import { EntityPicker, type PickOption } from "./entity-picker";
 import { formAction } from "@/lib/actions-client";
 import { DateInput } from "@/components/shared/date-input";
 import { MonthInput } from "@/components/shared/month-input";
@@ -21,8 +21,6 @@ export interface FieldDef {
   half?: boolean; // renders half-width; two consecutive half fields sit side by side
   // when set, the field renders as a selector-card that opens an entity picker
   pickerOptions?: PickOption[];
-  pickerTitle?: string;
-  pickerSubtitle?: string;
   pickerSearch?: string;
 }
 
@@ -87,7 +85,6 @@ export function FormModalButton({
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
-  const [picking, setPicking] = useState<string | null>(null);
   const [picked, setPicked] = useState<Record<string, PickOption | null>>({});
   const id = useId();
 
@@ -108,22 +105,21 @@ export function FormModalButton({
   const close = () => {
     setError(null);
     setOpen(false);
-    setPicking(null);
     setPicked({});
   };
-
-  const pickingField = picking ? fields.find((f) => f.name === picking) : null;
   const today = new Date().toISOString().slice(0, 10); // date fields default to today
 
   const renderField = (f: FieldDef) => (
     <Field key={f.name} label={f.label} hint={f.hint}>
       {f.pickerOptions ? (
         <>
-          <SelectorCard
+          <EntityPicker
             selected={picked[f.name] ?? null}
+            onPick={(o) => setPicked((p) => ({ ...p, [f.name]: o }))}
+            options={f.pickerOptions}
             placeholder={f.placeholder ?? "Nothing selected"}
             hint="Tap to choose"
-            onOpen={() => setPicking(f.name)}
+            searchPlaceholder={f.pickerSearch ?? "Search…"}
           />
           <input type="hidden" name={f.name} value={picked[f.name]?.name ?? ""} />
         </>
@@ -159,40 +155,23 @@ export function FormModalButton({
         onClose={close}
         title={title}
         ariaLabel={title}
-        subtitle={picking ? undefined : subtitle}
-        hideHeader={!!picking}
-        footer={picking ? undefined : <ModalActions onCancel={close} submitLabel={submitLabel} pending={pending} formId={id} destructive={destructive} />}
+        subtitle={subtitle}
+        footer={<ModalActions onCancel={close} submitLabel={submitLabel} pending={pending} formId={id} destructive={destructive} />}
       >
-        {picking && pickingField ? (
-          <PickerSheet
-            title={pickingField.pickerTitle ?? pickingField.label}
-            subtitle={pickingField.pickerSubtitle ?? "Choose one."}
-            searchPlaceholder={pickingField.pickerSearch ?? "Search…"}
-            options={pickingField.pickerOptions ?? []}
-            onPick={(o) => {
-              setPicked((p) => ({ ...p, [pickingField.name]: o }));
-              setPicking(null);
-            }}
-            onBack={() => setPicking(null)}
-          />
-        ) : (
-          <>
-            {intro}
-            <form id={id} onSubmit={onSubmit} className="flex flex-col gap-5">
-              {hiddenFields &&
-                Object.entries(hiddenFields).map(([k, v]) => <input key={k} type="hidden" name={k} value={v} />)}
-              {groupHalves(fields).map((row) =>
-                row.length === 2 ? (
-                  <FieldRow key={row[0].name}>{row.map(renderField)}</FieldRow>
-                ) : (
-                  <div key={row[0].name}>{renderField(row[0])}</div>
-                ),
-              )}
-              {outro}
-              {error && <p className="text-13 font-medium leading-140 text-out">{error}</p>}
-            </form>
-          </>
-        )}
+        {intro}
+        <form id={id} onSubmit={onSubmit} className="flex flex-col gap-5">
+          {hiddenFields &&
+            Object.entries(hiddenFields).map(([k, v]) => <input key={k} type="hidden" name={k} value={v} />)}
+          {groupHalves(fields).map((row) =>
+            row.length === 2 ? (
+              <FieldRow key={row[0].name}>{row.map(renderField)}</FieldRow>
+            ) : (
+              <div key={row[0].name}>{renderField(row[0])}</div>
+            ),
+          )}
+          {outro}
+          {error && <p className="text-13 font-medium leading-140 text-out">{error}</p>}
+        </form>
       </Modal>
     </>
   );

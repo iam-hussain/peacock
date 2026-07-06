@@ -2,7 +2,7 @@
 
 import { useId, useState, useTransition } from "react";
 import { Modal, ModalActions } from "@/components/shared/modal";
-import { SelectorCard, PickerSheet, type PickOption } from "@/components/shared/entity-picker";
+import { EntityPicker, type PickOption } from "@/components/shared/entity-picker";
 import { AmountInput } from "@/components/shared/amount-input";
 import { SectionLabel } from "@/components/shared/section-label";
 import { DateInput } from "@/components/shared/date-input";
@@ -28,7 +28,6 @@ export function RecordPaymentDialog({
 }) {
   const formId = useId();
   const [open, setOpen] = useState(false);
-  const [picking, setPicking] = useState(false);
   const [amount, setAmount] = useState(remainingRupees > 0 ? round(remainingRupees) : "");
   const [treasurer, setTreasurer] = useState<PickOption | null>(null);
   const [date, setDate] = useState(today());
@@ -67,19 +66,9 @@ export function RecordPaymentDialog({
         onClose={() => setOpen(false)}
         title={`Record ${noun} payment`}
         subtitle={memberName}
-        hideHeader={picking}
-        footer={picking ? undefined : <ModalActions onCancel={() => setOpen(false)} submitLabel={submitLabel} pending={pending} formId={formId} />}
+        footer={<ModalActions onCancel={() => setOpen(false)} submitLabel={submitLabel} pending={pending} formId={formId} />}
       >
-        {picking ? (
-          <PickerSheet
-            title="Cash holder"
-            subtitle="Choose the treasurer who receives the cash."
-            searchPlaceholder="Search treasurers"
-            options={treasurers}
-            onPick={(o) => { setTreasurer(o); setPicking(false); }}
-            onBack={() => setPicking(false)}
-          />
-        ) : (
+        {(
           <form id={formId} onSubmit={(e) => { e.preventDefault(); submit(); }} className="flex flex-col gap-4">
             <div className="rounded-xl bg-bg2 px-4 py-3">
               <div className="mb-2.5 flex items-center justify-between border-b border-hr2 pb-2.5">
@@ -108,11 +97,13 @@ export function RecordPaymentDialog({
 
             <div>
               <SectionLabel>Received by (treasurer)</SectionLabel>
-              <SelectorCard
+              <EntityPicker
                 selected={treasurer}
+                onPick={setTreasurer}
+                options={treasurers}
                 placeholder="No holder selected"
                 hint="Tap to pick who receives the cash"
-                onOpen={() => setPicking(true)}
+                searchPlaceholder="Search treasurers"
               />
             </div>
 

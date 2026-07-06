@@ -74,7 +74,7 @@ export function AdminTab({
             kind="resetPassword"
             submitLabel="Reset password"
             fields={[
-              { name: "member", label: "Member", placeholder: "No member selected", pickerOptions: memberOpts, pickerTitle: "Choose a member", pickerSubtitle: "Reset this member's password.", pickerSearch: "Search members" },
+              { name: "member", label: "Member", placeholder: "No member selected", pickerOptions: memberOpts, pickerSearch: "Search members" },
               { name: "custom", label: "Custom password", placeholder: "Leave blank to reset to phone number" },
             ]}
             buttonClassName="sm:col-span-2"

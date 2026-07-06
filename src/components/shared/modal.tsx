@@ -17,7 +17,6 @@ export function Modal({
   children,
   footer,
   wide = false,
-  hideHeader = false,
   ariaLabel,
 }: {
   open: boolean;
@@ -27,7 +26,6 @@ export function Modal({
   children: React.ReactNode;
   footer?: React.ReactNode;
   wide?: boolean;
-  hideHeader?: boolean; // when a sub-screen renders its own header (e.g. a back button)
   ariaLabel?: string;
 }) {
   useEffect(() => {
@@ -73,21 +71,14 @@ export function Modal({
           wide ? "sm:max-w-[640px]" : "sm:max-w-120"
         } rounded-t-20 sm:rounded-2xl`}
       >
-        {!hideHeader && (
-          <div className="relative flex flex-col items-center gap-1 px-12 py-4 text-center">
-            <h2 className="text-base font-bold leading-tight text-ink">{title}</h2>
-            {subtitle && <p className="text-xs font-medium leading-140 text-fnt">{subtitle}</p>}
-            <button onClick={onClose} aria-label="Close" className="absolute right-3 top-3 flex size-8 items-center justify-center rounded-lg text-mut hover:bg-bg2">
-              <X className="size-4.5" strokeWidth={2} />
-            </button>
-          </div>
-        )}
-        {/* With the shared header the body is the scroller (form fields scroll under the fixed
-            title); a hideHeader sub-screen (PickerSheet) pins its own header/search and scrolls
-            only its list, so hand it the height instead of scrolling it whole. */}
-        <div className={`flex-1 px-5 py-4 ${hideHeader ? "flex min-h-0 flex-col overflow-hidden" : "overflow-y-auto"}`}>
-          {children}
+        <div className="relative flex flex-col items-center gap-1 px-12 py-4 text-center">
+          <h2 className="text-base font-bold leading-tight text-ink">{title}</h2>
+          {subtitle && <p className="text-xs font-medium leading-140 text-fnt">{subtitle}</p>}
+          <button onClick={onClose} aria-label="Close" className="absolute right-3 top-3 flex size-8 items-center justify-center rounded-lg text-mut hover:bg-bg2">
+            <X className="size-4.5" strokeWidth={2} />
+          </button>
         </div>
+        <div className="flex-1 overflow-y-auto px-5 py-4">{children}</div>
         {footer && <div className="flex gap-2.5 px-5 py-4">{footer}</div>}
       </div>
     </div>,

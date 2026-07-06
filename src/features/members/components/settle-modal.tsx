@@ -3,7 +3,7 @@
 import { useId, useState, useTransition } from "react";
 import { LogOut } from "lucide-react";
 import { Modal, ModalActions } from "@/components/shared/modal";
-import { SelectorCard, PickerSheet, type PickOption } from "@/components/shared/entity-picker";
+import { EntityPicker, type PickOption } from "@/components/shared/entity-picker";
 import { formAction } from "@/lib/actions-client";
 import { AmountInput } from "@/components/shared/amount-input";
 import { SectionLabel } from "@/components/shared/section-label";
@@ -33,7 +33,6 @@ export function SettleDialog({
 }) {
   const formId = useId();
   const [open, setOpen] = useState(false);
-  const [picking, setPicking] = useState(false);
   const [amount, setAmount] = useState(String(Math.round(settle.guideRupees)));
   const [treasurer, setTreasurer] = useState<PickOption | null>(null);
   const [date, setDate] = useState(today());
@@ -41,7 +40,7 @@ export function SettleDialog({
   const [pending, start] = useTransition();
 
   const submit = () => {
-    const n = Number(amount);
+    const n = Number(amount.replace(/,/g, ""));
     if (!amount.trim() || Number.isNaN(n) || n < 0) return setErr("Enter the final amount paid out.");
     if (!treasurer) return setErr("Pick the treasurer paying the member out.");
     start(async () => {
@@ -69,19 +68,9 @@ export function SettleDialog({
         onClose={() => setOpen(false)}
         title="Settle up & leave"
         subtitle={memberName}
-        hideHeader={picking}
-        footer={picking ? undefined : <ModalActions onCancel={() => setOpen(false)} submitLabel="Settle & close" pending={pending} formId={formId} destructive />}
+        footer={<ModalActions onCancel={() => setOpen(false)} submitLabel="Settle & close" pending={pending} formId={formId} destructive />}
       >
-        {picking ? (
-          <PickerSheet
-            title="Cash holder"
-            subtitle="Choose the treasurer paying the member out."
-            searchPlaceholder="Search treasurers"
-            options={treasurers}
-            onPick={(o) => { setTreasurer(o); setPicking(false); }}
-            onBack={() => setPicking(false)}
-          />
-        ) : (
+        {(
           <form id={formId} onSubmit={(e) => { e.preventDefault(); submit(); }} className="flex flex-col gap-4">
             <div className="rounded-xl border border-bd bg-bg2 px-4 py-3.5">
               <div className="mb-2.5 text-11 font-bold uppercase leading-none tracking-5 text-fnt">Settlement guide</div>
@@ -109,11 +98,13 @@ export function SettleDialog({
 
             <div>
               <SectionLabel>Paid out by (treasurer)</SectionLabel>
-              <SelectorCard
+              <EntityPicker
                 selected={treasurer}
+                onPick={setTreasurer}
+                options={treasurers}
                 placeholder="No holder selected"
                 hint="Tap to pick who pays the member out"
-                onOpen={() => setPicking(true)}
+                searchPlaceholder="Search treasurers"
               />
             </div>
 

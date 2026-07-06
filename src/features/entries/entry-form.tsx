@@ -1,6 +1,6 @@
 "use client";
 
-import { SelectorCard, type PickOption } from "@/components/shared/entity-picker";
+import { EntityPicker, type PickOption } from "@/components/shared/entity-picker";
 import { AmountInput } from "@/components/shared/amount-input";
 import { SectionLabel } from "@/components/shared/section-label";
 import { DateInput } from "@/components/shared/date-input";
@@ -11,7 +11,8 @@ import type { getPartyMeta, getHolderMeta } from "./entry-meta";
 export function EntryForm({
   partyMeta,
   party,
-  onOpenParty,
+  partyOpts,
+  setParty,
   amount,
   setAmount,
   txnDate,
@@ -21,14 +22,16 @@ export function EntryForm({
   setPrincipal,
   holderMeta,
   holder,
-  onOpenHolder,
+  holderOpts,
+  setHolder,
   note,
   setNote,
   error,
 }: {
   partyMeta: ReturnType<typeof getPartyMeta>;
   party: PickOption | null;
-  onOpenParty: () => void;
+  partyOpts: PickOption[];
+  setParty: (o: PickOption) => void;
   amount: string;
   setAmount: (v: string) => void;
   txnDate: string;
@@ -38,7 +41,8 @@ export function EntryForm({
   setPrincipal: (v: string) => void;
   holderMeta: ReturnType<typeof getHolderMeta>;
   holder: PickOption | null;
-  onOpenHolder: () => void;
+  holderOpts: PickOption[];
+  setHolder: (o: PickOption) => void;
   note: string;
   setNote: (v: string) => void;
   error: string | null;
@@ -47,7 +51,7 @@ export function EntryForm({
     <div className="flex flex-col gap-5">
       <div>
         <SectionLabel>{partyMeta.label}</SectionLabel>
-        <SelectorCard selected={party} placeholder={partyMeta.ph} hint={partyMeta.hint} onOpen={onOpenParty} />
+        <EntityPicker selected={party} onPick={setParty} options={partyOpts} placeholder={partyMeta.ph} hint={partyMeta.hint} searchPlaceholder={partyMeta.search} />
       </div>
 
       {/* Amount + date sit side by side on desktop, stack on mobile. */}
@@ -77,7 +81,7 @@ export function EntryForm({
       <div>
         <SectionLabel>{holderMeta.label}</SectionLabel>
         <p className="mb-2 mt-1 text-12 font-medium leading-140 text-fnt">{holderMeta.desc}</p>
-        <SelectorCard selected={holder} placeholder={holderMeta.ph} hint={holderMeta.hint} onOpen={onOpenHolder} />
+        <EntityPicker selected={holder} onPick={setHolder} options={holderOpts} placeholder={holderMeta.ph} hint={holderMeta.hint} searchPlaceholder="Search treasurers" />
       </div>
 
       <div>

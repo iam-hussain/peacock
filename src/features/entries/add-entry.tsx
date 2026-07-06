@@ -4,7 +4,7 @@ import { createContext, useContext, useMemo, useState, useTransition } from "rea
 import { useQuery } from "@tanstack/react-query";
 import { fetchJson } from "@/lib/use-page-query";
 import { Modal } from "@/components/shared/modal";
-import { PickerSheet, type PickOption } from "@/components/shared/entity-picker";
+import { type PickOption } from "@/components/shared/entity-picker";
 import { formAction } from "@/lib/actions-client";
 import type { EntryPickerOptions } from "@/server/queries/entries";
 import { INTENT_DIR, MEMBER_CTX_KEY } from "./entry-constants";
@@ -52,7 +52,6 @@ function AddEntryDialogInner({ options, preset, onClose }: { options: EntryPicke
   const LOAN_OPTS = options.loanCandidates;
   const today = new Date().toISOString().slice(0, 10);
   const [intent, setIntent] = useState<string | null>(preset?.intent ?? null);
-  const [picking, setPicking] = useState<"party" | "holder" | null>(null);
   const [party, setParty] = useState<PickOption | null>(preset?.party ?? null);
   const [holder, setHolder] = useState<PickOption | null>(null);
   const [amount, setAmount] = useState("");
@@ -105,7 +104,6 @@ function AddEntryDialogInner({ options, preset, onClose }: { options: EntryPicke
         open
         onClose={close}
         wide={!intent}
-        hideHeader={!!picking}
         ariaLabel={intent ?? "What happened?"}
         title={
           intent ? (
@@ -118,7 +116,7 @@ function AddEntryDialogInner({ options, preset, onClose }: { options: EntryPicke
           )
         }
         footer={
-          picking ? undefined : intent ? (
+          intent ? (
             <>
               <button
                 type="button"
@@ -151,24 +149,12 @@ function AddEntryDialogInner({ options, preset, onClose }: { options: EntryPicke
       >
         {!intent ? (
           <IntentPicker onPick={setIntent} />
-        ) : picking ? (
-          <PickerSheet
-            title={picking === "party" ? partyMeta.pickerTitle : "Cash holder"}
-            subtitle={picking === "party" ? partyMeta.pickerSub : holderMeta.pickerSub}
-            searchPlaceholder={picking === "party" ? partyMeta.search : "Search treasurers"}
-            options={picking === "party" ? partyOpts : TREASURER_OPTS}
-            onPick={(o) => {
-              if (picking === "party") setParty(o);
-              else setHolder(o);
-              setPicking(null);
-            }}
-            onBack={() => setPicking(null)}
-          />
         ) : (
           <EntryForm
             partyMeta={partyMeta}
             party={party}
-            onOpenParty={() => setPicking("party")}
+            partyOpts={partyOpts}
+            setParty={setParty}
             amount={amount}
             setAmount={setAmount}
             txnDate={txnDate}
@@ -178,7 +164,8 @@ function AddEntryDialogInner({ options, preset, onClose }: { options: EntryPicke
             setPrincipal={setPrincipal}
             holderMeta={holderMeta}
             holder={holder}
-            onOpenHolder={() => setPicking("holder")}
+            holderOpts={TREASURER_OPTS}
+            setHolder={setHolder}
             note={note}
             setNote={setNote}
             error={error}
