@@ -69,7 +69,7 @@ export function Modal({
         role="dialog"
         aria-modal="true"
         aria-label={ariaLabel ?? (typeof title === "string" ? title : undefined)}
-        className={`relative flex max-h-[min(80vh,100%)] min-h-[min(70vh,100%)] w-full flex-col overflow-hidden sm:min-h-0 border border-bd bg-sf shadow-[0_20px_60px_var(--shadow)] animate-in slide-in-from-bottom-4 sm:zoom-in-95 sm:slide-in-from-bottom-0 ${
+        className={`relative flex max-h-[min(80vh,100%)] min-h-[min(80vh,100%)] w-full flex-col overflow-hidden sm:min-h-0 border border-bd bg-sf shadow-[0_20px_60px_var(--shadow)] animate-in slide-in-from-bottom-4 sm:zoom-in-95 sm:slide-in-from-bottom-0 ${
           wide ? "sm:max-w-[640px]" : "sm:max-w-120"
         } rounded-t-20 sm:rounded-2xl`}
       >
