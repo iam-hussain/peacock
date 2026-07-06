@@ -20,6 +20,11 @@ export function LoansList({ loans, stats, rate, eligibility }: { loans: Loan[]; 
     if (filter === "Active") return l.status === "active" || l.status === "overdue"; // overdue is active, past term
     return l.status === "closed";
   });
+  // One row per member: their most recent loan matching the filter. Rows arrive active-first
+  // then newest-first, and loans are one-at-a-time, so the first row seen is the latest.
+  // Older history lives on the member's page.
+  const seen = new Set<string>();
+  const latest = rows.filter((l) => !seen.has(l.memberId) && (seen.add(l.memberId), true));
 
   return (
     <div className={`mx-auto max-w-320 ${inPoster ? "p-6.5" : "p-4 pb-19.5 md:p-6.5 md:pb-6.5"}`}>
@@ -52,10 +57,10 @@ export function LoansList({ loans, stats, rate, eligibility }: { loans: Loan[]; 
       {/* Desktop: single card with rows (forced in the poster) */}
       <div className={`overflow-hidden rounded-2xl border border-bd bg-sf shadow-card ${inPoster ? "block" : "hidden md:block"}`}>
         {!inPoster && <Filters filter={filter} onChange={setFilter} showClosedMembers={showClosedMembers} onToggleClosedMembers={() => setShowClosedMembers((v) => !v)} className="border-b border-hair px-4.5 py-3.5" />}
-        {rows.map((l) => (
+        {latest.map((l) => (
           <LoanRowDesktop key={l.id} l={l} />
         ))}
-        {rows.length === 0 && <Empty />}
+        {latest.length === 0 && <Empty />}
       </div>
 
       {/* Mobile: filter chips + separate loan cards */}
@@ -63,10 +68,10 @@ export function LoansList({ loans, stats, rate, eligibility }: { loans: Loan[]; 
       <div className="md:hidden">
         <Filters filter={filter} onChange={setFilter} showClosedMembers={showClosedMembers} onToggleClosedMembers={() => setShowClosedMembers((v) => !v)} className="pb-1" />
         <div className="mt-3 flex flex-col gap-3">
-          {rows.map((l) => (
+          {latest.map((l) => (
             <MobileLoanCard key={l.id} l={l} />
           ))}
-          {rows.length === 0 && (
+          {latest.length === 0 && (
             <div className="rounded-2xl border border-bd bg-sf px-4 py-10">
               <Empty />
             </div>
