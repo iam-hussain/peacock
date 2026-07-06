@@ -88,7 +88,7 @@ export function PickerSheet({
   }, [q, options]);
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex items-start gap-3 pb-3.5">
         <button
           type="button"

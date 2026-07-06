@@ -69,7 +69,7 @@ export function Modal({
         role="dialog"
         aria-modal="true"
         aria-label={ariaLabel ?? (typeof title === "string" ? title : undefined)}
-        className={`relative flex max-h-[min(92vh,100%)] min-h-[min(70vh,100%)] w-full flex-col overflow-hidden sm:min-h-0 border border-bd bg-sf shadow-[0_20px_60px_var(--shadow)] animate-in slide-in-from-bottom-4 sm:zoom-in-95 sm:slide-in-from-bottom-0 ${
+        className={`relative flex max-h-[min(80vh,100%)] min-h-[min(70vh,100%)] w-full flex-col overflow-hidden sm:min-h-0 border border-bd bg-sf shadow-[0_20px_60px_var(--shadow)] animate-in slide-in-from-bottom-4 sm:zoom-in-95 sm:slide-in-from-bottom-0 ${
           wide ? "sm:max-w-[640px]" : "sm:max-w-120"
         } rounded-t-20 sm:rounded-2xl`}
       >
@@ -82,7 +82,12 @@ export function Modal({
             </button>
           </div>
         )}
-        <div className="flex-1 overflow-y-auto px-5 py-4">{children}</div>
+        {/* With the shared header the body is the scroller (form fields scroll under the fixed
+            title); a hideHeader sub-screen (PickerSheet) pins its own header/search and scrolls
+            only its list, so hand it the height instead of scrolling it whole. */}
+        <div className={`flex-1 px-5 py-4 ${hideHeader ? "flex min-h-0 flex-col overflow-hidden" : "overflow-y-auto"}`}>
+          {children}
+        </div>
         {footer && <div className="flex gap-2.5 px-5 py-4">{footer}</div>}
       </div>
     </div>,
