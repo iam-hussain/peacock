@@ -1066,12 +1066,19 @@ are collected via the existing `PENALTY` pay-down. Layout:
   (JSON ↔ typed config, BigInt paise as strings, defaults = both off, `effectiveFrom` 2026-09-01,
   2% / ₹6,000 deposit, 2% / ₹1,000 / 30-day interest); the period walks; `computeAutoPenalties(cfg)`
   (batched, integer paise) → the list of currently-due charges; and `getAutoPenaltiesData()` for the
-  admin page.
+  admin page — it returns **raw rows** (incl. `amountPaise`, `monthKey`/`monthLabel`); the client
+  aggregates the by-member/by-month breakdowns from them, which is what makes the page's
+  All · Deposit · Interest **type filter** work across breakdown and register alike.
 - **`server/ledger/auto-penalties.ts`** — `syncAutoPenalties()`: diff the due list against existing
   ids and `upsert` only the missing ones. **Idempotent/duplicate-proof by construction** — each due
-  charge has a **deterministic id** (`apen_dep_<ms>_<YYYYMM>`, `apen_int_<ms>_t<k>`), so a re-run /
-  concurrent run / redeploy can never write a period twice; existing rows are never overwritten
-  (amount frozen).
+  charge has a **deterministic id** (`apen_dep_<ms>_<YYYYMM>`, `apen_int_<ms>_<YYYYMMDD>` — the
+  interest id keys on the **tick date**, so changing `graceDays` later can never re-label an existing
+  tick), so a re-run / concurrent run / redeploy can never write a period twice; existing rows are
+  never overwritten (amount and note frozen). The `note` records the **full working at charge time**
+  ("Deposit penalty · Jul 2026 — 2% of ₹15,000 deposit pending"). **Mongo gotcha:** charges are
+  created with an **explicit `voidedAt: null`** — Prisma-on-Mongo treats a *missing* key as ≠ `null`,
+  and every live-due read filters `voidedAt: null` (see `scripts/backfill-charge-auto-flags.mts` for
+  the one-off normalisation of pre-existing rows).
 
 ```
 # Deposit penalty — 1st of each month M in [max(effectiveFrom, join), today]:

@@ -175,8 +175,8 @@ your new chapter starts clean, with the old one still there to look back on.
 
 If you pay your monthly savings late, the app shows it as **pending / overdue** so it's visible.
 
-The club can also switch on **two automatic penalties** (both are **off unless the managers turn
-them on**, and the managers choose the amounts and the date they start from):
+The club can also switch on **two automatic penalties** (the managers choose the amounts and the
+date they start from — both are on today):
 
 - **Falling behind on savings** — if your unpaid savings stay high (more than about three months'
   worth), a small monthly charge (e.g. 2%) is added until you catch up.
@@ -184,9 +184,11 @@ them on**, and the managers choose the amounts and the date they start from):
   clear the interest; if it's still unpaid, a small charge (e.g. 2% of the *interest*, never the loan
   itself) is added each month until it's paid.
 
-These are added **automatically**, each one clearly labelled with **what it was for** (which month,
-or which loan), and the managers can see the full list on an **Auto penalties** page. Nothing is ever
-charged twice, and a charge is never on top of another charge — always just on what you still owe.
+These are added **automatically**, each one clearly labelled with **what it was for and the exact
+sums** — e.g. *"Deposit penalty · Jul 2026 — 2% of ₹15,000 deposit pending"* — so you can always see
+how a charge was worked out. The managers can see the full list on an **Auto penalties** page (and
+filter it by type). Nothing is ever charged twice, and a charge is never on top of another charge —
+always just on what you still owe.
 
 ### 10. Everyone can see everything
 

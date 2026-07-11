@@ -27,6 +27,13 @@ const REASONS: Record<Bucket, [string, string][]> = {
   ],
 };
 
+// Reasons the auto scheduler writes — not offered for manual charges, but an auto charge being
+// edited must show its own reason as the selected chip instead of nothing.
+const AUTO_LABELS: Record<string, string> = {
+  AUTO_DEPOSIT_PENALTY: "Deposit penalty (auto)",
+  AUTO_LOAN_INTEREST_PENALTY: "Loan-interest penalty (auto)",
+};
+
 /** Add / edit a catch-up or penalty CHARGE. Matches the "Add catch-up charge" design. */
 export function AddChargeDialog({
   bucket, memberName, hidden, suggest, editId, defaults, className, ariaLabel, children,
@@ -54,6 +61,10 @@ export function AddChargeDialog({
   const [pending, start] = useTransition();
   const noun = bucket === "penalty" ? "penalty" : "catch-up";
   const isOther = reason === "OTHER";
+  const reasonOptions: [string, string][] =
+    defaults?.reason && !REASONS[bucket].some(([v]) => v === defaults.reason)
+      ? [[defaults.reason, AUTO_LABELS[defaults.reason] ?? "Auto penalty"], ...REASONS[bucket]]
+      : REASONS[bucket];
 
   const submit = () => {
     if (!amount.trim()) return setErr("Enter an amount.");
@@ -106,7 +117,7 @@ export function AddChargeDialog({
           <div>
             <SectionLabel>Reason</SectionLabel>
             <div className="flex flex-wrap gap-2">
-              {REASONS[bucket].map(([v, label]) => (
+              {reasonOptions.map(([v, label]) => (
                 <button
                   key={v}
                   type="button"

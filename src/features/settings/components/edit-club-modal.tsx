@@ -8,7 +8,7 @@ import { saveClubSettings } from "@/lib/actions-client";
 import type { SettingsData } from "@/server/queries/settings";
 import { DateInput } from "@/components/shared/date-input";
 import { Toggle } from "./settings-primitives";
-import { PenaltyFields, type PenaltyState } from "./penalty-fields";
+import { DEFAULT_PENALTY_STATE, PenaltyFields, type PenaltyState } from "./penalty-fields";
 
 const label = "text-11 font-bold uppercase leading-none tracking-6 text-fnt";
 const input =
@@ -23,7 +23,8 @@ export function EditClubButton({ edit, className }: { edit: SettingsData["club"]
   const [depositFrom, setDepositFrom] = useState("");
   const [rate, setRate] = useState("");
   const [rateFrom, setRateFrom] = useState("");
-  const [penalty, setPenalty] = useState<PenaltyState>(edit.penalty);
+  const penaltyOrDefault = edit.penalty ?? DEFAULT_PENALTY_STATE;
+  const [penalty, setPenalty] = useState<PenaltyState>(penaltyOrDefault);
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
 
@@ -34,7 +35,7 @@ export function EditClubButton({ edit, className }: { edit: SettingsData["club"]
     setDepositFrom("");
     setRate("");
     setRateFrom("");
-    setPenalty(edit.penalty);
+    setPenalty(penaltyOrDefault);
     setError(null);
   };
 

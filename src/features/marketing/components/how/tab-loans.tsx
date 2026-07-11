@@ -21,6 +21,7 @@ const RULES: { icon: LucideIcon; label: string; detail: string }[] = [
   { icon: Timer, label: "1-month cooldown", detail: "Wait a month after closing a loan before borrowing again." },
   { icon: CalendarDays, label: "5-month term", detail: "Repay within five months; after that it's flagged overdue." },
   { icon: Repeat, label: "Repay anytime", detail: "Any amount, whenever — no minimum repayment." },
+  { icon: TriangleAlert, label: "Clear interest after closing", detail: "Close a loan with interest unpaid and, after a 30-day grace, 2% of the pending interest (never the principal) is added every 30 days until it's cleared." },
 ];
 
 /* Proportional widths for the loan timeline bar (≈ 2 months + 25 days). */

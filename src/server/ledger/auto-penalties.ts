@@ -25,7 +25,9 @@ export async function syncAutoPenalties(today = new Date()): Promise<number> {
     await prisma.charge.upsert({
       where: { id: d.id },
       update: {}, // never overwrite an already-materialised penalty — amount stays frozen
-      create: { id: d.id, membershipId: d.membershipId, kind: "PENALTY", reason: d.reason, amount: d.amount, occurredAt: d.occurredAt, note: d.note, auto: true },
+      // voidedAt written as an explicit null: Mongo distinguishes a missing key from null, and the
+      // member/dues reads filter `voidedAt: null` — a missing key would hide the charge from them.
+      create: { id: d.id, membershipId: d.membershipId, kind: "PENALTY", reason: d.reason, amount: d.amount, occurredAt: d.occurredAt, note: d.note, auto: true, voidedAt: null },
     });
   }
   return missing.length;

@@ -4,10 +4,12 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { RefreshCw, ShieldAlert, Save, Users, CalendarDays } from "lucide-react";
+import { Pager } from "@/components/shared/pager";
 import { formAction, syncAutoPenaltiesNow, savePenaltyConfig } from "@/lib/actions-client";
 import { initials } from "@/lib/avatar";
-import { PenaltyFields, type PenaltyState } from "@/features/settings/components/penalty-fields";
-import type { AutoPenaltiesData, AutoPenaltyRow, AutoPenaltyGroup } from "@/server/queries/penalties";
+import { formatPaise } from "@/lib/money";
+import { DEFAULT_PENALTY_STATE, PenaltyFields, type PenaltyState } from "@/features/settings/components/penalty-fields";
+import type { AutoPenaltiesData, AutoPenaltyRow } from "@/server/queries/penalties";
 
 export function AutoPenalties({ data, error }: { data?: AutoPenaltiesData; error?: string }) {
   if (error || !data) {
@@ -40,10 +42,10 @@ export function AutoPenalties({ data, error }: { data?: AutoPenaltiesData; error
         </div>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
         <ConfigEditor data={data} />
         <div className="flex flex-col gap-4">
-          <Breakdowns byMember={data.byMember} byMonth={data.byMonth} />
+          <Breakdowns rows={data.rows ?? []} />
           <Register rows={data.rows} enabled={data.enabled} />
         </div>
       </div>
@@ -55,7 +57,7 @@ export function AutoPenalties({ data, error }: { data?: AutoPenaltiesData; error
 // without leaving the page. Reuses PenaltyFields (shared with the Edit-club form) + a focused save.
 function ConfigEditor({ data }: { data: AutoPenaltiesData }) {
   const router = useRouter();
-  const [pen, setPen] = useState<PenaltyState>(data.config);
+  const [pen, setPen] = useState<PenaltyState>(data.config ?? DEFAULT_PENALTY_STATE);
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -108,16 +110,48 @@ function ConfigEditor({ data }: { data: AutoPenaltiesData }) {
   );
 }
 
-function Breakdowns({ byMember, byMonth }: { byMember: AutoPenaltyGroup[]; byMonth: AutoPenaltyGroup[] }) {
+type TypeFilter = (typeof TYPE_FILTERS)[number][0];
+
+/** All / Deposit / Interest segmented chips — shared by the Breakdown and Register cards. */
+function TypeChips({ value, onChange }: { value: TypeFilter; onChange: (v: TypeFilter) => void }) {
+  return (
+    <div className="flex gap-1 rounded-10 bg-bg2 p-0.75">
+      {TYPE_FILTERS.map(([v, label]) => (
+        <button
+          key={v}
+          onClick={() => onChange(v)}
+          className={`rounded-8 px-2.5 py-1.5 text-11 font-semibold leading-none transition-colors ${value === v ? "bg-sf text-teal shadow-sm" : "text-mut"}`}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function Breakdowns({ rows }: { rows: AutoPenaltyRow[] }) {
   const [view, setView] = useState<"member" | "month">("member");
-  const groups = view === "member" ? byMember : byMonth;
+  const [type, setType] = useState<TypeFilter>("all");
+  const live = rows.filter((r) => !r.voided && (type === "all" || r.type === type));
+  const agg = new Map<string, { label: string; count: number; total: number }>();
+  for (const r of live) {
+    const key = view === "member" ? r.memberId : r.monthKey;
+    const g = agg.get(key) ?? { label: view === "member" ? r.member : r.monthLabel, count: 0, total: 0 };
+    g.count++; g.total += r.amountPaise; agg.set(key, g);
+  }
+  const groups = [...agg.entries()]
+    .sort((a, b) => (view === "member" ? b[1].total - a[1].total : a[0] < b[0] ? 1 : -1)) // biggest first / newest month first
+    .map(([key, g]) => ({ key, label: g.label, count: g.count, total: formatPaise(BigInt(g.total)) }));
   return (
     <div className="overflow-hidden rounded-2xl border border-bd bg-sf shadow-card">
-      <div className="flex items-center justify-between gap-3 border-b border-hr2 px-4 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-2.5 border-b border-hr2 px-4 py-3">
         <span className="text-11 font-semibold uppercase leading-none tracking-4 text-fnt">Breakdown</span>
-        <div className="flex gap-1 rounded-10 bg-bg2 p-0.75">
-          <Seg on={view === "member"} onClick={() => setView("member")} icon={Users} label="By member" />
-          <Seg on={view === "month"} onClick={() => setView("month")} icon={CalendarDays} label="By month" />
+        <div className="flex flex-wrap items-center gap-2">
+          <TypeChips value={type} onChange={setType} />
+          <div className="flex gap-1 rounded-10 bg-bg2 p-0.75">
+            <Seg on={view === "member"} onClick={() => setView("member")} icon={Users} label="By member" />
+            <Seg on={view === "month"} onClick={() => setView("month")} icon={CalendarDays} label="By month" />
+          </div>
         </div>
       </div>
       {groups.length === 0 ? (
@@ -162,20 +196,43 @@ function Seg({ on, onClick, icon: Icon, label }: { on: boolean; onClick: () => v
   );
 }
 
+const PAGE_SIZE = 10;
+const TYPE_FILTERS = [["all", "All"], ["Deposit", "Deposit"], ["Loan interest", "Interest"]] as const;
+
 function Register({ rows, enabled }: { rows: AutoPenaltyRow[]; enabled: boolean }) {
+  const [page, setPage] = useState(1);
+  const [type, setType] = useState<TypeFilter>("all");
+  const filtered = type === "all" ? rows : rows.filter((r) => r.type === type);
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const safePage = Math.min(page, pageCount);
+  const start = (safePage - 1) * PAGE_SIZE;
+  const visible = filtered.slice(start, start + PAGE_SIZE);
   return (
     <div className="overflow-hidden rounded-2xl border border-bd bg-sf shadow-card">
-      <div className="flex items-center gap-2.5 border-b border-hr2 bg-bg px-4 py-2.75">
+      <div className="flex flex-wrap items-center gap-2.5 border-b border-hr2 bg-bg px-4 py-2.75">
         <span className="text-10 font-bold uppercase leading-none tracking-7 text-fnt">Register</span>
+        <TypeChips value={type} onChange={(v) => { setType(v); setPage(1); }} />
         <span className="h-px flex-1 bg-hr2" />
-        <span className="text-10 font-semibold leading-none text-fnt">{rows.length} total</span>
+        <span className="text-10 font-semibold leading-none text-fnt">
+          {type === "all" ? `${rows.length} total` : `${filtered.length} of ${rows.length}`}
+        </span>
       </div>
-      {rows.map((r) => <Row key={r.id} row={r} />)}
-      {rows.length === 0 && (
+      {visible.map((r) => <Row key={r.id} row={r} />)}
+      {filtered.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-hr2 px-4 py-3.25">
+          <span className="text-xs font-medium leading-none text-fnt">
+            Showing {start + 1}–{start + visible.length} of {filtered.length}
+          </span>
+          <Pager page={safePage} pageCount={pageCount} onChange={setPage} />
+        </div>
+      )}
+      {filtered.length === 0 && (
         <div className="px-5 py-12 text-center">
-          <div className="text-15 font-bold leading-none text-ink">No auto penalties yet</div>
+          <div className="text-15 font-bold leading-none text-ink">
+            {rows.length === 0 ? "No auto penalties yet" : "No matching penalties"}
+          </div>
           <div className="mt-1.5 text-xs font-medium leading-140 text-mut">
-            {enabled ? "Nothing has crossed a penalty threshold." : "Turn a penalty on in the panel to start."}
+            {rows.length > 0 ? "Try a different type filter." : enabled ? "Nothing has crossed a penalty threshold." : "Turn a penalty on in the panel to start."}
           </div>
         </div>
       )}

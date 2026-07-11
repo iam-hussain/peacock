@@ -7,6 +7,14 @@ import type { SettingsData } from "@/server/queries/settings";
 // The editable auto-penalty state carried by the Edit-club modal. Mirrors PenaltyInput on the server.
 export type PenaltyState = SettingsData["club"]["edit"]["penalty"];
 
+// Mirrors PENALTY_DEFAULTS on the server. Fallback for payloads cached before the penalty
+// feature existed (mid-deploy React Query cache) — both rules off, so nothing is charged.
+export const DEFAULT_PENALTY_STATE: PenaltyState = {
+  from: "2026-09-01",
+  depositEnabled: false, depositRate: "2", depositMin: "6000",
+  interestEnabled: false, interestRate: "2", interestMin: "1000", interestGrace: "30",
+};
+
 const label = "text-11 font-bold uppercase leading-none tracking-6 text-fnt";
 const input =
   "w-full rounded-11 border border-bd2 bg-sf px-3.5 py-2.5 text-sm font-medium text-ink outline-none placeholder:text-fnt focus:border-teal";

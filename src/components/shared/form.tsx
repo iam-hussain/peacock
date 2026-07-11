@@ -42,5 +42,5 @@ export function Select({ options, ...props }: React.SelectHTMLAttributes<HTMLSel
 
 /** Two fields side by side on desktop, stacked on mobile. */
 export function FieldRow({ children }: { children: React.ReactNode }) {
-  return <div className="grid gap-4 sm:grid-cols-2">{children}</div>;
+  return <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">{children}</div>;
 }

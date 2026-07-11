@@ -68,6 +68,7 @@ export function ClubTab({ club, isAdmin }: { club: SettingsData["club"]; isAdmin
 }
 
 function PenaltyRules({ penalty }: { penalty: SettingsData["club"]["penalty"] }) {
+  if (!penalty) return null; // cached pre-penalty /api/settings payload — hide the card until refetch
   const rows = [
     { l: "Deposit penalty", on: penalty.deposit.enabled, v: `${penalty.deposit.rate} on pending over ${penalty.deposit.min}`, sub: "charged on the 1st of each month" },
     { l: "Loan-interest penalty", on: penalty.interest.enabled, v: `${penalty.interest.rate} on interest over ${penalty.interest.min}`, sub: `${penalty.interest.grace} grace after a loan closes` },

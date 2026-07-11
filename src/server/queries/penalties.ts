@@ -142,7 +142,7 @@ export function depositPenaltiesFor(
       amount: pct(pending, rule.rateBps),
       base: pending,
       occurredAt: first,
-      note: `Deposit penalty · ${monthYear(first)}`,
+      note: `Deposit penalty · ${monthYear(first)} — ${rule.rateBps / 100}% of ${formatPaise(pending)} deposit pending`,
     });
   }
   return out;
@@ -181,7 +181,7 @@ export function interestPenaltiesFor(
       amount: pct(pending, rule.rateBps),
       base: pending,
       occurredAt: tick,
-      note: `Loan-interest penalty · ${rule.graceDays * k} days after close`,
+      note: `Loan-interest penalty · ${rule.graceDays * k} days after close — ${rule.rateBps / 100}% of ${formatPaise(pending)} interest pending`,
     });
   }
   return out;
@@ -267,15 +267,11 @@ export interface AutoPenaltyRow {
   type: "Deposit" | "Loan interest";
   reference: string; // the note ("Deposit penalty · Sep 2026")
   amount: string;
+  amountPaise: number; // raw, for client-side breakdown sums
   date: string;
+  monthKey: string; // "2026-09" — sortable month bucket
+  monthLabel: string; // "Sep 2026"
   voided: boolean;
-}
-export interface AutoPenaltyGroup {
-  key: string; // memberId or "YYYY-MM"
-  label: string; // member name or "Sep 2026"
-  sub?: string; // secondary label (e.g. member id target for links)
-  count: number;
-  total: string;
 }
 export interface AutoPenaltiesData {
   enabled: boolean; // either penalty on
@@ -284,9 +280,7 @@ export interface AutoPenaltiesData {
   effectiveFrom: string;
   totalAssigned: string; // Σ live (non-voided) auto penalty amounts
   count: number; // live auto penalties
-  rows: AutoPenaltyRow[];
-  byMember: AutoPenaltyGroup[]; // live penalties grouped per member, biggest first
-  byMonth: AutoPenaltyGroup[]; // live penalties grouped per charge month, newest first
+  rows: AutoPenaltyRow[]; // the client aggregates its member/month breakdowns from these
   // Raw editable prefill for the inline config editor (rupees for money, yyyy-mm-dd for the date).
   config: {
     from: string;
@@ -313,38 +307,24 @@ export async function getAutoPenaltiesData(): Promise<AutoPenaltiesData> {
   });
   let totalAssigned = 0n;
   let count = 0;
-  // Live (non-voided) group accumulators, keyed by member and by charge-month.
-  const memberAgg = new Map<string, { name: string; count: number; total: bigint }>();
-  const monthAgg = new Map<string, { label: string; count: number; total: bigint }>();
   const rows: AutoPenaltyRow[] = charges.map((c) => {
     const voided = !!c.voidedAt;
     const m = c.membership.member;
-    const name = [m.firstName, m.lastName].filter(Boolean).join(" ");
-    if (!voided) {
-      totalAssigned += c.amount; count++;
-      const mem = memberAgg.get(m.id) ?? { name, count: 0, total: 0n };
-      mem.count++; mem.total += c.amount; memberAgg.set(m.id, mem);
-      const mk = `${ist(c.occurredAt).getUTCFullYear()}-${String(ist(c.occurredAt).getUTCMonth() + 1).padStart(2, "0")}`;
-      const mo = monthAgg.get(mk) ?? { label: monthYear(c.occurredAt), count: 0, total: 0n };
-      mo.count++; mo.total += c.amount; monthAgg.set(mk, mo);
-    }
+    if (!voided) { totalAssigned += c.amount; count++; }
     return {
       id: c.id,
       memberId: m.id,
-      member: name,
+      member: [m.firstName, m.lastName].filter(Boolean).join(" "),
       type: TYPE_OF[c.reason] ?? "Deposit",
       reference: c.note ?? "—",
       amount: formatPaise(c.amount),
+      amountPaise: Number(c.amount),
       date: dayMonthYear(c.occurredAt),
+      monthKey: `${ist(c.occurredAt).getUTCFullYear()}-${String(ist(c.occurredAt).getUTCMonth() + 1).padStart(2, "0")}`,
+      monthLabel: monthYear(c.occurredAt),
       voided,
     };
   });
-  const byMember: AutoPenaltyGroup[] = [...memberAgg.entries()]
-    .sort((a, b) => (b[1].total > a[1].total ? 1 : b[1].total < a[1].total ? -1 : 0))
-    .map(([memberId, v]) => ({ key: memberId, label: v.name, count: v.count, total: formatPaise(v.total) }));
-  const byMonth: AutoPenaltyGroup[] = [...monthAgg.entries()]
-    .sort((a, b) => (a[0] < b[0] ? 1 : -1)) // newest month first
-    .map(([key, v]) => ({ key, label: v.label, count: v.count, total: formatPaise(v.total) }));
 
   const rate = (bps: number) => `${bps / 100}%`;
   const rupees = (p: bigint) => String(Math.round(Number(p) / 100));
@@ -356,8 +336,6 @@ export async function getAutoPenaltiesData(): Promise<AutoPenaltiesData> {
     totalAssigned: formatPaise(totalAssigned),
     count,
     rows,
-    byMember,
-    byMonth,
     config: {
       from: cfg.effectiveFrom.toISOString().slice(0, 10),
       depositEnabled: cfg.deposit.enabled, depositRate: String(cfg.deposit.rateBps / 100), depositMin: rupees(cfg.deposit.minPaise),

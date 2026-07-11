@@ -75,8 +75,10 @@ edit, reset password, make admin, mark treasurer.
 - **Membership bar:** **"Membership #N · Active since …"** with a **switcher** (only if >1 stint).
 - **Current membership body:** deposits paid, **pending deposits/overdue badge**, current loan +
   interest pending, **profit share (full and reduced-by-paid-ratio)**; a **Catch-up** section and a
-  **Penalty** section each listing that membership's **charges cumulatively** (each: reason, amount,
-  date, **paid vs remaining**) with total outstanding; this membership's **transaction history**.
+  **Penalty** section each listing that membership's **charges cumulatively** (each: **reason as the
+  row title**, charged-by (admin / auto scheduler), date, the charge's **note/working** if any, amount,
+  and the bucket's **paid vs remaining**; the bucket tabs show the **total ever charged**); this
+  membership's **transaction history**.
 - **Previous memberships (history)** — only if any: a list of **closed** stints ("Membership #1 ·
   Sep 2020 → Aug 2023 · settled ₹X · Closed"), each expandable to a **read-only** summary + its
   transactions, tagged **Legacy**. (Hidden entirely for members who never left.)
@@ -237,8 +239,9 @@ any member's password**; **Close quarter** (lock + snapshot, "can't be undone");
 
 **Auto penalties page** (Admin → Auto penalties, §13.1): the enable **toggles + rate/minimum/grace +
 apply-from date edited inline** (turning one on applies immediately); a **by-member** and **by-month**
-breakdown; the full **register** of every system-added penalty (member, reference, amount, date) with
-per-row **Dismiss**; and a **Sync now** button.
+breakdown; the full **register** of every system-added penalty (member, reference with the charge's
+full working, amount, date) with per-row **Dismiss**, **paginated**; both breakdown and register have
+an **All · Deposit · Interest type filter**; and a **Sync now** button.
 
 **Access:** **admin only.**
 

@@ -26,7 +26,13 @@ export function AdminHub({ data }: { data: Data }) {
 
   const { admins, quarter, auditCount, memberOptions, club } = data;
   const memberOpts: PickOption[] = memberOptions.map((m) => ({ id: m.value, name: m.label, sub: m.sub }));
-  const penaltyOn = club.penalty.deposit.enabled || club.penalty.interest.enabled;
+  // Cached pre-penalty /api/settings payloads have no `club.penalty` — read as "both off".
+  const penalty = club.penalty ?? {
+    effectiveFrom: "—",
+    deposit: { enabled: false, rate: "" },
+    interest: { enabled: false, rate: "" },
+  };
+  const penaltyOn = penalty.deposit.enabled || penalty.interest.enabled;
 
   return (
     <div className="mx-auto max-w-320 p-4 pb-19.5 md:p-6.5 md:pb-6.5">
@@ -37,7 +43,7 @@ export function AdminHub({ data }: { data: Data }) {
             Everything only managers can touch — penalties, the audit trail, people, and club data.
           </p>
         </div>
-        <div className="flex gap-2.5">
+        <div className="flex w-full justify-center gap-2.5 sm:w-auto sm:justify-end">
           <Stat value={String(admins.length)} label={admins.length === 1 ? "admin" : "admins"} />
           <Stat value={String(auditCount)} label="audit events" />
           <Stat value={penaltyOn ? "On" : "Off"} label="auto penalties" tone={penaltyOn ? "teal" : "mut"} />
@@ -60,7 +66,7 @@ export function AdminHub({ data }: { data: Data }) {
             </span>
           </div>
           <div className="mt-1.5 text-12 font-medium leading-tight text-mut">
-            Deposit {club.penalty.deposit.enabled ? club.penalty.deposit.rate : "off"} · Loan-interest {club.penalty.interest.enabled ? club.penalty.interest.rate : "off"} · from {club.penalty.effectiveFrom}. Review, tune & sync.
+            Deposit {penalty.deposit.enabled ? penalty.deposit.rate : "off"} · Loan-interest {penalty.interest.enabled ? penalty.interest.rate : "off"} · from {penalty.effectiveFrom}. Review, tune & sync.
           </div>
         </div>
         <ArrowUpRight className="size-5 flex-none text-teal transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" strokeWidth={2.2} />
@@ -140,16 +146,17 @@ function Tile({ icon: Icon, tone = "teal" }: { icon: LucideIcon; tone?: "teal" |
 // A tool rendered as a link (navigates).
 function ToolLink({ href, icon, title, sub }: { href: string; icon: LucideIcon; title: string; sub: string }) {
   return (
-    <Link href={href} className="rounded-2xl border border-bd bg-sf shadow-card transition-colors hover:bg-bg">
+    <Link href={href}>
       <ToolFace icon={icon} title={title} sub={sub} />
     </Link>
   );
 }
 
-// The shared inner face for every tool card (used by links and by modal-trigger buttons).
+// The shared face for every tool card — carries the card chrome itself, so links and
+// modal-trigger buttons look identical.
 function ToolFace({ icon: Icon, title, sub, tone = "teal" }: { icon: LucideIcon; title: string; sub: string; tone?: "teal" | "warn" }) {
   return (
-    <div className="flex w-full items-center gap-3.5 rounded-2xl px-5 py-4.5">
+    <div className="flex w-full items-center gap-3.5 rounded-2xl border border-bd bg-sf px-5 py-4.5 shadow-card transition-colors hover:bg-bg">
       <Tile icon={Icon} tone={tone} />
       <div className="min-w-0 flex-1">
         <div className="text-sm font-bold leading-none text-ink">{title}</div>

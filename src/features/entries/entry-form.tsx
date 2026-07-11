@@ -55,7 +55,7 @@ export function EntryForm({
       </div>
 
       {/* Amount + date sit side by side on desktop, stack on mobile. */}
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
           <SectionLabel>Amount</SectionLabel>
           <AmountInput value={amount} onChange={setAmount} />

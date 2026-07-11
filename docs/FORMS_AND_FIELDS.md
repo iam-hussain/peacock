@@ -148,8 +148,11 @@ The member page shows **cumulative** catch-ups and penalties — each charge (re
 the running **paid vs remaining**.
 
 > **Auto penalties** (§13.1, when enabled) appear here as ordinary **penalty charges** — kind
-> *penalty*, reason *Deposit penalty (auto)* / *Loan-interest penalty (auto)* — each labelled with the
-> month or loan it was charged for, and paid down via the same **Pay penalty** entry. They are
+> *penalty*, reason *Deposit penalty (auto)* / *Loan-interest penalty (auto)* — and are paid down via
+> the same **Pay penalty** entry. The ledger row shows the **reason as its title**, is attributed to
+> the **auto scheduler** (manual charges: *admin*), and carries a **note with the full working**
+> (*"Deposit penalty · Jul 2026 — 2% of ₹15,000 deposit pending"*) underneath. **Editing** an auto
+> charge offers its auto reason as a **preselected chip** alongside the manual reasons. They are
 > materialised by the system (deduped, never charged twice) and can be **dismissed** by an admin from
 > the Auto penalties page; a dismissed one is excluded and never re-created.
 
