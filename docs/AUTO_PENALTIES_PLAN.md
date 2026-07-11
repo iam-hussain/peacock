@@ -1,8 +1,12 @@
-# Automatic Penalties — Plan (proposal, not yet built)
+# Automatic Penalties — Plan (IMPLEMENTED)
 
-**Status:** agreed in discussion on 6 Jul 2026 — awaiting final go-ahead before any code or
-product-doc change. Once approved, PRODUCT.md §13 (and the other docs) will be updated from this
-plan and this file will be the implementation checklist.
+**Status:** ✅ **Built** (Jul 2026). Confirmed direction with the owner and shipped with two tweaks
+to the original plan: (1) a single **global effective-from date** (default **1 Sep 2026**) so it is
+**not retroactive** — each penalty still has its **own on/off toggle**; (2) auto penalties are
+**materialised** as real `Charge(PENALTY, auto)` rows **when an entry is recorded** (deduped by a
+deterministic id — never charged twice), with an admin **Auto penalties** page (register + Sync now +
+Dismiss) rather than being purely derived-on-read. The live behaviour is documented in **PRODUCT.md
+§13.1** and **IMPLEMENTATION_PLAN.md §16.2.1**; this file is retained as the design record.
 
 ---
 

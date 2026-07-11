@@ -7,25 +7,13 @@ import { Modal, ModalActions } from "@/components/shared/modal";
 import { saveClubSettings } from "@/lib/actions-client";
 import type { SettingsData } from "@/server/queries/settings";
 import { DateInput } from "@/components/shared/date-input";
+import { Toggle } from "./settings-primitives";
+import { PenaltyFields, type PenaltyState } from "./penalty-fields";
 
 const label = "text-11 font-bold uppercase leading-none tracking-6 text-fnt";
 const input =
   "w-full rounded-11 border border-bd2 bg-sf px-3.5 py-2.5 text-sm font-medium text-ink outline-none placeholder:text-fnt focus:border-teal";
 const locked = "flex items-center justify-between rounded-11 border border-bd bg-bg2 px-3.5 py-2.5 text-sm font-medium text-mut";
-
-function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={on}
-      onClick={() => onChange(!on)}
-      className={`relative h-6.5 w-11.5 flex-none rounded-full transition-colors ${on ? "bg-teal" : "bg-bd2"}`}
-    >
-      <span className={`absolute top-0.75 size-5 rounded-full bg-white shadow-sm transition-all ${on ? "left-[23px]" : "left-0.75"}`} />
-    </button>
-  );
-}
 
 export function EditClubButton({ edit, className }: { edit: SettingsData["club"]["edit"]; className?: string }) {
   const router = useRouter();
@@ -35,6 +23,7 @@ export function EditClubButton({ edit, className }: { edit: SettingsData["club"]
   const [depositFrom, setDepositFrom] = useState("");
   const [rate, setRate] = useState("");
   const [rateFrom, setRateFrom] = useState("");
+  const [penalty, setPenalty] = useState<PenaltyState>(edit.penalty);
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
 
@@ -45,12 +34,18 @@ export function EditClubButton({ edit, className }: { edit: SettingsData["club"]
     setDepositFrom("");
     setRate("");
     setRateFrom("");
+    setPenalty(edit.penalty);
     setError(null);
   };
 
   const submit = () =>
     start(async () => {
-      const res = await saveClubSettings({ dividend, depositAmount, depositFrom, rate, rateFrom });
+      const res = await saveClubSettings({
+        dividend, depositAmount, depositFrom, rate, rateFrom,
+        penaltyFrom: penalty.from,
+        depositPenaltyEnabled: penalty.depositEnabled, depositPenaltyRate: penalty.depositRate, depositPenaltyMin: penalty.depositMin,
+        interestPenaltyEnabled: penalty.interestEnabled, interestPenaltyRate: penalty.interestRate, interestPenaltyMin: penalty.interestMin, interestPenaltyGrace: penalty.interestGrace,
+      });
       if (!res.ok) return setError(res.error ?? "Could not save.");
       close();
       router.refresh();
@@ -107,6 +102,8 @@ export function EditClubButton({ edit, className }: { edit: SettingsData["club"]
             </div>
             <Toggle on={dividend} onChange={setDividend} />
           </div>
+
+          <PenaltyFields value={penalty} onChange={setPenalty} />
 
           <div className="flex flex-col gap-1.5">
             <span className={label}>Timezone</span>

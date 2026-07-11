@@ -567,6 +567,7 @@ model ClubConfig {
   loanTermMonths   Int      @default(5)
   loanCooldownMonths Int    @default(1)
   overduePenaltyBps  Int    @default(0)  // AUTO extra monthly rate on the overdue portion (G1); CURRENT config — applies instantly to ALL loans
+  penaltyConfig    Json?    // AUTO deposit + loan-interest penalties (§16.2.1): { effectiveFrom, deposit:{enabled,rateBps,minPaise}, interest:{enabled,rateBps,graceDays,minPaise} }. Null → defaults (both off). Parsed by queries/penalties.ts.
   dividendEnabled  Boolean  @default(false) // periodic member dividend seam (G2); off for now
   entrySubmission  EntrySubmissionMode @default(ALL_MEMBERS) // who can SUBMIT entries (admin always approves)
   fyStartMonth     Int      @default(4)     // fiscal year start month (Apr) — drives quarter boundaries
@@ -574,8 +575,9 @@ model ClubConfig {
   timezone         String   @default("Asia/Kolkata")
   updatedAt        DateTime @updatedAt
 }
-// NOTE: late/delayed-deposit penalty is NOT an auto config — it's a manual penalty CHARGE the admin
-// raises (Charge model), paid down via PENALTY transactions → OTHER_INCOME. See §16.2.
+// NOTE: the delayed-deposit / loan-interest penalties can be MANUAL (a penalty Charge the admin raises)
+// or AUTO (materialised from ClubConfig.penaltyConfig by the auto-penalty engine, §16.2.1). Both are
+// Charge rows paid down via PENALTY transactions → OTHER_INCOME. See §16.2.1.
 
 model Submission {                              // a PROPOSED entry awaiting admin approval (approval workflow)
   id          String   @id @default(cuid())
@@ -630,14 +632,18 @@ model Charge {                                   // a due the member OWES (catch
   amount      BigInt                              // paise owed (admin-editable; suggestion computed)
   occurredAt  DateTime
   note        String?
+  auto        Boolean  @default(false)            // system-materialised auto penalty (§16.2.1); id is deterministic so re-sync can't duplicate it; amount frozen on write
+  voidedAt    DateTime?                           // admin dismissed an auto charge — excluded from dues + a tombstone so the sync never re-creates it
   createdById String?
   createdAt   DateTime @default(now())
   @@index([membershipId, kind])
+  @@index([auto])
 }
 // Charges do NOT post to the cash ledger; they are tracked dues. Cash moves only when paid down via
 // CATCHUP (→ MEMBER_EQUITY) / PENALTY (→ OTHER_INCOME) transactions. Outstanding due per kind =
-// Σ Charge.amount − Σ matching pay-down transactions (derive-on-read). Shown cumulatively on the
-// member page. A member may have many charges of each kind over time (e.g. one catch-up per rejoin).
+// Σ Charge.amount − Σ matching NON-VOIDED pay-down transactions (derive-on-read). Shown cumulatively
+// on the member page. A member may have many charges of each kind over time (e.g. one catch-up per
+// rejoin); auto penalties (§16.2.1) are ordinary PENALTY charges with `auto` set.
 
 model AuditLog {
   id         String   @id @default(cuid())
@@ -661,6 +667,7 @@ enum ChargeKind { CATCHUP PENALTY }
 // Reason values (stored as string on Charge.reason):
 //   catch-up: FIRST_TIME_JOIN | REJOIN | PROFIT_GAP_TOPUP | MID_TERM_EQUALISATION | OTHER
 //   penalty:  DELAYED_PAYMENT | LOAN_REPAYMENT_DELAY | HOLDING_TOO_LONG | MISSED_DEPOSIT | OTHER
+//   penalty (auto, §16.2.1): AUTO_DEPOSIT_PENALTY | AUTO_LOAN_INTEREST_PENALTY
 enum MemberRole { ADMIN MEMBER }
 enum MembershipStatus { ACTIVE CLOSED }        // a person is "active" iff they have an ACTIVE membership
 enum SubmissionStatus { PENDING APPROVED REJECTED }
@@ -1047,6 +1054,46 @@ penaltyOwed(m)  = Σ Charge(PENALTY, m).amount  − Σ PENALTY pay-downs(m)
 - **Migration mapping:** v1 `joiningOffset` → a `Charge(CATCHUP, FIRST_TIME_JOIN)`; v1 `delayOffset`
   → a `Charge(PENALTY, DELAYED_PAYMENT)`. If v1 recorded these as already-settled, also emit the
   matching pay-down so the outstanding nets to v1's state.
+
+#### 16.2.1 Automatic penalty engine (deposit & loan-interest) — PRODUCT §13.1
+
+Two config-driven auto penalties, each independently toggled and **off by default**, sharing one
+`effectiveFrom` date. They are **not a cron job** — they materialise as ordinary `Charge(PENALTY, auto)`
+rows so they flow into penalty-due everywhere (member list/detail, dashboard, Pay-penalty context) and
+are collected via the existing `PENALTY` pay-down. Layout:
+
+- **`server/queries/penalties.ts`** — pure/read: `parsePenaltyConfig`/`serializePenaltyConfig`
+  (JSON ↔ typed config, BigInt paise as strings, defaults = both off, `effectiveFrom` 2026-09-01,
+  2% / ₹6,000 deposit, 2% / ₹1,000 / 30-day interest); the period walks; `computeAutoPenalties(cfg)`
+  (batched, integer paise) → the list of currently-due charges; and `getAutoPenaltiesData()` for the
+  admin page.
+- **`server/ledger/auto-penalties.ts`** — `syncAutoPenalties()`: diff the due list against existing
+  ids and `upsert` only the missing ones. **Idempotent/duplicate-proof by construction** — each due
+  charge has a **deterministic id** (`apen_dep_<ms>_<YYYYMM>`, `apen_int_<ms>_t<k>`), so a re-run /
+  concurrent run / redeploy can never write a period twice; existing rows are never overwritten
+  (amount frozen).
+
+```
+# Deposit penalty — 1st of each month M in [max(effectiveFrom, join), today]:
+pending_M = expectedClubDeposit(stages, firstOf(M)) − periodicPaid(≤ firstOf(M))   # same figure as the member page
+if pending_M > deposit.minPaise:  Charge += deposit.rate% × pending_M               # whole months only, simple
+
+# Loan-interest penalty — active member whose loans have ALL closed with interest owed:
+anchor = latest loan closedAt;  accrued = Σ generated interest (fixed once closed)
+for tick k=1,2,… at anchor + k·graceDays ≤ today:
+    pending = accrued − interestPaid(≤ tick)
+    if pending > interest.minPaise:  Charge += interest.rate% × pending             # on interest, never principal
+# a live (ACTIVE) loan pauses ticks; the base is always the pending base, never penalty-on-penalty
+```
+
+**When it runs:** `syncAutoPenaltiesSafe()` (best-effort — never fails the user's mutation) fires from
+`formAction` (every recorded entry), from `decideSubmission` (an approved member entry), and from
+`saveClubSettings` (so enabling applies from the effective date at once); `syncAutoPenaltiesNow()`
+backs the page's **Sync now**. **Retroactivity:** only from `effectiveFrom` forward. **Dismiss:**
+`deleteCharge` **voids** an `auto` charge (`voidedAt`) instead of deleting, and every charge-sum read
+filters `voidedAt: null`, so a dismissed penalty is excluded and the deterministic id keeps the sync
+from re-creating it. **Cache:** on the `penalties` stats key + the shared `bustStats()` after any
+mutation; `/penalties` added to `revalidateLedger`.
 
 ### 16.3 Leave (close membership) → rejoin (open new membership) — the banker model
 

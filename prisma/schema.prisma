@@ -230,6 +230,7 @@ model ClubConfig {
   loanTermMonths     Int                 @default(5)
   loanCooldownMonths Int                 @default(1)
   overduePenaltyBps  Int                 @default(0) // AUTO extra monthly rate on the overdue portion (G1); CURRENT config — applies instantly to ALL loans
+  penaltyConfig      Json? // AUTO deposit + loan-interest penalties (§13.2): { effectiveFrom, deposit:{enabled,rateBps,minPaise}, interest:{enabled,rateBps,graceDays,minPaise} }. Null → all defaults (off). Parsed by server/queries/penalties.ts.
   dividendEnabled    Boolean             @default(false) // periodic member dividend seam (G2); off for now
   entrySubmission    EntrySubmissionMode @default(ALL_MEMBERS) // who can SUBMIT entries (admin always approves)
   fyStartMonth       Int                 @default(4) // fiscal year start month (Apr) — drives quarter boundaries
@@ -301,10 +302,13 @@ model Charge {
   amount       BigInt // paise owed (admin-editable; suggestion computed)
   occurredAt   DateTime
   note         String?
+  auto         Boolean    @default(false) // system-materialised auto penalty (§13.2). id is deterministic (apen_dep_… / apen_int_…) so a re-sync can never duplicate it; amount is frozen on write.
+  voidedAt     DateTime? // admin dismissed this auto charge — excluded from dues + a tombstone so the sync never resurrects it
   createdById  String?
   createdAt    DateTime   @default(now())
 
   @@index([membershipId, kind])
+  @@index([auto])
 }
 
 // Charges do NOT post to the cash ledger; they are tracked dues. Cash moves only when paid down via

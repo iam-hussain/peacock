@@ -4,6 +4,7 @@ import { formatLakh, formatPaise } from "@/lib/money";
 import { dayMonthYear } from "@/lib/date";
 import { getCurrentUser } from "./session";
 import { getQuarterPreview, type QuarterPreview } from "./close-quarter";
+import { getPenaltyConfig } from "./penalties";
 
 interface Stage {
   amountPaise: number;
@@ -19,8 +20,21 @@ export interface SettingsData {
   club: {
     name: string; meta: string; deposit: string; rate: string; loanLimit: string;
     term: string; cooldown: string; overdue: string; dividend: string; timezone: string;
+    // Auto penalties (§13.2): display summary + raw prefill for the Edit-club form.
+    penalty: {
+      effectiveFrom: string;
+      deposit: { enabled: boolean; rate: string; min: string };
+      interest: { enabled: boolean; rate: string; min: string; grace: string };
+    };
     // current values used to pre-fill / label the Edit-club form (design: name & timezone locked)
-    edit: { name: string; currentDeposit: string; currentRate: string; dividend: boolean; timezone: string };
+    edit: {
+      name: string; currentDeposit: string; currentRate: string; dividend: boolean; timezone: string;
+      penalty: {
+        from: string; // yyyy-mm-dd
+        depositEnabled: boolean; depositRate: string; depositMin: string; // %, ₹ (rupees)
+        interestEnabled: boolean; interestRate: string; interestMin: string; interestGrace: string; // %, ₹, days
+      };
+    };
     history: {
       stages: { amount: string; range: string }[];
       rates: { rate: string; range: string; current: boolean }[];
@@ -65,9 +79,20 @@ export async function getSettingsData(): Promise<SettingsData> {
     orderBy: { firstName: "asc" },
   });
 
-  const [quarter, auditCount] = await Promise.all([getQuarterPreview(), prisma.auditLog.count()]);
+  const [quarter, auditCount, pcfg] = await Promise.all([getQuarterPreview(), prisma.auditLog.count(), getPenaltyConfig()]);
 
   const overduePct = (cfg?.overduePenaltyBps ?? 0) / 100;
+  const rupees = (p: bigint) => String(Math.round(Number(p) / 100));
+  const penalty = {
+    effectiveFrom: dayMonthYear(pcfg.effectiveFrom),
+    deposit: { enabled: pcfg.deposit.enabled, rate: `${pcfg.deposit.rateBps / 100}% / mo`, min: formatPaise(pcfg.deposit.minPaise) },
+    interest: { enabled: pcfg.interest.enabled, rate: `${pcfg.interest.rateBps / 100}% / mo`, min: formatPaise(pcfg.interest.minPaise), grace: `${pcfg.interest.graceDays} days` },
+  };
+  const penaltyEdit = {
+    from: pcfg.effectiveFrom.toISOString().slice(0, 10),
+    depositEnabled: pcfg.deposit.enabled, depositRate: String(pcfg.deposit.rateBps / 100), depositMin: rupees(pcfg.deposit.minPaise),
+    interestEnabled: pcfg.interest.enabled, interestRate: String(pcfg.interest.rateBps / 100), interestMin: rupees(pcfg.interest.minPaise), interestGrace: String(pcfg.interest.graceDays),
+  };
 
   return {
     club: {
@@ -81,12 +106,14 @@ export async function getSettingsData(): Promise<SettingsData> {
       overdue: `${overduePct}%`,
       dividend: cfg?.dividendEnabled ? "On" : "Off",
       timezone: cfg?.timezone ?? "Asia/Kolkata",
+      penalty,
       edit: {
         name: cfg?.name ?? "Peacock Investment Club",
         currentDeposit: deposit,
         currentRate: rateLabel,
         dividend: cfg?.dividendEnabled ?? false,
         timezone: cfg?.timezone ?? "Asia/Kolkata",
+        penalty: penaltyEdit,
       },
       history: {
         stages: stages.map((s, i) => ({

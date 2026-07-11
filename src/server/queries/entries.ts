@@ -32,7 +32,7 @@ async function getMemberEntryContext(): Promise<Map<string, { value: bigint; due
         member: { select: { id: true } },
         accounts: { where: { kind: "MEMBER_EQUITY" }, select: { id: true, balance: true } },
         loans: { where: { status: "ACTIVE" }, select: { principalOutstanding: true } },
-        charges: { select: { kind: true, amount: true } },
+        charges: { where: { voidedAt: null }, select: { kind: true, amount: true } },
       },
     }),
     // Periodic-only: deposit dues are measured against monthly deposits, not catch-up (§7).

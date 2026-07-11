@@ -57,12 +57,41 @@ export function ClubTab({ club, isAdmin }: { club: SettingsData["club"]; isAdmin
         </div>
         <span className="rounded-20 bg-nbg px-2.5 py-1.5 text-10 font-bold leading-none text-nfg">{club.dividend}</span>
       </div>
+      <PenaltyRules penalty={club.penalty} />
       <div className="flex items-center justify-between border-b border-hr2 px-5 py-3.5">
         <span className="text-sm font-bold leading-none text-ink">Timezone</span>
         <span className="font-mono text-13 leading-none text-mut">{club.timezone}</span>
       </div>
       <RateDepositHistory history={club.history} />
     </Card>
+  );
+}
+
+function PenaltyRules({ penalty }: { penalty: SettingsData["club"]["penalty"] }) {
+  const rows = [
+    { l: "Deposit penalty", on: penalty.deposit.enabled, v: `${penalty.deposit.rate} on pending over ${penalty.deposit.min}`, sub: "charged on the 1st of each month" },
+    { l: "Loan-interest penalty", on: penalty.interest.enabled, v: `${penalty.interest.rate} on interest over ${penalty.interest.min}`, sub: `${penalty.interest.grace} grace after a loan closes` },
+  ];
+  return (
+    <div className="border-b border-hr2 px-5 py-4">
+      <div className="mb-3.75 flex items-center justify-between">
+        <span className="text-11 font-semibold uppercase leading-none tracking-4 text-fnt">Auto penalties</span>
+        <span className="text-11 font-medium leading-none text-fnt">from {penalty.effectiveFrom}</span>
+      </div>
+      <div className="flex flex-col gap-3.5">
+        {rows.map((r) => (
+          <div key={r.l} className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-sm font-bold leading-none text-ink">{r.l}</div>
+              <div className="mt-1.5 text-11 font-medium leading-tight text-fnt">{r.on ? r.v : r.sub}</div>
+            </div>
+            <span className={`flex-none rounded-20 px-2.5 py-1.5 text-10 font-bold leading-none ${r.on ? "bg-tlsf text-teal" : "bg-nbg text-nfg"}`}>
+              {r.on ? "On" : "Off"}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 

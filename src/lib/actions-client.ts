@@ -22,6 +22,7 @@ export const markAllRead = invalidating(A.markAllRead);
 export const updateAvatar = invalidating(A.updateAvatar);
 export const setAdmin = invalidating(A.setAdmin);
 export const saveClubSettings = invalidating(A.saveClubSettings);
+export const syncAutoPenaltiesNow = invalidating(A.syncAutoPenaltiesNow);
 export const closeQuarterNow = invalidating(A.closeQuarterNow);
 export const importBackup = invalidating(importBackupAction);
 

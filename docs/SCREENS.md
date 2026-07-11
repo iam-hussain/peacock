@@ -214,17 +214,21 @@ treasurer.
 
 **Shows / does — configuration:** club name & start date; deposit **stages**; **interest-rate
 schedule** (add dated change for new loans); daily-interest-from date; loan limit; loan term;
-cooldown; **overdue penalty** (default 0, auto); **dividend** toggle (off); **who can submit entries**
-(admins only / all members); **alert thresholds** (large amount, heavy pending deposit/interest);
-timezone. *(Late/delayed payment is a manual penalty **charge** on the member page, not an auto
-setting. There is **no permissions matrix**.)*
+cooldown; **overdue penalty** (default 0, auto); **auto penalties** — deposit + loan-interest, each a
+toggle with **rate %**, **minimum**, (loan) **grace days**, and a shared **apply-from date** (default
+off, see §13.1); **dividend** toggle (off); **who can submit entries** (admins only / all members);
+**alert thresholds** (large amount, heavy pending deposit/interest); timezone. The Club tab shows an
+**Auto penalties** summary (on/off, rate, minimum, effective-from) for each. *(Late/delayed payment
+can also be a **manual** penalty **charge** on the member page. There is **no permissions matrix**.)*
 
 **Shows / does — people:** add/edit members; **reset any member's password**; grant/revoke admin;
 set/unset treasurer; deactivate/archive. *(Forgot-password requests arrive as **notifications**, not a
 separate queue.)*
 
-**Does — other:** **Audit log** (who did what, when — browsable); **Close quarter** (locks the quarter
-+ snapshot, with an "can't be undone" warning). *(Backup/restore export too.)*
+**Does — other:** **Audit log** (who did what, when — browsable); **Auto penalties** page (every
+system-added deposit / loan-interest penalty with member, reference, amount, date; **Sync now**;
+per-row **Dismiss** — see §13.1); **Close quarter** (locks the quarter + snapshot, with an "can't be
+undone" warning). *(Backup/restore export too.)*
 
 **Access:** **admin only.**
 

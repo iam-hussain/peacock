@@ -1,6 +1,6 @@
 "use client";
 
-import { Users, FileText, CalendarClock, KeyRound, Database, Download, ChevronRight } from "lucide-react";
+import { Users, FileText, CalendarClock, KeyRound, Database, Download, ChevronRight, ShieldAlert } from "lucide-react";
 import Link from "next/link";
 import { FormModalButton } from "@/components/shared/form-modal-button";
 import { CreateBackupButton, ImportButton } from "./backup-buttons";
@@ -58,6 +58,9 @@ export function AdminTab({
           </AdminsButton>
           <Link href="/audit">
             <ActionInner icon={FileText} tone="teal" title="Audit log" sub={`${auditCount} recorded event${auditCount === 1 ? "" : "s"}`} />
+          </Link>
+          <Link href="/penalties" className="sm:col-span-2">
+            <ActionInner icon={ShieldAlert} tone="teal" title="Auto penalties" sub="Review system-added deposit & loan-interest penalties" wide />
           </Link>
           <CloseQuarterButton quarter={quarter} className="sm:col-span-2">
             <ActionInner

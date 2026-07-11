@@ -171,11 +171,22 @@ leave.** If you **come back later**, the club **opens a fresh membership** for y
 deposits plus a **catch-up** to be equal again — and your old membership stays on file as history. So
 your new chapter starts clean, with the old one still there to look back on.
 
-### 9. Late monthly savings
+### 9. Late monthly savings & unpaid interest
 
 If you pay your monthly savings late, the app shows it as **pending / overdue** so it's visible.
-Right now there's **no penalty** for being late — it's just a reminder. (A penalty can be switched
-on later if the club decides.)
+
+The club can also switch on **two automatic penalties** (both are **off unless the managers turn
+them on**, and the managers choose the amounts and the date they start from):
+
+- **Falling behind on savings** — if your unpaid savings stay high (more than about three months'
+  worth), a small monthly charge (e.g. 2%) is added until you catch up.
+- **Not clearing loan interest** — after you finish paying back a loan, you get a grace month to
+  clear the interest; if it's still unpaid, a small charge (e.g. 2% of the *interest*, never the loan
+  itself) is added each month until it's paid.
+
+These are added **automatically**, each one clearly labelled with **what it was for** (which month,
+or which loan), and the managers can see the full list on an **Auto penalties** page. Nothing is ever
+charged twice, and a charge is never on top of another charge — always just on what you still owe.
 
 ### 10. Everyone can see everything
 
