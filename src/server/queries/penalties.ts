@@ -1,7 +1,7 @@
 import "server-only";
 import { prisma } from "@/server/db";
 import { formatPaise, roundToWholeRupee } from "@/lib/money";
-import { istDate, dayMonthYear, monthYear } from "@/lib/date";
+import { ist, istDate, dayMonthYear, monthYear } from "@/lib/date";
 import { reversedTxnIds } from "./shared";
 import { expectedClubDeposit, type Stage } from "./members";
 import { loanEventsMap, reconstructCycles } from "./loans";
@@ -270,6 +270,13 @@ export interface AutoPenaltyRow {
   date: string;
   voided: boolean;
 }
+export interface AutoPenaltyGroup {
+  key: string; // memberId or "YYYY-MM"
+  label: string; // member name or "Sep 2026"
+  sub?: string; // secondary label (e.g. member id target for links)
+  count: number;
+  total: string;
+}
 export interface AutoPenaltiesData {
   enabled: boolean; // either penalty on
   deposit: { enabled: boolean; rate: string; min: string };
@@ -278,6 +285,14 @@ export interface AutoPenaltiesData {
   totalAssigned: string; // Σ live (non-voided) auto penalty amounts
   count: number; // live auto penalties
   rows: AutoPenaltyRow[];
+  byMember: AutoPenaltyGroup[]; // live penalties grouped per member, biggest first
+  byMonth: AutoPenaltyGroup[]; // live penalties grouped per charge month, newest first
+  // Raw editable prefill for the inline config editor (rupees for money, yyyy-mm-dd for the date).
+  config: {
+    from: string;
+    depositEnabled: boolean; depositRate: string; depositMin: string;
+    interestEnabled: boolean; interestRate: string; interestMin: string; interestGrace: string;
+  };
 }
 
 const TYPE_OF: Record<string, "Deposit" | "Loan interest"> = {
@@ -298,14 +313,25 @@ export async function getAutoPenaltiesData(): Promise<AutoPenaltiesData> {
   });
   let totalAssigned = 0n;
   let count = 0;
+  // Live (non-voided) group accumulators, keyed by member and by charge-month.
+  const memberAgg = new Map<string, { name: string; count: number; total: bigint }>();
+  const monthAgg = new Map<string, { label: string; count: number; total: bigint }>();
   const rows: AutoPenaltyRow[] = charges.map((c) => {
     const voided = !!c.voidedAt;
-    if (!voided) { totalAssigned += c.amount; count++; }
     const m = c.membership.member;
+    const name = [m.firstName, m.lastName].filter(Boolean).join(" ");
+    if (!voided) {
+      totalAssigned += c.amount; count++;
+      const mem = memberAgg.get(m.id) ?? { name, count: 0, total: 0n };
+      mem.count++; mem.total += c.amount; memberAgg.set(m.id, mem);
+      const mk = `${ist(c.occurredAt).getUTCFullYear()}-${String(ist(c.occurredAt).getUTCMonth() + 1).padStart(2, "0")}`;
+      const mo = monthAgg.get(mk) ?? { label: monthYear(c.occurredAt), count: 0, total: 0n };
+      mo.count++; mo.total += c.amount; monthAgg.set(mk, mo);
+    }
     return {
       id: c.id,
       memberId: m.id,
-      member: [m.firstName, m.lastName].filter(Boolean).join(" "),
+      member: name,
       type: TYPE_OF[c.reason] ?? "Deposit",
       reference: c.note ?? "—",
       amount: formatPaise(c.amount),
@@ -313,7 +339,15 @@ export async function getAutoPenaltiesData(): Promise<AutoPenaltiesData> {
       voided,
     };
   });
+  const byMember: AutoPenaltyGroup[] = [...memberAgg.entries()]
+    .sort((a, b) => (b[1].total > a[1].total ? 1 : b[1].total < a[1].total ? -1 : 0))
+    .map(([memberId, v]) => ({ key: memberId, label: v.name, count: v.count, total: formatPaise(v.total) }));
+  const byMonth: AutoPenaltyGroup[] = [...monthAgg.entries()]
+    .sort((a, b) => (a[0] < b[0] ? 1 : -1)) // newest month first
+    .map(([key, v]) => ({ key, label: v.label, count: v.count, total: formatPaise(v.total) }));
+
   const rate = (bps: number) => `${bps / 100}%`;
+  const rupees = (p: bigint) => String(Math.round(Number(p) / 100));
   return {
     enabled: cfg.deposit.enabled || cfg.interest.enabled,
     deposit: { enabled: cfg.deposit.enabled, rate: rate(cfg.deposit.rateBps), min: formatPaise(cfg.deposit.minPaise) },
@@ -322,5 +356,12 @@ export async function getAutoPenaltiesData(): Promise<AutoPenaltiesData> {
     totalAssigned: formatPaise(totalAssigned),
     count,
     rows,
+    byMember,
+    byMonth,
+    config: {
+      from: cfg.effectiveFrom.toISOString().slice(0, 10),
+      depositEnabled: cfg.deposit.enabled, depositRate: String(cfg.deposit.rateBps / 100), depositMin: rupees(cfg.deposit.minPaise),
+      interestEnabled: cfg.interest.enabled, interestRate: String(cfg.interest.rateBps / 100), interestMin: rupees(cfg.interest.minPaise), interestGrace: String(cfg.interest.graceDays),
+    },
   };
 }

@@ -1,7 +1,7 @@
 import "server-only";
 import { prisma } from "@/server/db";
 import { formatPaise, profitShare } from "@/lib/money";
-import { monthYear, monthsDays, tenure, dayMonthYear } from "@/lib/date";
+import { monthYear, tenure, dayMonthYear } from "@/lib/date";
 import { loanEventsMap, reconstructCycles, loanConfig, isOverdue, interestOwedTotal, loanCycleDTOs, type LoanCfg, type LoanCycleDTO } from "./loans";
 import { vendorProfitAndObligation } from "./vendors";
 import { getCashHolderOptions } from "./entries";

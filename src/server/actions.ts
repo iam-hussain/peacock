@@ -765,6 +765,22 @@ export async function saveClubSettings(input: {
   return { ok: true };
 }
 
+// Save ONLY the auto-penalty config (§13.1) — the focused action behind the toggles on the auto
+// penalties page, so an admin can turn a penalty on without going through the whole Edit-club form.
+// Overlays the submitted knobs onto the current config (blank = keep), then materialises what's due.
+export async function savePenaltyConfig(input: PenaltyInput): Promise<ActionResult> {
+  const me = await getCurrentUser();
+  if (!me?.isAdmin) return { ok: false, error: "Only an admin can change penalties." };
+  const built = buildPenaltyConfig(input, await getPenaltyConfig());
+  if ("error" in built) return { ok: false, error: built.error };
+  const data: { penaltyConfig: object } = { penaltyConfig: serializePenaltyConfig(built) };
+  await prisma.clubConfig.update({ where: { id: "singleton" }, data });
+  await syncAutoPenaltiesSafe(); // turning one on applies from the effective date at once
+  for (const p of ["/penalties", "/admin", "/settings", "/members", "/dashboard"]) revalidatePath(p);
+  await bustStats();
+  return { ok: true };
+}
+
 // Admin "Sync now" on the auto-penalties page: force a materialisation pass and report how many
 // new penalties were added. Duplicate-proof (deterministic ids), so it's safe to run any time.
 export async function syncAutoPenaltiesNow(): Promise<ActionResult & { added?: number }> {

@@ -598,10 +598,11 @@ demand via **Sync now**), and the same month or loan-tick can **never be charged
 the amount is **fixed**; if history later changes so a period no longer qualified, the admin can
 **dismiss** that auto penalty (and it won't come back).
 
-Admins review every system-added penalty on a dedicated **Auto penalties** page (Settings → Admin
-tools → Auto penalties): the member, what it was charged for, the amount, the date, and a **Sync
-now** button. The rates, minimums, grace window, and start date are all changed in **Settings → Club
-→ Edit**.
+Admins review every system-added penalty on a dedicated **Auto penalties** page (**Admin → Auto
+penalties**): the member, what it was charged for, the amount, the date, a **by-member** and
+**by-month** breakdown, and a **Sync now** button. The toggles, rates, minimums, grace window, and
+start date are edited **right on that page** (and also in Settings → Club → Edit) — turning a penalty
+on there applies it from the start date immediately.
 
 ### 13.2 Penalty charges (manual, multiple, paid down)
 

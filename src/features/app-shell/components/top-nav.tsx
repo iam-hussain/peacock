@@ -11,6 +11,9 @@ import { useAddEntry } from "@/features/entries/add-entry";
 import { toggleTheme } from "@/lib/theme";
 import type { CurrentUser } from "@/server/queries/session";
 
+// Admin-hub routes — the "Admin" tab stays highlighted across the whole cluster.
+const ADMIN_PATHS = ["/admin", "/penalties", "/audit"];
+
 /** Desktop top navigation bar. */
 export function TopNav({ user }: { user: CurrentUser }) {
   const unread = useUnread();
@@ -35,6 +38,16 @@ export function TopNav({ user }: { user: CurrentUser }) {
             </Link>
           );
         })}
+        {user.isAdmin && (
+          <Link
+            href="/admin"
+            className={`rounded-lg px-3.25 py-2 text-13 font-semibold leading-none transition-colors ${
+              ADMIN_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/")) ? "bg-tlsf text-teal" : "text-mut hover:bg-bg2"
+            }`}
+          >
+            Admin
+          </Link>
+        )}
       </nav>
 
       <div className="flex-1" />

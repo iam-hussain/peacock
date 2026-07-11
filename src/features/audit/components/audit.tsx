@@ -57,8 +57,8 @@ export function Audit({ groups: GROUPS, total }: { groups: AuditGroup[]; total: 
 
   return (
     <div className="mx-auto max-w-320 p-4 pb-19.5 md:p-6.5 md:pb-6.5">
-      <Link href="/settings" className="mb-4 inline-flex items-center gap-1.5 text-13 font-semibold leading-none text-teal">
-        ← Admin tools
+      <Link href="/admin" className="mb-4 inline-flex items-center gap-1.5 text-13 font-semibold leading-none text-teal">
+        ← Admin
       </Link>
       <div className="mb-4.5 flex flex-wrap items-end justify-between gap-4">
         <div>
