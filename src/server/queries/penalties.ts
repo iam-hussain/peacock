@@ -96,6 +96,7 @@ const monthIdx = (d: Date) => d.getUTCFullYear() * 12 + d.getUTCMonth();
 const firstOfMonth = (idx: number): Date => new Date(Date.UTC(Math.floor(idx / 12), idx % 12, 1));
 const addDays = (d: Date, n: number): Date => new Date(istDate(d).getTime() + n * 86_400_000);
 const pct = (base: bigint, rateBps: number): bigint => (base * BigInt(rateBps)) / 10000n;
+const ymd = (d: Date): string => `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, "0")}${String(d.getUTCDate()).padStart(2, "0")}`;
 
 /** One materialisable auto penalty — a Charge to be upserted by its deterministic `id`. */
 export interface DueCharge {
@@ -172,7 +173,9 @@ export function interestPenaltiesFor(
     const pending = accruedTotal > paid ? accruedTotal - paid : 0n;
     if (pending <= rule.minPaise) continue;
     out.push({
-      id: `apen_int_${membershipId}_t${k}`,
+      // Key the id on the tick DATE, not the tick index — so changing graceDays later can never
+      // re-label an existing tick (which would skip one date and double-charge another).
+      id: `apen_int_${membershipId}_${ymd(tick)}`,
       membershipId,
       reason: "AUTO_LOAN_INTEREST_PENALTY",
       amount: pct(pending, rule.rateBps),

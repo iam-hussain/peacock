@@ -427,8 +427,12 @@ async function deleteCharge(fd: FormData): Promise<ActionResult> {
   const id = str(fd, "id");
   const memberId = str(fd, "memberId");
   if (!id || !memberId) return { ok: false, error: "Missing charge." };
-  const charge = await prisma.charge.findUnique({ where: { id }, select: { auto: true } });
-  if (charge?.auto) await prisma.charge.update({ where: { id }, data: { voidedAt: new Date() } });
+  // Detect auto charges by their reason (always present, even on pre-migration Mongo docs that lack
+  // the `auto` field) rather than selecting the required `auto` flag — reading a missing required
+  // field would throw for legacy charges. Auto reasons are never assignable by hand.
+  const charge = await prisma.charge.findUnique({ where: { id }, select: { reason: true } });
+  const isAuto = charge?.reason === "AUTO_DEPOSIT_PENALTY" || charge?.reason === "AUTO_LOAN_INTEREST_PENALTY";
+  if (isAuto) await prisma.charge.update({ where: { id }, data: { voidedAt: new Date() } });
   else await prisma.charge.delete({ where: { id } });
   revalidatePath(`/members/${memberId}`);
   revalidatePath("/penalties");
