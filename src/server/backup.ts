@@ -61,6 +61,8 @@ export async function importBackup(json: string): Promise<{ ok: boolean; error?:
           const rows = data[t] as { id: string }[];
           const existing = new Set(((await txModels[t].findMany({ select: { id: true } })) as { id: string }[]).map((r) => r.id));
           const fresh = rows.filter((r) => !existing.has(r.id));
+          // Old backups predate Charge.voidedAt; write the explicit null the live-due reads filter on.
+          if (t === "charge") for (const r of fresh as { voidedAt?: unknown }[]) r.voidedAt ??= null;
           if (fresh.length) {
             const res = (await txModels[t].createMany({ data: fresh })) as { count: number };
             counts[t] = res.count;

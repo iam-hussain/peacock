@@ -223,7 +223,7 @@ async function addMember(fd: FormData): Promise<ActionResult> {
     });
     if (catchup > 0n) {
       await tx.charge.create({
-        data: { membershipId: ms.id, kind: "CATCHUP", reason: "FIRST_TIME_JOIN", amount: catchup, occurredAt: joinedAt, note: null },
+        data: { membershipId: ms.id, kind: "CATCHUP", reason: "FIRST_TIME_JOIN", amount: catchup, occurredAt: joinedAt, note: null, voidedAt: null },
       });
     }
   });
@@ -392,7 +392,8 @@ async function addCharge(fd: FormData): Promise<ActionResult> {
   const valid = kind === "PENALTY" ? PENALTY_REASONS : CATCHUP_REASONS;
   const reason = p.data.reason && valid.has(p.data.reason) ? p.data.reason : "OTHER";
   await prisma.charge.create({
-    data: { membershipId: p.data.membershipId, kind, reason, amount, occurredAt: istDate(p.data.date ? new Date(p.data.date) : new Date()), note: p.data.note || null },
+    // voidedAt explicit null: Mongo missing-key ≠ null, and live-due reads filter voidedAt: null (see db/index.ts)
+    data: { membershipId: p.data.membershipId, kind, reason, amount, occurredAt: istDate(p.data.date ? new Date(p.data.date) : new Date()), note: p.data.note || null, voidedAt: null },
   });
   revalidatePath(`/members/${p.data.memberId}`);
   return { ok: true };
@@ -528,7 +529,7 @@ async function rejoin(fd: FormData): Promise<ActionResult> {
     });
     if (catchup > 0n) {
       await tx.charge.create({
-        data: { membershipId: ms.id, kind: "CATCHUP", reason: "REJOIN", amount: catchup, occurredAt: date, note: parsed.data.note || null },
+        data: { membershipId: ms.id, kind: "CATCHUP", reason: "REJOIN", amount: catchup, occurredAt: date, note: parsed.data.note || null, voidedAt: null },
       });
     }
     // Clear the archived flag so a member who had fully "left" reads as active again.

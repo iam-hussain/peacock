@@ -59,6 +59,9 @@ async function restore() {
     const bigints = bigintFields.get(model) ?? [];
     const rows = (dump[model] ?? []).map((row) => {
       for (const f of bigints) if (row[f] != null) row[f] = BigInt(row[f] as string | number);
+      // Old dumps predate Charge.voidedAt; Mongo missing-key ≠ null and the live-due reads
+      // filter `voidedAt: null`, so a restored charge without it would be invisible.
+      if (model === "Charge") row.voidedAt ??= null;
       return row;
     });
     if (rows.length) {
