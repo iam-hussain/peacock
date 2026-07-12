@@ -42,12 +42,13 @@ export function AutoPenalties({ data, error }: { data?: AutoPenaltiesData; error
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
-        <ConfigEditor data={data} />
+      {/* Config + breakdown stack on the left; the long register gets the full right column. */}
+      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
         <div className="flex flex-col gap-4">
+          <ConfigEditor data={data} />
           <Breakdowns rows={data.rows ?? []} />
-          <Register rows={data.rows} enabled={data.enabled} />
         </div>
+        <Register rows={data.rows} enabled={data.enabled} />
       </div>
     </div>
   );
