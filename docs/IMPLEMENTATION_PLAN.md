@@ -1372,6 +1372,26 @@ Writes go through **submit → approve**:
 - An **admin's own entry** posts directly (no self-approval needed).
 - So the ledger only ever contains **approved, balanced** entries. `‹TBD›` `SUPER_ADMIN` — not needed.
 
+### 20.1 WhatsApp channel (`/api/whatsapp` + `src/server/whatsapp/`)
+
+The WhatsApp Business Cloud API webhook reuses the pieces above — no parallel write path:
+
+- **Auth**: one club-level token (`WHATSAPP_TOKEN` + `WHATSAPP_PHONE_NUMBER_ID`) for outbound sends;
+  inbound POSTs verified with the `X-Hub-Signature-256` HMAC (`WHATSAPP_APP_SECRET`); the GET
+  handshake echoes `hub.challenge` when `hub.verify_token` matches `WHATSAPP_VERIFY_TOKEN`.
+  There is **no per-member session** — `getCurrentUser()` never runs here.
+- **Identity**: sender `wa_id` → last-10-digit match against `Member.phone` (`identity.ts`);
+  `member.role === "ADMIN"` gates writes and cross-member queries.
+- **Reads** call the existing queries (`getMemberDetail`, `getTransactionsPage`) and reply with
+  their preformatted DTO strings.
+- **Writes** ride the §20 approval flow: a parsed command (`parse.ts` grammar, self-checked by
+  `scripts/check-whatsapp-parse.mts`) creates a `PENDING Submission`; the admin's Confirm button
+  calls `approveSubmission` (idempotent — double-taps can't double-post) with the admin's member id
+  as `actorId`, followed by the same `syncAutoPenaltiesSafe` + `bustStats` + revalidate sweep as
+  the web actions. A member's command queues the submission and notifies admins, like the web.
+- The webhook always returns 200 once past the signature check (a non-200 makes Meta redeliver);
+  send failures are logged, never thrown. Status callbacks (delivered/read) are ignored.
+
 ---
 
 ## 21. Caching & revalidation

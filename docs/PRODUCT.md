@@ -779,6 +779,25 @@ members/vendors/loans, changing settings, closing a quarter) is **admin-only**.
 
 Vendors are not users and never log in. Members can optionally have a login to view; admins always do.
 
+### The WhatsApp assistant (chat channel)
+
+The club can also be used **from WhatsApp**, by messaging the club's WhatsApp number. Nobody logs
+in — a sender is recognised by their **WhatsApp phone number**, matched against the number on
+their member profile (WhatsApp itself has already verified they own it). Unregistered numbers get
+a polite "ask an admin to add your number" reply.
+
+- **Anyone registered can ask about themselves**: `balance` (deposits, profit share, value,
+  pending), `loan` (outstanding + interest due), `history` (loan cycles), `txns` (latest
+  transactions), `due` (everything owed). Replies are free-form messages inside WhatsApp's
+  24-hour service window, so answering costs the club nothing.
+- **Admins can ask about anyone** by adding a name — `balance ravi` — and can **record money by
+  chat**: `ravi paid 2000`, `ravi repaid 5000`, `ravi interest 500` (optionally `to <treasurer>`
+  and `on <date>`). The bot replies with a preview and **Confirm / Cancel** buttons; nothing
+  posts until the admin taps Confirm.
+- The chat channel follows the **same submit → approve rules** (this section): an admin's
+  confirmed entry posts directly; a member's entry command becomes a **pending request** in the
+  admins' approval inbox. Only admins can tap Confirm, and a double-tap can't post twice.
+
 ### Exporting records (CSV)
 
 The transactions ledger can be **downloaded as a spreadsheet (CSV)** — the export honours whatever

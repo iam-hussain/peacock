@@ -201,7 +201,16 @@ The app also gives friendly nudges: a few days before month-end it drops a **rem
 for anyone whose monthly savings are behind, so nobody gets a penalty by simply forgetting. And
 once a month it **emails a full copy of the club's records to the manager** for safekeeping.
 
-### 11. Mistakes are fixed honestly
+### 11. Ask the club on WhatsApp
+
+Members can also just **message the club's WhatsApp number** — no login, no app. The club
+recognises you by your phone number. Send *balance* and it replies with what you've saved and
+what you're owed; *loan* shows your loan and interest; *due* shows anything pending. Managers can
+also ask about any member, and even record a payment by typing something like *"Ravi paid 2000"*
+— the bot shows a preview and asks them to tap **Confirm** before anything is written down.
+Nothing goes into the books without that confirmation.
+
+### 12. Mistakes are fixed honestly
 
 People make typos. When something is entered wrong, it's **never quietly deleted**. Instead a
 correction is added that cancels the mistake (and the right entry is put in), so the original stays
