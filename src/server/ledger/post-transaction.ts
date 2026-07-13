@@ -53,6 +53,11 @@ export async function postTransaction(rawInput: PostInput, tx?: Prisma.Transacti
       if (locked) throw new Error("That date falls in a closed quarter — its entries are locked.");
     }
 
+    // Flag the original so every "live rows only" read can filter `reversed: false` (indexed)
+    // instead of assembling a NOT-IN list of reversal targets on each query.
+    if (input.reversesId)
+      await tx.transaction.update({ where: { id: input.reversesId }, data: { reversed: true } });
+
     const txn = await tx.transaction.create({
       data: {
         type: input.type,

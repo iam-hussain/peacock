@@ -3,37 +3,13 @@
 import { prisma } from "@/server/db";
 import { getCurrentUser } from "@/server/queries/session";
 import { bustStats } from "@/server/stats";
-
-// Every table, in FK-safe insert order (parents first). Restore inserts in this order, skipping duplicates.
-const TABLES = [
-  "user", "member", "membership", "vendor", "chitFund", "ledgerAccount", "loan",
-  "transaction", "entry", "charge", "clubConfig", "submission", "notification",
-  "periodClose", "auditLog", "session", "account", "verification",
-] as const;
-
-// Minimal shape we invoke on each model delegate. Keyed by the exact TABLES names
-// (camelCased Prisma delegate keys) so dynamic dispatch stays checked, not `any`.
-type ModelDelegate = {
-  findMany: (args?: object) => Promise<unknown[]>;
-  createMany: (args: object) => Promise<unknown>;
-};
-type ModelClient = Record<(typeof TABLES)[number], ModelDelegate>;
-
-// BigInt isn't JSON-serialisable; tag it so import can revive it losslessly.
-const replacer = (_k: string, v: unknown) => (typeof v === "bigint" ? { __big: v.toString() } : v);
-const reviver = (_k: string, v: unknown) =>
-  v && typeof v === "object" && "__big" in (v as object) ? BigInt((v as { __big: string }).__big) : v;
+import { TABLES, buildBackupJson, reviver, type ModelClient } from "@/server/backup-data";
 
 /** Serialise the whole club DB to a JSON string (admin only). */
 export async function exportBackup(): Promise<{ ok: boolean; json?: string; error?: string }> {
   const me = await getCurrentUser();
   if (!me?.isAdmin) return { ok: false, error: "Only an admin can export a backup." };
-  const data: Record<string, unknown[]> = {};
-  const models = prisma as unknown as ModelClient;
-  for (const t of TABLES) {
-    data[t] = await models[t].findMany();
-  }
-  return { ok: true, json: JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), data }, replacer) };
+  return { ok: true, json: await buildBackupJson() };
 }
 
 /** Merge a backup JSON into the DB (admin only), skipping rows whose id already exists. All-or-nothing. */
@@ -63,6 +39,9 @@ export async function importBackup(json: string): Promise<{ ok: boolean; error?:
           const fresh = rows.filter((r) => !existing.has(r.id));
           // Old backups predate Charge.voidedAt; write the explicit null the live-due reads filter on.
           if (t === "charge") for (const r of fresh as { voidedAt?: unknown }[]) r.voidedAt ??= null;
+          // Old backups also predate Transaction.reversed — stamp the default, then re-derive the
+          // flag from the restored REVERSAL rows below (a missing key never matches on Mongo).
+          if (t === "transaction") for (const r of fresh as { reversed?: unknown }[]) r.reversed ??= false;
           if (fresh.length) {
             const res = (await txModels[t].createMany({ data: fresh })) as { count: number };
             counts[t] = res.count;
@@ -70,6 +49,11 @@ export async function importBackup(json: string): Promise<{ ok: boolean; error?:
             counts[t] = 0;
           }
         }
+        const reversedIds = (data.transaction as { type?: string; reversesId?: string | null }[])
+          .filter((r) => r.type === "REVERSAL" && r.reversesId)
+          .map((r) => r.reversesId!);
+        if (reversedIds.length)
+          await tx.transaction.updateMany({ where: { id: { in: reversedIds } }, data: { reversed: true } });
       },
       { timeout: 30_000 },
     );

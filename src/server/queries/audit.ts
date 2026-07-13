@@ -1,6 +1,6 @@
 import "server-only";
 import { prisma } from "@/server/db";
-import { getTransactions } from "./transactions";
+import { fullLedger } from "./transactions";
 import { dayMonthYear } from "@/lib/date";
 
 export interface AuditGroup {
@@ -12,7 +12,7 @@ export interface AuditGroup {
 // derived from the ledger itself — every posting is an action. When real actor
 // tracking lands (createdById on transactions), swap the source to AuditLog.
 export async function getAuditFeed(): Promise<{ groups: AuditGroup[]; total: number }> {
-  const txns = await getTransactions();
+  const txns = await fullLedger(); // shared StatsCache memo — no second ledger map on cold compute
   const now = new Date();
   const today = dayMonthYear(now);
   const yesterday = dayMonthYear(new Date(now.getTime() - 86_400_000));

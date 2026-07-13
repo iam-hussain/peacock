@@ -87,6 +87,11 @@ const splitName = (full: string) => {
 // (posts directly) from member (pending submission) per PRODUCT.md §15.
 const SELF_SERVICE = new Set(["changePassword", "editProfile", "entry", "recordPayment"]);
 
+// Password changes touch no cached DTO, so they skip the penalty sync + cache bust. Everything
+// else keeps the bust-everything rule — names, avatars and money are baked into nearly every
+// snapshot, so a per-kind key map would just be a staleness bug surface.
+const NO_BUST = new Set(["changePassword", "resetPassword"]);
+
 export async function formAction(kind: string, fd: FormData): Promise<ActionResult> {
   try {
     if (!SELF_SERVICE.has(kind)) {
@@ -94,12 +99,12 @@ export async function formAction(kind: string, fd: FormData): Promise<ActionResu
       if (denied) return { ok: false, error: denied };
     }
     const res = await dispatch(kind, fd);
-    if (res.ok) {
+    if (res.ok && !NO_BUST.has(kind)) {
       // "Add entry will calculate if new found" (§13.2): recording an entry materialises any auto
       // penalty that has newly come due (deduped by its deterministic id). Best-effort — a sync
       // hiccup never fails the entry the user just recorded.
       await syncAutoPenaltiesSafe();
-      await bustStats(); // every form mutates something a snapshot shows
+      await bustStats(); // every remaining form kind mutates something a snapshot shows
     }
     return res;
   } catch (e) {

@@ -1,13 +1,16 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { X } from "lucide-react";
+import { BrandLoader } from "@/components/shared/brand-loader";
 import { Pager } from "@/components/shared/pager";
 import { ViewToggle, type ListView } from "@/components/shared/view-toggle";
-import { type Txn } from "../data";
+import { fetchJson, useDebounced } from "@/lib/use-page-query";
+import type { TxnPageDTO } from "@/server/queries/transactions";
 import { ChipMenu, type ChipOption } from "./chip-menu";
 import { HeaderRow, Row, MobileCard, ROLE_DOT } from "./transaction-row";
-import { SearchBox, Empty, Legend, AddEntryButton } from "./transaction-toolbar";
+import { SearchBox, Empty, Legend, AddEntryButton, ExportCsvButton } from "./transaction-toolbar";
 
 const DATE_INPUT = "rounded-lg border border-bd2 bg-transparent px-2.5 py-2 text-xs font-semibold leading-none text-mut outline-none focus:border-teal";
 
@@ -26,8 +29,8 @@ const isoDaysAgo = (days: number) => {
   return d.toISOString().slice(0, 10);
 };
 
-// Resolve the active range (preset or custom) to an inclusive [start, end] window of ISO dates.
-// ISO YYYY-MM-DD strings compare lexicographically, so we filter t.isoDate directly against them.
+// Resolve the active range (preset or custom) to an inclusive [start, end] window of ISO dates —
+// sent to the API, which filters and pages server-side (the browser never holds the full ledger).
 function rangeWindow(range: string, from: string, to: string): { start?: string; end?: string } {
   switch (range) {
     case "Custom range": return { start: from || undefined, end: to || undefined };
@@ -38,7 +41,7 @@ function rangeWindow(range: string, from: string, to: string): { start?: string;
   }
 }
 
-export function Transactions({ ledger }: { ledger: Txn[] }) {
+export function Transactions() {
   const [q, setQ] = useState("");
   const [type, setType] = useState("All types");
   const [party, setParty] = useState("Anyone");
@@ -49,58 +52,47 @@ export function Transactions({ ledger }: { ledger: Txn[] }) {
   const [page, setPage] = useState(1);
   const [view, setView] = useState<ListView>("table"); // mobile defaults to the columnar table view
 
-  const typeOpts = useMemo<ChipOption[]>(
-    () => [
-      { value: "All types", label: "All types" },
-      ...[...new Set(ledger.map((t) => t.what))].map((w) => ({ value: w, label: w })),
-    ],
-    [ledger],
-  );
-  const partyOpts = useMemo<ChipOption[]>(
-    () => [
-      { value: "Anyone", label: "Anyone" },
-      ...[...new Map(ledger.flatMap((t) => [t.from, t.to]).map((p) => [p.name, p])).values()]
-        .sort((a, b) => a.name.localeCompare(b.name))
-        .map((p) => ({ value: p.name, label: p.name, dot: ROLE_DOT[p.role] })),
-    ],
-    [ledger],
-  );
-
-  const rows = useMemo(() => {
-    const s = q.trim().toLowerCase();
-    const { start, end } = rangeWindow(range, from, to);
-    return ledger.filter((t) => {
-      if (type !== "All types" && t.what !== type) return false;
-      if (party !== "Anyone" && t.from.name !== party && t.to.name !== party) return false;
-      if (start && t.isoDate < start) return false;
-      if (end && t.isoDate > end) return false;
-      if (
-        s &&
-        !(
-          t.what.toLowerCase().includes(s) ||
-          t.from.name.toLowerCase().includes(s) ||
-          t.to.name.toLowerCase().includes(s) ||
-          t.amount.toLowerCase().includes(s) ||
-          (t.note?.toLowerCase().includes(s) ?? false)
-        )
-      )
-        return false;
-      return true;
-    });
-  }, [ledger, q, type, party, range, from, to]);
-
-  const filterKey = `${q}|${type}|${party}|${range}|${from}|${to}|${size}`;
+  const dq = useDebounced(q.trim());
+  const filterKey = `${dq}|${type}|${party}|${range}|${from}|${to}|${size}`;
   const [prevKey, setPrevKey] = useState(filterKey);
   if (filterKey !== prevKey) {
     setPrevKey(filterKey);
     setPage(1);
   }
 
-  const pageCount = Math.max(1, Math.ceil(rows.length / size));
+  const { start: winStart, end: winEnd } = rangeWindow(range, from, to);
+  const filterParams = new URLSearchParams();
+  if (dq) filterParams.set("q", dq);
+  if (type !== "All types") filterParams.set("type", type);
+  if (party !== "Anyone") filterParams.set("party", party);
+  if (winStart) filterParams.set("start", winStart);
+  if (winEnd) filterParams.set("end", winEnd);
+  const params = new URLSearchParams(filterParams);
+  params.set("page", String(page));
+  params.set("size", String(size));
+
+  const { data, error } = useQuery({
+    queryKey: ["transactions", params.toString()],
+    queryFn: () => fetchJson<TxnPageDTO>(`/api/transactions?${params}`),
+    placeholderData: keepPreviousData, // keep the last page on screen while the next loads
+  });
+  if (error) throw error;
+  if (!data) return <BrandLoader />;
+
+  const typeOpts: ChipOption[] = [
+    { value: "All types", label: "All types" },
+    ...data.typeOpts.map((w) => ({ value: w, label: w })),
+  ];
+  const partyOpts: ChipOption[] = [
+    { value: "Anyone", label: "Anyone" },
+    ...data.parties.map((p) => ({ value: p.name, label: p.name, dot: ROLE_DOT[p.role] })),
+  ];
+
+  const visible = data.rows;
+  const pageCount = data.pageCount;
   const safePage = Math.min(page, pageCount);
-  const start = (safePage - 1) * size;
-  const visible = rows.slice(start, start + size);
-  const rangeLabel = rows.length === 0 ? "Showing 0 of 0" : `${start + 1}–${start + visible.length} of ${rows.length}`;
+  const startIdx = (safePage - 1) * size;
+  const rangeLabel = data.total === 0 ? "Showing 0 of 0" : `${startIdx + 1}–${startIdx + visible.length} of ${data.total}`;
 
   const hasFilters = !!q || type !== "All types" || party !== "Anyone" || range !== "All time" || !!from || !!to;
   const clearFilters = () => {
@@ -124,6 +116,7 @@ export function Transactions({ ledger }: { ledger: Txn[] }) {
       )}
       <ChipMenu label="Type" options={typeOpts} value={type} onChange={setType} />
       <ChipMenu label="Party" options={partyOpts} value={party} onChange={setParty} searchable align="right" />
+      <ExportCsvButton query={filterParams.toString()} />
       {hasFilters && (
         <button
           type="button"
@@ -163,7 +156,7 @@ export function Transactions({ ledger }: { ledger: Txn[] }) {
           {visible.map((t) => (
             <Row key={t.id} t={t} />
           ))}
-          {rows.length === 0 && <Empty />}
+          {data.total === 0 && <Empty />}
           <div className="border-t border-hair px-5.5 py-3.25">{footer}</div>
         </div>
       </div>
@@ -172,7 +165,7 @@ export function Transactions({ ledger }: { ledger: Txn[] }) {
       <div className="md:hidden">
         <div className="mb-3 flex items-center justify-between gap-2">
           <span className="text-13 font-medium leading-none text-mut">
-            {rows.length} of {ledger.length} entries
+            {data.total} of {data.all} entries
           </span>
           <ViewToggle value={view} onChange={setView} />
         </div>
@@ -188,7 +181,7 @@ export function Transactions({ ledger }: { ledger: Txn[] }) {
             {visible.map((t) => (
               <MobileCard key={t.id} t={t} />
             ))}
-            {rows.length === 0 && (
+            {data.total === 0 && (
               <div className="rounded-2xl border border-bd bg-sf">
                 <Empty />
               </div>
@@ -201,7 +194,7 @@ export function Transactions({ ledger }: { ledger: Txn[] }) {
               {visible.map((t) => (
                 <Row key={t.id} t={t} />
               ))}
-              {rows.length === 0 && <Empty />}
+              {data.total === 0 && <Empty />}
             </div>
           </div>
         )}

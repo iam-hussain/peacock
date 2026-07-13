@@ -2,7 +2,6 @@ import "server-only";
 import { prisma } from "@/server/db";
 import { formatPaise, roundToWholeRupee } from "@/lib/money";
 import { ist, istDate, dayMonthYear, monthYear } from "@/lib/date";
-import { reversedTxnIds } from "./shared";
 import { expectedClubDeposit, type Stage } from "./members";
 import { loanEventsMap, reconstructCycles } from "./loans";
 
@@ -195,7 +194,6 @@ export async function computeAutoPenalties(cfg: PenaltyConfig, today = new Date(
   if (!cfg.deposit.enabled && !cfg.interest.enabled) return [];
   const club = await prisma.clubConfig.findUnique({ where: { id: "singleton" }, select: { stages: true, dayInterestFrom: true } });
   const stages = (club?.stages as Stage[] | undefined) ?? [];
-  const reversedIds = await reversedTxnIds();
   const due: DueCharge[] = [];
 
   // --- Deposit penalties: one query for active equities, one for their periodic deposit legs. ---
@@ -208,7 +206,7 @@ export async function computeAutoPenalties(cfg: PenaltyConfig, today = new Date(
     for (const ms of active) for (const a of ms.accounts) eqToMs.set(a.id, ms.id);
     const legs = eqToMs.size
       ? await prisma.entry.findMany({
-          where: { accountId: { in: [...eqToMs.keys()] }, transaction: { type: "PERIODIC_DEPOSIT", id: { notIn: reversedIds } } },
+          where: { accountId: { in: [...eqToMs.keys()] }, transaction: { type: "PERIODIC_DEPOSIT", reversed: false } },
           select: { amount: true, accountId: true, transaction: { select: { occurredAt: true } } },
         })
       : [];
@@ -233,7 +231,7 @@ export async function computeAutoPenalties(cfg: PenaltyConfig, today = new Date(
     for (const l of loans) (byMs.get(l.membershipId) ?? byMs.set(l.membershipId, []).get(l.membershipId)!).push(l);
     const eventsMap = await loanEventsMap(loans.map((l) => l.id));
     const intTxns = await prisma.transaction.findMany({
-      where: { type: "LOAN_INTEREST", id: { notIn: reversedIds }, membershipId: { in: [...byMs.keys()] } },
+      where: { type: "LOAN_INTEREST", reversed: false, membershipId: { in: [...byMs.keys()] } },
       select: { membershipId: true, occurredAt: true, entries: { where: { amount: { gt: 0 } }, select: { amount: true } } },
     });
     const paidByMs = new Map<string, { at: Date; amount: bigint }[]>();

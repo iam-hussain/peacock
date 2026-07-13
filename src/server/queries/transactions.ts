@@ -1,8 +1,9 @@
 import "server-only";
 import { prisma } from "@/server/db";
+import { cachedStats } from "@/server/stats";
 import { formatPaise } from "@/lib/money";
 import { dayMonthYear } from "@/lib/date";
-import { OPENING_ACCOUNT_ID, reversedTxnIds } from "./shared";
+import { OPENING_ACCOUNT_ID } from "./shared";
 import { UNSAFE_TO_DELETE } from "@/server/ledger/reverse";
 import type { TxnType } from "@prisma/client";
 
@@ -69,12 +70,10 @@ function partiesFor(
 /** The ledger feed — real postings only. Opening-import scaffolding, reversal entries, and any
  *  posting that has since been reversed (§16) are all excluded so a deleted/edited row drops out. */
 export async function getTransactions(limit?: number, offset?: number): Promise<TxnDTO[]> {
-  const reversedIds = await reversedTxnIds();
-
   const txns = await prisma.transaction.findMany({
     where: {
       type: { not: "REVERSAL" },
-      id: { notIn: reversedIds },
+      reversed: false,
       entries: { none: { accountId: OPENING_ACCOUNT_ID } },
     },
     orderBy: { occurredAt: "desc" },
@@ -108,4 +107,59 @@ export async function getTransactions(limit?: number, offset?: number): Promise<
       isoDate: t.occurredAt.toISOString().slice(0, 10),
     } satisfies TxnDTO;
   });
+}
+
+/** The full mapped ledger, memoised under ONE StatsCache key. The transactions API, audit feed and
+ *  CSV export all read this instead of each re-mapping the ledger on their own cold compute. */
+export const fullLedger = (): Promise<TxnDTO[]> => cachedStats("transactions", () => getTransactions());
+
+export interface TxnFilter {
+  q?: string;
+  type?: string; // a WHAT label ("Member paid deposit")
+  party?: string; // exact party name
+  start?: string; // inclusive ISO date bounds
+  end?: string;
+  page: number;
+  size: number;
+}
+
+export interface TxnPageDTO {
+  rows: TxnDTO[];
+  total: number; // rows matching the filters
+  all: number; // unfiltered ledger size
+  pageCount: number;
+  typeOpts: string[]; // filter options, derived from the whole ledger
+  parties: Party[];
+}
+
+/** One page of the ledger, filtered server-side — the browser gets ~one page (not the whole
+ *  ledger) per request; the full DTO stays memoised in StatsCache via `fullLedger`. */
+export async function getTransactionsPage(f: TxnFilter): Promise<TxnPageDTO> {
+  const ledger = await fullLedger();
+  const s = f.q?.trim().toLowerCase();
+  const rows = ledger.filter((t) => {
+    if (f.type && t.what !== f.type) return false;
+    if (f.party && t.from.name !== f.party && t.to.name !== f.party) return false;
+    if (f.start && t.isoDate < f.start) return false;
+    if (f.end && t.isoDate > f.end) return false;
+    if (
+      s &&
+      !(
+        t.what.toLowerCase().includes(s) ||
+        t.from.name.toLowerCase().includes(s) ||
+        t.to.name.toLowerCase().includes(s) ||
+        t.amount.toLowerCase().includes(s) ||
+        (t.note?.toLowerCase().includes(s) ?? false)
+      )
+    )
+      return false;
+    return true;
+  });
+  const pageCount = Math.max(1, Math.ceil(rows.length / f.size));
+  const page = Math.min(f.page, pageCount);
+  const typeOpts = [...new Set(ledger.map((t) => t.what))];
+  const parties = [...new Map(ledger.flatMap((t) => [t.from, t.to]).map((p) => [p.name, p])).values()].sort((a, b) =>
+    a.name.localeCompare(b.name),
+  );
+  return { rows: rows.slice((page - 1) * f.size, page * f.size), total: rows.length, all: ledger.length, pageCount, typeOpts, parties };
 }

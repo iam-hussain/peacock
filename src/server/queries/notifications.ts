@@ -3,7 +3,6 @@ import { prisma } from "@/server/db";
 import { formatPaise, formatLakh } from "@/lib/money";
 import { daysBetween } from "@/lib/date";
 import { getTransactions } from "./transactions";
-import { reversedTxnIds } from "./shared";
 import { getCurrentUser } from "./session";
 import { ACTIVITY_PAGE, type ActivityEvent, type NotificationsData } from "@/features/notifications/types";
 export async function getActivity(offset = 0, limit = ACTIVITY_PAGE): Promise<ActivityEvent[]> {
@@ -25,8 +24,19 @@ export async function getUnreadCount(): Promise<number> {
 }
 
 export async function getNotifications(): Promise<NotificationsData> {
+  const me = await getCurrentUser(); // React-cached; also fetched by the route guard
   // Every read here is independent, so fetch them concurrently.
-  const [subs, overdue, catchupRaised, catchupPaid, runningChits, events] = await Promise.all([
+  const [mine, subs, overdue, catchupRaised, catchupPaid, runningChits, events] = await Promise.all([
+    // Stored per-member EVENT notifications (deposit reminders, password-reset requests, …) —
+    // unread only; "Mark all read" clears them. APPROVAL rows are excluded: those surface via the
+    // pending-submissions list below.
+    me
+      ? prisma.notification.findMany({
+          where: { recipientId: me.id, kind: "EVENT", isRead: false },
+          orderBy: { createdAt: "desc" },
+          select: { title: true, body: true },
+        })
+      : Promise.resolve([]),
     // Approvals ← pending submissions (none yet in a fresh import → empty list).
     prisma.submission.findMany({ where: { status: "PENDING" }, orderBy: { createdAt: "desc" } }),
     // Alerts ← derived live from current state (overdue loans, pending deposits, chit due).
@@ -34,7 +44,7 @@ export async function getNotifications(): Promise<NotificationsData> {
     // Pending deposits = catch-up raised − paid, per member. Raised charges…
     prisma.charge.groupBy({ by: ["membershipId"], where: { kind: "CATCHUP" }, _sum: { amount: true } }),
     // …and the pay-down legs (negative on MEMBER_EQUITY, see outstandingCharge), netted below.
-    prisma.entry.findMany({ where: { transaction: { type: "CATCHUP", id: { notIn: await reversedTxnIds() } }, account: { kind: "MEMBER_EQUITY" } }, select: { amount: true, transaction: { select: { membershipId: true } } } }),
+    prisma.entry.findMany({ where: { transaction: { type: "CATCHUP", reversed: false }, account: { kind: "MEMBER_EQUITY" } }, select: { amount: true, transaction: { select: { membershipId: true } } } }),
     prisma.chitFund.findMany({ where: { status: "RUNNING" }, take: 1, select: { marginInstallment: true, durationMonths: true, vendor: { select: { name: true } } } }),
     // Events ← recent ledger activity (first page; "Load more" fetches the rest).
     getActivity(0),
@@ -48,7 +58,7 @@ export async function getNotifications(): Promise<NotificationsData> {
     };
   });
 
-  const alerts: { title: string; sub: string }[] = [];
+  const alerts: { title: string; sub: string }[] = mine.map((n) => ({ title: n.title, sub: n.body ?? "" }));
   for (const l of overdue) {
     const days = daysBetween(l.startedAt, new Date());
     if (days > 150) {

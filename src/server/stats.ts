@@ -34,10 +34,10 @@ const CODE_VERSION =
 /** Serve `key` from StatsCache, recomputing via `compute` when missing or stale. */
 export async function cachedStats<T>(rawKey: string, compute: () => Promise<T>): Promise<T> {
   const key = `${rawKey}@${CODE_VERSION}`;
-  const [hit, bust] = await Promise.all([
-    prisma.statsCache.findUnique({ where: { key } }),
-    prisma.statsCache.findUnique({ where: { key: BUST_KEY } }),
-  ]);
+  // One round-trip for the snapshot + the bust sentinel.
+  const rows = await prisma.statsCache.findMany({ where: { key: { in: [key, BUST_KEY] } } });
+  const hit = rows.find((r) => r.key === key);
+  const bust = rows.find((r) => r.key === BUST_KEY);
   const freshAfter = Math.max(startOfTodayIST().getTime(), bust?.computedAt.getTime() ?? 0);
   if (hit && hit.computedAt.getTime() >= freshAfter) return hit.data as T;
   const started = new Date(); // stamp compute START, so a bust that lands mid-compute invalidates this write
