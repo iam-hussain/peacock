@@ -3,7 +3,8 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Settings, HelpCircle, FileText, LogOut, ChevronDown } from "lucide-react";
+import { Settings, HelpCircle, FileText, LogOut, ChevronDown, MessageCircle } from "lucide-react";
+import { WHATSAPP_CHAT_LINK } from "@/components/shared/whatsapp-card";
 import { signOut } from "@/lib/auth-client";
 import { UserAvatar } from "./user-avatar";
 import type { CurrentUser } from "@/server/queries/session";
@@ -40,6 +41,15 @@ export function UserMenu({ user }: { user: CurrentUser }) {
             </div>
             <div className="p-1.5">
               <MenuLink href="/settings" icon={Settings} label="Account & settings" />
+              <a
+                href={WHATSAPP_CHAT_LINK}
+                target="_blank"
+                rel="noreferrer"
+                className="flex items-center gap-2.75 rounded-9 px-2.75 py-2.5 text-13 font-semibold text-ink hover:bg-bg2"
+              >
+                <MessageCircle className="size-4 text-mut" strokeWidth={2} />
+                WhatsApp bot
+              </a>
               <MenuLink href="/how-it-works" icon={HelpCircle} label="How it works" />
               <MenuLink href="/terms" icon={FileText} label="Terms & conditions" />
             </div>

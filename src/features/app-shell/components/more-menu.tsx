@@ -12,9 +12,11 @@ import {
   LogOut,
   ChevronRight,
   ShieldCheck,
+  MessageCircle,
   type LucideIcon,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { WHATSAPP_CHAT_LINK, WHATSAPP_NUMBER_DISPLAY } from "@/components/shared/whatsapp-card";
 import { signOut } from "@/lib/auth-client";
 import { toggleTheme } from "@/lib/theme";
 import { UserAvatar } from "./user-avatar";
@@ -35,6 +37,24 @@ export function MoreMenu({ user }: { user: CurrentUser }) {
         </div>
         <span className="text-13 font-semibold leading-none text-teal">Edit</span>
       </Link>
+
+      <MenuCard>
+        <a
+          href={WHATSAPP_CHAT_LINK}
+          target="_blank"
+          rel="noreferrer"
+          className="flex items-center gap-3.5 px-4 py-4 active:bg-bg2"
+        >
+          <Tile icon={MessageCircle} />
+          <div className="min-w-0 flex-1">
+            <div className="text-15 font-bold leading-none text-ink">WhatsApp bot</div>
+            <div className="mt-1.5 text-xs font-medium leading-none text-fnt">
+              Balance, loans & dues on {WHATSAPP_NUMBER_DISPLAY}
+            </div>
+          </div>
+          <ChevronRight className="size-4 flex-none text-fnt" strokeWidth={2} />
+        </a>
+      </MenuCard>
 
       <MenuCard>
         <Row icon={ArrowLeftRight} label="Transactions" href="/transactions" />
