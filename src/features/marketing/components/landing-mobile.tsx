@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { PeacockLockup } from "@/components/shared/peacock-logo";
+import { WhatsAppCard } from "@/components/shared/whatsapp-card";
 import { PortfolioPreview } from "./portfolio-preview";
 
 const STATS = [
@@ -52,6 +53,10 @@ export function LandingMobile() {
               <div className="mt-1.25 text-11 font-medium leading-130 text-fnt">{s.label}</div>
             </div>
           ))}
+        </div>
+
+        <div className="mt-6">
+          <WhatsAppCard />
         </div>
 
         <div className="mt-6 flex items-center justify-center gap-3.5 border-t border-hair pt-4.5">

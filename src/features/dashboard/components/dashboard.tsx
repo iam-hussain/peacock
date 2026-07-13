@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { StatCard } from "@/components/shared/stat-card";
+import { WhatsAppCard } from "@/components/shared/whatsapp-card";
 import { PortfolioChart } from "@/components/shared/portfolio-chart";
 import { RangeTabs } from "@/components/shared/range-tabs";
 import { useInPoster } from "@/lib/poster";
@@ -49,7 +50,10 @@ export function Dashboard({ data, greeting }: { data: DashboardData; greeting: G
                   ))}
                 </div>
               </div>
-              <ActivityCard activity={activity} />
+              <div className="flex flex-col gap-4">
+                <ActivityCard activity={activity} />
+                <WhatsAppCard />
+              </div>
             </div>
           )}
         </div>
@@ -84,6 +88,8 @@ export function Dashboard({ data, greeting }: { data: DashboardData; greeting: G
           ))}
 
           <DashActivityTabs activity={activity.slice(0, DASH_ACTIVITY_MOBILE)} />
+
+          <WhatsAppCard />
         </div>
       </div>
       )}
