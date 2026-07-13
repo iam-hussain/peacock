@@ -761,8 +761,9 @@ Recording money uses a simple **submit → approve** flow:
 - **An admin approves (or rejects)** it. Only on **approval** does it actually post to the records.
 - **An admin's own entry** posts directly (no self-approval).
 
-Pending requests reach admins as **actionable notifications** (Approve / Reject) — there's **no
-separate "approvals" screen** (§18).
+Pending requests reach admins as **actionable notifications** (Approve / Reject), and the same
+queue is available on a dedicated **Pending approvals** page (Admin hub → Pending approvals) for
+reviewing several submissions at once (§18).
 
 There is **no complicated permissions matrix** — just **one setting**: *who may submit entries —
 **admins only**, or **all members** (with admin approval).* Everything else (approving, managing
@@ -777,6 +778,12 @@ members/vendors/loans, changing settings, closing a quarter) is **admin-only**.
 | Hold club cash (be a treasurer) | ✓ (any member) | ✓ (any member) |
 
 Vendors are not users and never log in. Members can optionally have a login to view; admins always do.
+
+### Exporting records (CSV)
+
+The transactions ledger can be **downloaded as a spreadsheet (CSV)** — the export honours whatever
+filters are active, so filtering by one member and exporting produces that member's **statement**.
+Any signed-in member can export (they can already see everything).
 
 ---
 
@@ -809,6 +816,13 @@ At the end of each quarter (the club's financial quarters), an admin can **close
 It **doesn't move any money** — the club's profit simply **keeps accumulating** (there's no payout);
 closing is **housekeeping**: a lock plus a snapshot. It **can't be undone**, so the app warns before
 confirming.
+
+### Backups
+
+An admin can **download a full backup** of the club's data (one file) anytime from the Admin hub,
+and **restore** from one. In addition, **once a month the app automatically emails that same backup
+file to the club's admin** (when the email service is configured) — so a backup exists even if
+nobody remembers to click.
 
 ---
 
@@ -889,12 +903,16 @@ everything that needs attention — deliberately lightweight (no email/push for 
 
 1. **Events** — things that happened: "Anita recorded a ₹5,000 deposit", "loan disbursed to Rahul",
    "vendor return from Surya Traders", "member settled / rejoined", "password reset requested".
-   *(Stored the moment they happen — no background jobs.)*
+   *(Stored the moment they happen.)* One scheduled event exists: on the **25th of each month** the
+   app stores a **deposit reminder** for every member behind on deposits ("₹X pending — pay before
+   the 1st to avoid a penalty"), ahead of the 1st-of-month auto-penalty tick (§13.1). One reminder
+   per member per month.
 2. **Alerts** — proactive warnings computed from the club's current state: **a loan is overdue**, a
    **large amount** was involved (over a set threshold), or **pending deposits / pending interest are
    heavy**. *(Worked out live when you open the bell, against thresholds set in Settings.)*
 3. **Approvals** — a **pending entry** waiting on an admin, shown with **Approve / Reject** right
-   there. This **replaces a separate approvals screen** — approvals live in the notification list.
+   there. The same queue also has a dedicated **Pending approvals** page (Admin hub) for reviewing
+   several at once — both act on the same submissions.
 
 **Members** mostly get events relevant to them (their deposit/loan/interest/settlement, a new joiner,
 their password reset). **Admins** additionally get **approvals** (pending entries, forgot-password

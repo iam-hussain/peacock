@@ -1737,6 +1737,33 @@ not** (capital owed).
 - `‹CONFIRM›` penalty income recognised **on pay-down** (unpaid penalty = a due, not yet profit) —
   vs accruing owed penalties as pending profit.
 
+**Resolved (Rev 8 — performance pass + operational features):**
+- **`Transaction.reversed Boolean @default(false)`** — set on the ORIGINAL inside `postTransaction`
+  when its reversal posts. Every "live rows only" read now filters `reversed: false` instead of
+  assembling a `notIn` list of reversal targets per query (`reversedTxnIds` deleted). Mongo caveat:
+  a missing key matches **neither** `false` nor `not: true`, so legacy docs need the key stamped —
+  `scripts/backfill-reversed.mts` (idempotent; re-run after any deploy of pre-flag code). Backup
+  **restore** stamps the flag and re-derives it from restored REVERSAL rows.
+- **StatsCache additions:** `transactions` = the full mapped ledger memo (served page-at-a-time);
+  `interestOwed` = the per-membership interest-owed map (the priciest derived figure, computed once
+  per bust/IST-day instead of per page). `cachedStats` fetches snapshot + bust sentinel in one query.
+  `formAction` skips the penalty-sync + bust for password kinds (they touch no snapshot).
+- **/api/transactions** is now **filtered + paged server-side** (zod-validated `q/type/party/start/
+  end/page/size`); the client sends filter state and receives one page + filter options
+  (`getTransactionsPage`). The audit feed reads the same `fullLedger()` memo.
+- **Analytics range scans are bounded**: entries before the first cutoff fold into one aggregate
+  `opening` balance; only the window is fetched/sorted (`accumulate(…, opening)`).
+- **CSV export** — `/api/export/transactions` (same filters; any signed-in member; party filter =
+  member statement).
+- **Crons (vercel.json):** `/api/cron/reminders` (25th monthly — stores one in-app
+  `deposit.reminder` notification per behind member per month; stored unread EVENT notifications now
+  surface as bell alerts) and `/api/cron/backup` (1st monthly — emails the backup JSON via Resend).
+  Both guarded by `CRON_SECRET`; backup additionally needs `RESEND_API_KEY` + `BACKUP_EMAIL_TO`
+  (else it no-ops). Backup serialisation lives in `server/backup-data.ts` (shared by the admin
+  action and the cron).
+- **/approvals** — dedicated admin queue over the same pending submissions (`ApprovalCard` shared
+  with the bell); linked from the Admin hub. Route-group `loading.tsx` added.
+
 Still open (truly minor, non-blocking):
 
 1. **Penalty income timing** — realize on pay-down (current) vs accrue when charged (`‹CONFIRM›`).

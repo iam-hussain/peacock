@@ -194,7 +194,12 @@ always just on what you still owe.
 
 Honesty is the heart of the club. **Every member can see the full picture at any time** — all
 members, all loans, all outside investments, every transaction, and their own personal summary.
-Members can view everything; only managers can make changes.
+Members can view everything; only managers can make changes. Anyone can also **download the
+transaction list as a spreadsheet** to keep their own copy.
+
+The app also gives friendly nudges: a few days before month-end it drops a **reminder in the app**
+for anyone whose monthly savings are behind, so nobody gets a penalty by simply forgetting. And
+once a month it **emails a full copy of the club's records to the manager** for safekeeping.
 
 ### 11. Mistakes are fixed honestly
 

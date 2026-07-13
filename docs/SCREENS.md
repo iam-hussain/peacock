@@ -168,6 +168,8 @@ linked to their original.
     on approval.
 - **Edit / Delete** any entry on its row → the app reverses the original (and re-posts the corrected
   one on edit); **history kept**. This *is* the correction mechanism — no separate adjustment entry.
+- **Export CSV** — downloads the ledger as a spreadsheet honouring the active filters (filter by one
+  member = their statement). Available to any signed-in member.
 
 **Access:** view = all; **submit** = admins (direct) or members (pending, if the club allows);
 **approve / edit / reverse** = admin.
@@ -234,16 +236,16 @@ member page. There is **no permissions matrix**.)*
 desktop top bar and the mobile **More** menu.
 
 **Shows / does:** quick stats (admins, audit events, auto-penalty status); a featured **Auto
-penalties** card → the Auto penalties page; **Audit log**; manage **Admins** (grant/revoke); **reset
-any member's password**; **Close quarter** (lock + snapshot, "can't be undone"); **Backup / Restore**.
+penalties** card → the Auto penalties page; **Pending approvals** (the submissions queue, §14a);
+**Audit log**; manage **Admins** (grant/revoke); **reset any member's password**; **Close quarter**
+(lock + snapshot, "can't be undone"); **Backup / Restore** (manual download/import; a monthly cron
+also emails the backup to the admin when configured).
 
 **Auto penalties page** (Admin → Auto penalties, §13.1): the enable **toggles + rate/minimum/grace +
 apply-from date edited inline** (turning one on applies immediately); a **by-member** and **by-month**
 breakdown; the full **register** of every system-added penalty (member, reference with the charge's
 full working, amount, date) with per-row **Dismiss**, **paginated**; both breakdown and register have
 an **All · Deposit · Interest type filter**; and a **Sync now** button.
-
-**Access:** **admin only.**
 
 **Access:** **admin only.**
 
@@ -264,12 +266,13 @@ Cannot grant themselves admin or edit club data.
 
 ## 14. Notifications — the one inbox (events · alerts · approvals)
 
-**Purpose:** a single in-app centre for everything that needs attention (see `PRODUCT.md` §18). **This
-replaces a separate Approvals screen and the Permissions screen.**
+**Purpose:** a single in-app centre for everything that needs attention (see `PRODUCT.md` §18).
+Approvals also have a dedicated queue page (§14a); there is no Permissions screen.
 
 **Shows:** a **bell with an unread count** (app shell) and a **list** carrying three kinds:
 - **Events** — "recorded a ₹5,000 deposit", "loan disbursed", "vendor return", "member settled/
-  rejoined", "password reset requested".
+  rejoined", "password reset requested", and the monthly **deposit reminder** (stored on the 25th
+  for members behind on deposits; one per member per month).
 - **Alerts** (computed live) — "loan overdue (6 months)", "large amount", "heavy pending deposit/
   interest" — against the thresholds in Settings.
 - **Approvals** — a **pending submitted entry** with **Approve / Reject** buttons inline (admins).
@@ -279,6 +282,20 @@ approve it posts to the ledger); **Mark all read**. Members see their relevant e
 see approvals + forgot-password requests + alerts.
 
 **Access:** everyone (their own notifications; approvals shown to admins).
+
+---
+
+## 14a. Approvals — pending queue (admin)
+
+**Purpose:** review every pending member submission in one place (reached from the Admin hub).
+
+**Shows:** each pending submission as a card — who, intent, amount, treasurer, dates — with
+**Approve / Reject** inline (same cards as the bell); an "all caught up" empty state.
+
+**Does:** approve (posts to the ledger) or reject (discards). Acts on the same submissions as the
+notifications inbox.
+
+**Access:** **admin only** (members see an admins-only notice).
 
 ---
 

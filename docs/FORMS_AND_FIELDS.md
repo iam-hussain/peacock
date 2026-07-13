@@ -216,11 +216,14 @@ What an admin can do, in two buckets: **manage people** and **configure the club
 
 - Create / edit vendors and chits (§2).
 - Raise **catch-up / penalty charges** and record their pay-downs (§3.1); record / edit / reverse any
-  transaction (§3); **approve/reject** members' pending submissions (from notifications).
+  transaction (§3); **approve/reject** members' pending submissions (from notifications or the
+  dedicated **Pending approvals** page on the Admin hub).
 - **Close quarter** — locks the quarter's entries + stores a snapshot (can't be undone).
 - Browse the **audit log** (who did what, when).
 - Open the **Auto penalties** page (§13.1) — every system-added deposit / loan-interest penalty with
   its member, reference, amount and date; a **Sync now** button; and **Dismiss** per row.
+- **Backup / Restore** — download the full-club JSON anytime; a monthly cron also **emails the same
+  backup to the admin** when `RESEND_API_KEY` + `BACKUP_EMAIL_TO` are configured.
 
 > Members (non-admin) **view** everything; if the club allows, they can **submit** entries (which need
 > admin approval). They can change their **own avatar and password** in Profile. There is **no
@@ -228,7 +231,8 @@ What an admin can do, in two buckets: **manage people** and **configure the club
 
 ### 4.4 Notifications & approvals (one in-app inbox)
 
-See `PRODUCT.md` §18. The bell carries three kinds: **events** (stored when they happen), **alerts**
+See `PRODUCT.md` §18. The bell carries three kinds: **events** (stored when they happen — including
+the monthly **deposit reminder** created on the 25th for members behind on deposits), **alerts**
 (computed live vs the thresholds above — overdue loan, large amount, heavy pending), and **approvals**
 (a member's **pending submission** with Approve/Reject inline). Each item: **recipient · kind · short
 message · link · read/unread · time.** A **submission** holds the proposed entry (intent + fields +
