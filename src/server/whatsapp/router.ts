@@ -130,23 +130,28 @@ function dueText(d: MemberDetailDTO): string {
 }
 
 function helpText(sender: WaSender): string {
-  const member =
+  const intro =
     `Hi ${sender.name.split(" ")[0]}! I'm the *Peacock Investment Club* bot 🦚\n\n` +
-    `*balance* — deposits, profit, value\n` +
-    `*loan* — your loan & interest\n` +
-    `*history* — loan history\n` +
+    `*Ask me*\n` +
+    `*balance* — deposits, profit share, current value\n` +
+    `*loan* — active loan & interest due\n` +
+    `*history* — past loan cycles\n` +
     `*txns* — latest transactions\n` +
-    `*txns july* — a month's transactions\n` +
+    `*txns july* — one month's transactions\n` +
     `*txns on 2026-07-01* — one day's\n` +
-    `*due* — what you owe`;
-  if (!sender.isAdmin) return member;
+    `*due* — everything you owe\n\n` +
+    `*Record an entry*\n` +
+    `*<member> <type> <amount> to <treasurer>*\n\n` +
+    `Types of transaction:\n` +
+    `• *paid* — monthly deposit handed to a treasurer\n` +
+    `• *repaid* — loan principal paid back\n` +
+    `• *interest* — loan interest collected\n\n` +
+    `Optional add-ons: *on 2026-07-01* (date, default today), *note <anything>*\n` +
+    `Example: *ravi paid 2000 to suresh note july deposit*`;
+  if (!sender.isAdmin) return intro + `\n\nYour entries go to an admin for approval before they're recorded.`;
   return (
-    member +
-    `\n\n*Admin*\nAdd a name to any command: *balance ravi*, *txns ravi july*\n\n` +
-    `Record an entry — *member, type, amount and treasurer are required; note is optional*:\n` +
-    `• *ravi paid 2000 to suresh* — deposit\n` +
-    `• *ravi repaid 5000 to suresh* — loan repayment\n` +
-    `• *ravi interest 500 to suresh* — interest collected\n` +
-    `Optional add-ons: *on 2026-07-01*, *note july deposit*`
+    intro +
+    `\n\n*Admin*\nAdd a name to any query: *balance ravi*, *txns ravi july*.\n` +
+    `Your entries post after you tap *Confirm* on the preview; members' entries wait in your approval inbox.`
   );
 }
