@@ -24,18 +24,20 @@ function startOfTodayIST(): Date {
 }
 
 // Snapshots must never outlive the code that shaped them: a deploy that adds a DTO field would
-// otherwise serve old-shape JSON and crash the new client. Prod keys are suffixed per deploy;
-// dev (where shapes change on every edit) skips the cache entirely.
-const CODE_VERSION = process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? "local";
+// otherwise serve old-shape JSON and crash the new client. Prod keys are suffixed per deploy; dev
+// keys per dev-server boot (globalThis survives HMR), so restarting the server drops old shapes
+// while normal navigation still hits the cache instead of recomputing on every request.
+const g = globalThis as unknown as { __statsBootId?: string };
+const CODE_VERSION =
+  process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? (g.__statsBootId ??= Date.now().toString(36));
 
 /** Serve `key` from StatsCache, recomputing via `compute` when missing or stale. */
 export async function cachedStats<T>(rawKey: string, compute: () => Promise<T>): Promise<T> {
-  if (process.env.NODE_ENV !== "production") return compute();
   const key = `${rawKey}@${CODE_VERSION}`;
-  const [hit, bust] = await Promise.all([
-    prisma.statsCache.findUnique({ where: { key } }),
-    prisma.statsCache.findUnique({ where: { key: BUST_KEY } }),
-  ]);
+  // One round-trip for the snapshot + the bust sentinel.
+  const rows = await prisma.statsCache.findMany({ where: { key: { in: [key, BUST_KEY] } } });
+  const hit = rows.find((r) => r.key === key);
+  const bust = rows.find((r) => r.key === BUST_KEY);
   const freshAfter = Math.max(startOfTodayIST().getTime(), bust?.computedAt.getTime() ?? 0);
   if (hit && hit.computedAt.getTime() >= freshAfter) return hit.data as T;
   const started = new Date(); // stamp compute START, so a bust that lands mid-compute invalidates this write

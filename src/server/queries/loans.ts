@@ -1,9 +1,9 @@
 import "server-only";
 import { cache } from "react";
 import { prisma } from "@/server/db";
+import { cachedStats } from "@/server/stats";
 import { formatLakh, formatPaise, roundToWholeRupee } from "@/lib/money";
 import { ist, monthYear, dayMonth, dayMonthYear, daysBetween, monthsDays, istDate, addMonths } from "@/lib/date";
-import { reversedTxnIds } from "./shared";
 import type { Status } from "@/components/shared/status-badge";
 
 const rateLabel = (bps: number) => `${bps / 100}% / mo`;
@@ -106,28 +106,21 @@ export async function loanEvents(loanId: string): Promise<{ at: Date; delta: big
   return (await loanEventsMap([loanId])).get(loanId) ?? [];
 }
 
-/** Batched `loanEvents` for many loans in exactly 2 queries total (vs 2 per loan). Fetches all
- *  REVERSAL rows then all LOAN_TAKEN/LOAN_REPAY rows for the given loans, drops reversed txns
- *  (transaction ids are unique, so a single global reversed-set is equivalent to per-loan filtering),
- *  and groups the signed principal deltas by loanId. Order within each loan stays oldest-first. */
+/** Batched `loanEvents` for many loans in ONE query. Live LOAN_TAKEN/LOAN_REPAY rows only
+ *  (`reversed: false` drops edited/deleted originals; the reversal legs themselves are
+ *  type=REVERSAL, outside the type filter), grouped into signed principal deltas by loanId.
+ *  Order within each loan stays oldest-first. */
 export async function loanEventsMap(loanIds: string[]): Promise<Map<string, { at: Date; delta: bigint }[]>> {
   const map = new Map<string, { at: Date; delta: bigint }[]>();
   if (loanIds.length === 0) return map;
   for (const id of loanIds) map.set(id, []);
-  const [reversed, txns] = await Promise.all([
-    prisma.transaction.findMany({
-      where: { loanId: { in: loanIds }, type: "REVERSAL", reversesId: { not: null } },
-      select: { reversesId: true },
-    }),
-    prisma.transaction.findMany({
-      where: { loanId: { in: loanIds }, type: { in: ["LOAN_TAKEN", "LOAN_REPAY"] } },
-      orderBy: { occurredAt: "asc" },
-      select: { id: true, loanId: true, occurredAt: true, entries: { where: { account: { kind: "LOAN_RECEIVABLE" } }, select: { amount: true } } },
-    }),
-  ]);
-  const reversedIds = new Set(reversed.map((r) => r.reversesId!).filter(Boolean));
+  const txns = await prisma.transaction.findMany({
+    where: { loanId: { in: loanIds }, type: { in: ["LOAN_TAKEN", "LOAN_REPAY"] }, reversed: false },
+    orderBy: { occurredAt: "asc" },
+    select: { loanId: true, occurredAt: true, entries: { where: { account: { kind: "LOAN_RECEIVABLE" } }, select: { amount: true } } },
+  });
   for (const t of txns) {
-    if (!t.loanId || reversedIds.has(t.id)) continue;
+    if (!t.loanId) continue;
     map.get(t.loanId)?.push({ at: t.occurredAt, delta: t.entries.reduce((s, e) => s + e.amount, 0n) });
   }
   return map;
@@ -313,7 +306,7 @@ export async function getLoans(): Promise<LoanDTO[]> {
     }
   }
   const interestTxns = await prisma.transaction.findMany({
-    where: { type: "LOAN_INTEREST", id: { notIn: await reversedTxnIds() } },
+    where: { type: "LOAN_INTEREST", reversed: false },
     select: { membershipId: true, entries: { where: { amount: { gt: 0 } }, select: { amount: true } } },
   });
   const paidByMs = new Map<string, bigint>();
@@ -356,8 +349,18 @@ export async function getLoans(): Promise<LoanDTO[]> {
 // Total loan interest still to collect = Σ over borrowers of (accrued to date − already paid),
 // floored at 0 per member (an overpaid member is a credit, not something to collect). Interest is
 // tracked per membership (LOAN_INTEREST carries no loanId), so aggregate accrual + payments by member.
-/** Per-membership interest still to collect (accrued − paid, whole rupees, floored at 0 per member). */
-export async function interestOwedByMembership(): Promise<Map<string, bigint>> {
+/** Per-membership interest still to collect (accrued − paid, whole rupees, floored at 0 per member).
+ *  The full per-loan history replay is the priciest derived figure in the app and feeds 5+ pages
+ *  (dashboard, members, entries picker, penalties, settlement previews), so it's materialised once
+ *  under its own StatsCache key (fresh until the next mutation / IST day roll) and React-cached per
+ *  request — instead of every page's cold compute replaying it independently. */
+export const interestOwedByMembership = cache(async (): Promise<Map<string, bigint>> => {
+  const owed = await cachedStats("interestOwed", computeInterestOwed);
+  return new Map(Object.entries(owed).map(([ms, v]) => [ms, BigInt(v)]));
+});
+
+// bigint isn't JSON — the cached shape is { membershipId: paiseString }.
+async function computeInterestOwed(): Promise<Record<string, string>> {
   const [loans, cfg] = await Promise.all([
     prisma.loan.findMany({ select: { id: true, monthlyRateBps: true, membershipId: true, principalOutstanding: true, startedAt: true, status: true } }),
     loanConfig(),
@@ -365,7 +368,7 @@ export async function interestOwedByMembership(): Promise<Map<string, bigint>> {
   const now = new Date();
   const [eventsMap, interestTxns] = await Promise.all([
     loanEventsMap(loans.map((l) => l.id)),
-    prisma.transaction.findMany({ where: { type: "LOAN_INTEREST", id: { notIn: await reversedTxnIds() } }, select: { membershipId: true, entries: { where: { amount: { gt: 0 } }, select: { amount: true } } } }),
+    prisma.transaction.findMany({ where: { type: "LOAN_INTEREST", reversed: false }, select: { membershipId: true, entries: { where: { amount: { gt: 0 } }, select: { amount: true } } } }),
   ]);
   const perLoan = loans.map((l) => {
     const cycleInterest = reconstructCycles(eventsMap.get(l.id) ?? [], l.monthlyRateBps, now, cfg.dayInterestFrom).reduce((s, c) => s + c.interest, 0n);
@@ -379,10 +382,10 @@ export async function interestOwedByMembership(): Promise<Map<string, bigint>> {
     if (!t.membershipId) continue;
     paidByMs.set(t.membershipId, (paidByMs.get(t.membershipId) ?? 0n) + t.entries.reduce((s, e) => s + e.amount, 0n));
   }
-  const owed = new Map<string, bigint>();
+  const owed: Record<string, string> = {};
   for (const [ms, accrued] of accruedByMs) {
     const o = accrued - (paidByMs.get(ms) ?? 0n);
-    if (o > 0n) owed.set(ms, o);
+    if (o > 0n) owed[ms] = o.toString();
   }
   return owed;
 }
@@ -399,7 +402,7 @@ export async function interestOwedForMembership(membershipId: string): Promise<b
   const now = new Date();
   const [eventsMap, interestTxns] = await Promise.all([
     loanEventsMap(loans.map((l) => l.id)),
-    prisma.transaction.findMany({ where: { type: "LOAN_INTEREST", membershipId, id: { notIn: await reversedTxnIds() } }, select: { entries: { where: { amount: { gt: 0 } }, select: { amount: true } } } }),
+    prisma.transaction.findMany({ where: { type: "LOAN_INTEREST", membershipId, reversed: false }, select: { entries: { where: { amount: { gt: 0 } }, select: { amount: true } } } }),
   ]);
   let accrued = 0n;
   for (const l of loans) {

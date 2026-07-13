@@ -1,6 +1,6 @@
 "use client";
 
-import { Search, Plus } from "lucide-react";
+import { Search, Plus, Download } from "lucide-react";
 import { useAddEntry } from "@/features/entries/add-entry";
 
 export function SearchBox({ q, setQ }: { q: string; setQ: (v: string) => void }) {
@@ -39,6 +39,19 @@ function LegendItem({ dot, cls, label }: { dot: string; cls: string; label: stri
     <span className={`inline-flex items-center gap-1.5 text-11 font-semibold leading-none ${cls}`}>
       <span className={`size-1.75 rounded-full ${dot}`} /> {label}
     </span>
+  );
+}
+
+/** Downloads the CSV export with the CURRENT filters applied (a party filter = member statement). */
+export function ExportCsvButton({ query }: { query: string }) {
+  return (
+    <a
+      href={`/api/export/transactions${query ? `?${query}` : ""}`}
+      download
+      className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-bd2 px-2.5 py-2 text-xs font-semibold leading-none text-mut transition-colors hover:border-teal hover:text-teal"
+    >
+      <Download className="size-3.5" strokeWidth={2.5} /> CSV
+    </a>
   );
 }
 

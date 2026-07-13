@@ -2,7 +2,6 @@ import "server-only";
 import { Prisma, type LedgerAccountKind } from "@prisma/client";
 import { prisma } from "@/server/db";
 import { formatPaise, formatLakh } from "@/lib/money";
-import { reversedTxnIds } from "./shared";
 
 // The analytics page is a metric × time-range explorer (PRODUCT.md §11, IMPLEMENTATION_PLAN §19).
 // Every series here is computed honestly from the ledger at each time-bucket cutoff — a single
@@ -72,17 +71,30 @@ export async function getGraphSeries(metric: string, range: Range): Promise<Grap
     return assemble(label, "money", raw, labels, range, breakdown);
   }
 
-  let where = def.where;
-  if (def.byType) {
-    const is = (def.where.transaction as { is?: Prisma.TransactionWhereInput }).is ?? {};
-    where = { ...def.where, transaction: { is: { ...is, id: { notIn: await reversedTxnIds() } } } };
-  }
-  const rows = await prisma.entry.findMany({
-    where,
-    select: { amount: true, transaction: { select: { occurredAt: true } } },
-    orderBy: { transaction: { occurredAt: "asc" } },
-  });
-  const raw = accumulate(rows.map((r) => ({ amount: r.amount, at: r.transaction.occurredAt })), cutoffs, def.sign);
+  const baseIs = {
+    ...((def.where.transaction as { is?: Prisma.TransactionWhereInput } | undefined)?.is ?? {}),
+    ...(def.byType ? { reversed: false as const } : {}),
+  };
+  const withTxn = (extra: Prisma.TransactionWhereInput): Prisma.EntryWhereInput => {
+    const is = { ...baseIs, ...extra };
+    return Object.keys(is).length ? { ...def.where, transaction: { is } } : def.where;
+  };
+  // Bounded window scan: only entries at/after the first cutoff are fetched (and in-memory
+  // relation-sorted); everything before it folds into ONE aggregate `opening` balance — so a
+  // "1M" series stops scanning the club's whole history. ALL has no lower bound by definition.
+  const first = cutoffs[0];
+  const [openingAgg, rows] = await Promise.all([
+    range === "ALL"
+      ? Promise.resolve(null)
+      : prisma.entry.aggregate({ _sum: { amount: true }, where: withTxn({ occurredAt: { lt: first } }) }),
+    prisma.entry.findMany({
+      where: range === "ALL" ? withTxn({}) : withTxn({ occurredAt: { gte: first } }),
+      select: { amount: true, transaction: { select: { occurredAt: true } } },
+      orderBy: { transaction: { occurredAt: "asc" } },
+    }),
+  ]);
+  const opening = def.sign * (openingAgg?._sum.amount ?? 0n);
+  const raw = accumulate(rows.map((r) => ({ amount: r.amount, at: r.transaction.occurredAt })), cutoffs, def.sign, opening);
   const breakdown = def.breakdown ? await getBreakdown(def.breakdown) : null;
   return assemble(label, "money", raw, labels, range, breakdown);
 }
@@ -90,9 +102,10 @@ export async function getGraphSeries(metric: string, range: Range): Promise<Grap
 // ---- series math ----------------------------------------------------------
 
 // Cumulative signed sum of `rows` (sorted asc by `at`) at each exclusive-upper-bound cutoff.
-export function accumulate(rows: { amount: bigint; at: Date }[], cutoffs: Date[], sign: bigint): bigint[] {
+// `opening` folds in everything before the fetched window (see the bounded scan above).
+export function accumulate(rows: { amount: bigint; at: Date }[], cutoffs: Date[], sign: bigint, opening = 0n): bigint[] {
   const out: bigint[] = [];
-  let acc = 0n, idx = 0;
+  let acc = opening, idx = 0;
   for (const r of rows) {
     while (idx < cutoffs.length && r.at >= cutoffs[idx]) { out.push(acc); idx++; }
     acc += sign * r.amount;

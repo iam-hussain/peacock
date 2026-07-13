@@ -1372,6 +1372,26 @@ Writes go through **submit → approve**:
 - An **admin's own entry** posts directly (no self-approval needed).
 - So the ledger only ever contains **approved, balanced** entries. `‹TBD›` `SUPER_ADMIN` — not needed.
 
+### 20.1 WhatsApp channel (`/api/whatsapp` + `src/server/whatsapp/`)
+
+The WhatsApp Business Cloud API webhook reuses the pieces above — no parallel write path:
+
+- **Auth**: one club-level token (`WHATSAPP_TOKEN` + `WHATSAPP_PHONE_NUMBER_ID`) for outbound sends;
+  inbound POSTs verified with the `X-Hub-Signature-256` HMAC (`WHATSAPP_APP_SECRET`); the GET
+  handshake echoes `hub.challenge` when `hub.verify_token` matches `WHATSAPP_VERIFY_TOKEN`.
+  There is **no per-member session** — `getCurrentUser()` never runs here.
+- **Identity**: sender `wa_id` → last-10-digit match against `Member.phone` (`identity.ts`);
+  `member.role === "ADMIN"` gates writes and cross-member queries.
+- **Reads** call the existing queries (`getMemberDetail`, `getTransactionsPage`) and reply with
+  their preformatted DTO strings.
+- **Writes** ride the §20 approval flow: a parsed command (`parse.ts` grammar, self-checked by
+  `scripts/check-whatsapp-parse.mts`) creates a `PENDING Submission`; the admin's Confirm button
+  calls `approveSubmission` (idempotent — double-taps can't double-post) with the admin's member id
+  as `actorId`, followed by the same `syncAutoPenaltiesSafe` + `bustStats` + revalidate sweep as
+  the web actions. A member's command queues the submission and notifies admins, like the web.
+- The webhook always returns 200 once past the signature check (a non-200 makes Meta redeliver);
+  send failures are logged, never thrown. Status callbacks (delivered/read) are ignored.
+
 ---
 
 ## 21. Caching & revalidation
@@ -1736,6 +1756,33 @@ not** (capital owed).
   deposits + catch-up = total to rejoin**.
 - `‹CONFIRM›` penalty income recognised **on pay-down** (unpaid penalty = a due, not yet profit) —
   vs accruing owed penalties as pending profit.
+
+**Resolved (Rev 8 — performance pass + operational features):**
+- **`Transaction.reversed Boolean @default(false)`** — set on the ORIGINAL inside `postTransaction`
+  when its reversal posts. Every "live rows only" read now filters `reversed: false` instead of
+  assembling a `notIn` list of reversal targets per query (`reversedTxnIds` deleted). Mongo caveat:
+  a missing key matches **neither** `false` nor `not: true`, so legacy docs need the key stamped —
+  `scripts/backfill-reversed.mts` (idempotent; re-run after any deploy of pre-flag code). Backup
+  **restore** stamps the flag and re-derives it from restored REVERSAL rows.
+- **StatsCache additions:** `transactions` = the full mapped ledger memo (served page-at-a-time);
+  `interestOwed` = the per-membership interest-owed map (the priciest derived figure, computed once
+  per bust/IST-day instead of per page). `cachedStats` fetches snapshot + bust sentinel in one query.
+  `formAction` skips the penalty-sync + bust for password kinds (they touch no snapshot).
+- **/api/transactions** is now **filtered + paged server-side** (zod-validated `q/type/party/start/
+  end/page/size`); the client sends filter state and receives one page + filter options
+  (`getTransactionsPage`). The audit feed reads the same `fullLedger()` memo.
+- **Analytics range scans are bounded**: entries before the first cutoff fold into one aggregate
+  `opening` balance; only the window is fetched/sorted (`accumulate(…, opening)`).
+- **CSV export** — `/api/export/transactions` (same filters; any signed-in member; party filter =
+  member statement).
+- **Crons (vercel.json):** `/api/cron/reminders` (25th monthly — stores one in-app
+  `deposit.reminder` notification per behind member per month; stored unread EVENT notifications now
+  surface as bell alerts) and `/api/cron/backup` (1st monthly — emails the backup JSON via Resend).
+  Both guarded by `CRON_SECRET`; backup additionally needs `RESEND_API_KEY` + `BACKUP_EMAIL_TO`
+  (else it no-ops). Backup serialisation lives in `server/backup-data.ts` (shared by the admin
+  action and the cron).
+- **/approvals** — dedicated admin queue over the same pending submissions (`ApprovalCard` shared
+  with the bell); linked from the Admin hub. Route-group `loading.tsx` added.
 
 Still open (truly minor, non-blocking):
 
