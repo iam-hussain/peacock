@@ -147,6 +147,15 @@ transaction above.
 The member page shows **cumulative** catch-ups and penalties — each charge (reason, amount, date) and
 the running **paid vs remaining**.
 
+> **Auto penalties** (§13.1, when enabled) appear here as ordinary **penalty charges** — kind
+> *penalty*, reason *Deposit penalty (auto)* / *Loan-interest penalty (auto)* — and are paid down via
+> the same **Pay penalty** entry. The ledger row shows the **reason as its title**, is attributed to
+> the **auto scheduler** (manual charges: *admin*), and carries a **note with the full working**
+> (*"Deposit penalty · Jul 2026 — 2% of ₹15,000 deposit pending"*) underneath. **Editing** an auto
+> charge offers its auto reason as a **preselected chip** alongside the manual reasons. They are
+> materialised by the system (deduped, never charged twice) and can be **dismissed** by an admin from
+> the Auto penalties page; a dismissed one is excluded and never re-created.
+
 ### Fixing mistakes & losses (no free-form adjustment)
 
 There is **no "Adjustment"** entry and **no separate "Correction/reversal"** intent.
@@ -194,6 +203,9 @@ What an admin can do, in two buckets: **manage people** and **configure the club
 | Loan term | Months before a loan is "overdue". | 5. |
 | Loan cooldown | Wait after closing before borrowing again. | 1 month. |
 | Overdue penalty | **Automatic** extra rate on overdue loans (applies instantly to all). | 0 (off). |
+| **Auto deposit penalty** | Toggle + **rate %/mo** + **minimum pending** (₹). On the 1st of each month, charges rate% of a member's deposit pending when it exceeds the minimum. | Off · 2%/mo · over ₹6,000. |
+| **Auto loan-interest penalty** | Toggle + **rate %/mo** + **minimum interest** (₹) + **grace days**. After a loan closes, every grace-window charges rate% of the pending interest (never principal) while it exceeds the minimum. | Off · 2%/mo · over ₹1,000 · 30 days. |
+| **Penalties apply from** | Single date shared by both auto penalties — nothing is charged before it (not retroactive). | 01 Sep 2026. |
 | Dividend | Periodic profit payout toggle. | Off. |
 | **Who can submit entries** | `Admins only` or `All members` (members' entries need admin approval). | All members. |
 | **Alert thresholds** | Amounts that trigger proactive alerts: large amount, heavy pending deposit, heavy pending interest. | Set by club. |
@@ -207,6 +219,8 @@ What an admin can do, in two buckets: **manage people** and **configure the club
   transaction (§3); **approve/reject** members' pending submissions (from notifications).
 - **Close quarter** — locks the quarter's entries + stores a snapshot (can't be undone).
 - Browse the **audit log** (who did what, when).
+- Open the **Auto penalties** page (§13.1) — every system-added deposit / loan-interest penalty with
+  its member, reference, amount and date; a **Sync now** button; and **Dismiss** per row.
 
 > Members (non-admin) **view** everything; if the club allows, they can **submit** entries (which need
 > admin approval). They can change their **own avatar and password** in Profile. There is **no

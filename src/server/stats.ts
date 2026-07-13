@@ -23,8 +23,15 @@ function startOfTodayIST(): Date {
   return new Date(shifted.getTime() - IST_OFFSET_MS);
 }
 
+// Snapshots must never outlive the code that shaped them: a deploy that adds a DTO field would
+// otherwise serve old-shape JSON and crash the new client. Prod keys are suffixed per deploy;
+// dev (where shapes change on every edit) skips the cache entirely.
+const CODE_VERSION = process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? "local";
+
 /** Serve `key` from StatsCache, recomputing via `compute` when missing or stale. */
-export async function cachedStats<T>(key: string, compute: () => Promise<T>): Promise<T> {
+export async function cachedStats<T>(rawKey: string, compute: () => Promise<T>): Promise<T> {
+  if (process.env.NODE_ENV !== "production") return compute();
+  const key = `${rawKey}@${CODE_VERSION}`;
   const [hit, bust] = await Promise.all([
     prisma.statsCache.findUnique({ where: { key } }),
     prisma.statsCache.findUnique({ where: { key: BUST_KEY } }),

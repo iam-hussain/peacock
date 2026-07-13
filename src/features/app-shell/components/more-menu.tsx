@@ -11,6 +11,7 @@ import {
   FileText,
   LogOut,
   ChevronRight,
+  ShieldCheck,
   type LucideIcon,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -40,6 +41,12 @@ export function MoreMenu({ user }: { user: CurrentUser }) {
         <Row icon={Store} label="Vendors" href="/vendors" />
         <Row icon={BarChart3} label="Analytics" href="/analytics" />
       </MenuCard>
+
+      {user.isAdmin && (
+        <MenuCard>
+          <Row icon={ShieldCheck} label="Admin" sub="Auto penalties, audit, members & data" href="/admin" />
+        </MenuCard>
+      )}
 
       <MenuCard>
         <ThemeRow />

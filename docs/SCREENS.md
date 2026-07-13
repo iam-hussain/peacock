@@ -75,8 +75,10 @@ edit, reset password, make admin, mark treasurer.
 - **Membership bar:** **"Membership #N · Active since …"** with a **switcher** (only if >1 stint).
 - **Current membership body:** deposits paid, **pending deposits/overdue badge**, current loan +
   interest pending, **profit share (full and reduced-by-paid-ratio)**; a **Catch-up** section and a
-  **Penalty** section each listing that membership's **charges cumulatively** (each: reason, amount,
-  date, **paid vs remaining**) with total outstanding; this membership's **transaction history**.
+  **Penalty** section each listing that membership's **charges cumulatively** (each: **reason as the
+  row title**, charged-by (admin / auto scheduler), date, the charge's **note/working** if any, amount,
+  and the bucket's **paid vs remaining**; the bucket tabs show the **total ever charged**); this
+  membership's **transaction history**.
 - **Previous memberships (history)** — only if any: a list of **closed** stints ("Membership #1 ·
   Sep 2020 → Aug 2023 · settled ₹X · Closed"), each expandable to a **read-only** summary + its
   transactions, tagged **Legacy**. (Hidden entirely for members who never left.)
@@ -208,23 +210,40 @@ treasurer.
 
 ---
 
-## 12. Settings (admin)
+## 12. Settings
 
-**Purpose:** configure the club and manage people.
+**Purpose:** your profile, the club configuration, and treasury (three tabs: Profile · Club ·
+Treasury). Admin-only tools live on their own **Admin** screen (§12a).
 
-**Shows / does — configuration:** club name & start date; deposit **stages**; **interest-rate
-schedule** (add dated change for new loans); daily-interest-from date; loan limit; loan term;
-cooldown; **overdue penalty** (default 0, auto); **dividend** toggle (off); **who can submit entries**
-(admins only / all members); **alert thresholds** (large amount, heavy pending deposit/interest);
-timezone. *(Late/delayed payment is a manual penalty **charge** on the member page, not an auto
-setting. There is **no permissions matrix**.)*
+**Shows / does — Club configuration (admin edits):** club name & start date; deposit **stages**;
+**interest-rate schedule** (add dated change for new loans); daily-interest-from date; loan limit;
+loan term; cooldown; **overdue penalty** (default 0, auto); **auto penalties** — deposit +
+loan-interest, each a toggle with **rate %**, **minimum**, (loan) **grace days**, and a shared
+**apply-from date** (default off, see §13.1); **dividend** toggle (off); **who can submit entries**;
+**alert thresholds**; timezone. The Club tab shows an **Auto penalties** summary (on/off, rate,
+minimum, effective-from). *(Late/delayed payment can also be a **manual** penalty **charge** on the
+member page. There is **no permissions matrix**.)*
 
-**Shows / does — people:** add/edit members; **reset any member's password**; grant/revoke admin;
-set/unset treasurer; deactivate/archive. *(Forgot-password requests arrive as **notifications**, not a
-separate queue.)*
+**Access:** any member (Profile · Club · Treasury are read-only for non-admins; edits are admin-only).
 
-**Does — other:** **Audit log** (who did what, when — browsable); **Close quarter** (locks the quarter
-+ snapshot, with an "can't be undone" warning). *(Backup/restore export too.)*
+---
+
+## 12a. Admin (admin only)
+
+**Purpose:** the hub for everything only managers can touch. Reached from the **Admin** entry in the
+desktop top bar and the mobile **More** menu.
+
+**Shows / does:** quick stats (admins, audit events, auto-penalty status); a featured **Auto
+penalties** card → the Auto penalties page; **Audit log**; manage **Admins** (grant/revoke); **reset
+any member's password**; **Close quarter** (lock + snapshot, "can't be undone"); **Backup / Restore**.
+
+**Auto penalties page** (Admin → Auto penalties, §13.1): the enable **toggles + rate/minimum/grace +
+apply-from date edited inline** (turning one on applies immediately); a **by-member** and **by-month**
+breakdown; the full **register** of every system-added penalty (member, reference with the charge's
+full working, amount, date) with per-row **Dismiss**, **paginated**; both breakdown and register have
+an **All · Deposit · Interest type filter**; and a **Sync now** button.
+
+**Access:** **admin only.**
 
 **Access:** **admin only.**
 

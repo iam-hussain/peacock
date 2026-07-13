@@ -554,14 +554,62 @@ never left, it looks exactly as before (no history section).
 
 ## 13. Penalties
 
-There are two kinds of penalty — one automatic (configurable, off today), one manual.
+There are three kinds of penalty — the overdue-loan rate, two **automatic** penalties, and the
+manual charge.
 
 | Penalty | How it works | Today |
 |---------|--------------|-------|
 | **Overdue loan penalty** | An **automatic** extra interest rate on loans kept past the **5-month** term. A config setting; when switched on it applies **immediately to all loans**. | **0** — overdue loans are only **flagged**. |
+| **Auto deposit penalty** | Automatic monthly charge when a member's **deposit pending** stays high (§13.1). | **On** since **1 May 2026** — 2% / mo on pending over ₹6,000. (Off by default; a toggle.) |
+| **Auto loan-interest penalty** | Automatic charge when a **closed loan's interest** is left unpaid (§13.1). | **On** since **1 May 2026** — 2% on pending interest over ₹1,000, every 30 days. (Off by default; a toggle.) |
 | **Penalty charge** | A **manual charge** the admin raises against a member. Like catch-up, it's an amount the member **owes** and **pays down over time in any number of instalments**, and a member can have **several** over time (e.g. ₹100 today, another ₹100 next week — they accumulate). | Applied **case-by-case** by the admin. |
 
-### Penalty charges (manual, multiple, paid down)
+### 13.1 Automatic penalties (deposit & loan-interest)
+
+Two automatic penalties, **each independently toggled** and **off by default**. Both are
+**admin-configurable** (rate %, minimum trigger, and — for the loan penalty — the grace window) and
+share **one "apply from" date** (default **1 September 2026**): **nothing is charged for any date
+before it**. Turning a penalty on therefore applies **from that date forward**, not across the whole
+past.
+
+**Deposit penalty.** On the **1st of every month** (IST), if a member's **deposit pending** is
+**more than the minimum** (default **₹6,000** — i.e. more than roughly three months behind), the
+club adds **2% of that full pending amount** for the month. Whole months only — crossing the
+threshold mid-month costs nothing until the next 1st. A member is only charged for months from their
+current join onward.
+
+**Loan-interest penalty.** When a member's loan **closes** with interest still unpaid, a **grace
+window** (default **30 days**) passes, then **every 30 days** thereafter, if the **pending interest**
+is **more than the minimum** (default **₹1,000**), the club adds **2% of the pending interest**. The
+2% is always on the **interest** — **never on the loan principal**. Every interest payment shrinks
+the next charge (and stops it once pending drops to the minimum). Taking a **new loan pauses** the
+clock; it re-anchors to the new loan's close date.
+
+Both are **simple, not compounding**: each period's 2% is on the pending **base** (deposits owed /
+interest owed), **never on penalty already added**. So a second month adds its own 2% of the
+still-pending base on top of the first — it does not charge penalty-on-penalty, and the loan penalty
+never touches principal.
+
+**How they're added.** Each auto penalty becomes a normal **penalty due** on the member (collected
+through the usual **"Pay penalty"** entry, shared as club profit like any penalty) and carries a
+**reference recording the exact working at charge time** — *"Deposit penalty · Sep 2026 — 2% of
+₹15,000 deposit pending"* or *"Loan-interest penalty · 30 days after close — 2% of ₹11,983 interest
+pending"*. On the member's page the row is titled by its **reason** (*Deposit penalty (auto)* /
+*Loan-interest penalty (auto)*), attributed to the **auto scheduler** (manual charges say *admin*),
+with that working underneath. They're **added automatically when an entry is recorded** (or on
+demand via **Sync now**), and the same month or loan-tick can **never be charged twice**. Once added,
+the amount is **fixed**; if history later changes so a period no longer qualified, the admin can
+**dismiss** that auto penalty (and it won't come back).
+
+Admins review every system-added penalty on a dedicated **Auto penalties** page (**Admin → Auto
+penalties**): the member, what it was charged for, the amount, the date, a **by-member** and
+**by-month** breakdown, and a **Sync now** button. Both the breakdown and the register can be
+**filtered by penalty type** (All · Deposit · Interest), and the register is **paginated**. The
+toggles, rates, minimums, grace window, and
+start date are edited **right on that page** (and also in Settings → Club → Edit) — turning a penalty
+on there applies it from the start date immediately.
+
+### 13.2 Penalty charges (manual, multiple, paid down)
 
 Each penalty charge has:
 - an **amount** — **auto-suggested but admin-editable** (suggestion = *2% of this member's pending

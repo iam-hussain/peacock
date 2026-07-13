@@ -81,8 +81,8 @@ export function CatchupPenaltyCard({ m }: { m: MemberDetail }) {
         </div>
 
         <div className="mb-3.5 flex gap-2">
-          <Tab active={tab === "catchup"} onClick={() => setTab("catchup")} dot="bg-teal" activeText="text-teal" label="Catch-up" left={m.ledgerRemaining} />
-          <Tab active={tab === "penalty"} onClick={() => setTab("penalty")} dot="bg-wfg" activeText="text-wfg" label="Penalty" left={m.penaltyRemaining} />
+          <Tab active={tab === "catchup"} onClick={() => setTab("catchup")} dot="bg-teal" activeText="text-teal" label="Catch-up" total={m.ledgerAssigned} />
+          <Tab active={tab === "penalty"} onClick={() => setTab("penalty")} dot="bg-wfg" activeText="text-wfg" label="Penalty" total={m.penaltyAssigned} />
         </div>
 
         <p className="mb-3 text-11 font-medium leading-140 text-fnt">{cur.subtitle}</p>
@@ -148,6 +148,7 @@ function EntryRow({ e, bucket, styles, hidden, memberName }: { e: LedgerEntryDTO
       <div className="min-w-0 flex-1">
         <div className="text-sm font-bold leading-tight text-ink">{e.title}</div>
         <div className="mt-0.5 text-11 font-medium leading-none text-fnt">{e.by} · {e.date}</div>
+        {e.note && <div className="mt-1 text-11 font-medium leading-140 text-mut">{e.note}</div>}
       </div>
       <span className={`font-mono text-15 font-semibold leading-none ${isPayment ? "text-in" : styles.amt}`}>{e.amount}</span>
       <AdminOnly>
@@ -198,7 +199,7 @@ function EntryRow({ e, bucket, styles, hidden, memberName }: { e: LedgerEntryDTO
   );
 }
 
-function Tab({ active, onClick, dot, activeText, label, left }: { active: boolean; onClick: () => void; dot: string; activeText: string; label: string; left: string }) {
+function Tab({ active, onClick, dot, activeText, label, total }: { active: boolean; onClick: () => void; dot: string; activeText: string; label: string; total: string }) {
   return (
     <button
       type="button"
@@ -210,7 +211,7 @@ function Tab({ active, onClick, dot, activeText, label, left }: { active: boolea
         <span className={`text-xs font-semibold leading-none ${active ? activeText : "text-mut"}`}>{label}</span>
       </div>
       <div className="mt-2.25 font-mono text-15 font-semibold leading-none text-ink">
-        {left} <span className="font-sans text-10 font-medium text-fnt">left</span>
+        {total} <span className="font-sans text-10 font-medium text-fnt">total</span>
       </div>
     </button>
   );

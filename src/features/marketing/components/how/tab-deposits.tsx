@@ -16,7 +16,7 @@ export function TabDeposits() {
         <RuleTile icon={Wallet} label="Equal monthly deposit" detail="Today ₹2,000 for everyone — the same fixed amount, every month." />
         <RuleTile icon={CalendarClock} label="Measured across the club's life" detail="Your expected total runs from the club's start to today — identical for every active member." />
         <RuleTile icon={Scale} label="Catch-up equalises value" detail="A charge a late/returning member owes so their stake matches everyone else's." />
-        <RuleTile icon={TriangleAlert} label="Late is flagged, not fined" detail="Unpaid deposits show as pending/overdue. The late-payment penalty is off today." />
+        <RuleTile icon={TriangleAlert} label="Fall far behind, small penalty" detail="Unpaid deposits show as pending. If they stay high (over ₹6,000), 2% of the pending is added each month — clearly labelled with the month and working." />
       </div>
 
       <Card title="Deposits: paid vs expected" icon={Scale}>

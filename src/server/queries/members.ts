@@ -1,7 +1,7 @@
 import "server-only";
 import { prisma } from "@/server/db";
 import { formatPaise, profitShare } from "@/lib/money";
-import { monthYear, monthsDays, tenure, dayMonthYear } from "@/lib/date";
+import { monthYear, tenure, dayMonthYear } from "@/lib/date";
 import { loanEventsMap, reconstructCycles, loanConfig, isOverdue, interestOwedTotal, loanCycleDTOs, type LoanCfg, type LoanCycleDTO } from "./loans";
 import { vendorProfitAndObligation } from "./vendors";
 import { getCashHolderOptions } from "./entries";
@@ -41,7 +41,7 @@ export interface MemberSort {
 // magnitude is −sum; outstanding = raised + sum(paid legs).
 async function outstandingCharge(membershipId: string, kind: "CATCHUP" | "PENALTY", reversedIds?: string[]): Promise<bigint> {
   const reversed = reversedIds ?? (await reversedTxnIds());
-  const raised = await prisma.charge.aggregate({ _sum: { amount: true }, where: { membershipId, kind } });
+  const raised = await prisma.charge.aggregate({ _sum: { amount: true }, where: { membershipId, kind, voidedAt: null } });
   const paid = await prisma.entry.aggregate({
     _sum: { amount: true },
     where: { transaction: { membershipId, type: kind, id: { notIn: reversed } }, account: { kind: kind === "CATCHUP" ? "MEMBER_EQUITY" : "OTHER_INCOME" } },
@@ -108,7 +108,7 @@ export async function getMembers(): Promise<MemberDTO[]> {
     // Periodic-only, for the list "Deposits" column (catch-up shows under Adjustment). Profit/pending
     // still use the combined paid total below (deposits + catch-up), per PRODUCT.md §6/§11.
     prisma.entry.groupBy({ by: ["accountId"], _sum: { amount: true }, where: { accountId: { in: equityIds }, transaction: { type: "PERIODIC_DEPOSIT", id: { notIn: reversedIds } } } }),
-    prisma.charge.groupBy({ by: ["membershipId", "kind"], _sum: { amount: true }, where: { membershipId: { in: membershipIds }, kind: { in: ["CATCHUP", "PENALTY"] } } }),
+    prisma.charge.groupBy({ by: ["membershipId", "kind"], _sum: { amount: true }, where: { membershipId: { in: membershipIds }, kind: { in: ["CATCHUP", "PENALTY"] }, voidedAt: null } }),
     prisma.entry.findMany({
       where: { transaction: { membershipId: { in: membershipIds }, type: { in: ["CATCHUP", "PENALTY"] }, id: { notIn: reversedIds } }, account: { kind: { in: ["MEMBER_EQUITY", "OTHER_INCOME"] } } },
       select: { amount: true, account: { select: { kind: true } }, transaction: { select: { membershipId: true, type: true } } },
@@ -255,7 +255,7 @@ export async function getMemberFunds(): Promise<{
 
 /** Club-wide charge totals for a kind (paise): assigned (raised), collected (paid down), pending. */
 export async function chargeTotals(kind: "CATCHUP" | "PENALTY"): Promise<{ assigned: bigint; collected: bigint; pending: bigint }> {
-  const raised = await prisma.charge.aggregate({ _sum: { amount: true }, where: { kind } });
+  const raised = await prisma.charge.aggregate({ _sum: { amount: true }, where: { kind, voidedAt: null } });
   const paid = await prisma.entry.aggregate({
     _sum: { amount: true },
     where: { transaction: { type: kind, id: { notIn: await reversedTxnIds() } }, account: { kind: kind === "CATCHUP" ? "MEMBER_EQUITY" : "OTHER_INCOME" } },
@@ -296,6 +296,8 @@ const REASON_LABEL: Record<string, string> = {
   LOAN_REPAYMENT_DELAY: "Loan-repayment delay",
   HOLDING_TOO_LONG: "Holding too long",
   MISSED_DEPOSIT: "Missed deposit",
+  AUTO_DEPOSIT_PENALTY: "Deposit penalty (auto)",
+  AUTO_LOAN_INTEREST_PENALTY: "Loan-interest penalty (auto)",
   OTHER: "Charge",
 };
 
@@ -313,6 +315,7 @@ export interface LedgerEntryDTO {
   title: string;
   by: string;
   date: string;
+  note?: string; // charge note, shown under the by·date line (OTHER charges show theirs as title)
   amount: string; // signed, e.g. "+₹1,500" / "−₹500"
   positive: boolean;
   editAmount: string; // rupees, for prefilling the edit form
@@ -441,7 +444,7 @@ export async function getMemberDetail(id: string, ctx?: MemberDetailContext): Pr
           settledGuide: true,
           accounts: { select: { id: true, kind: true, balance: true } },
           loans: { orderBy: { startedAt: "desc" }, select: { id: true, requestedAmount: true, principalOutstanding: true, monthlyRateBps: true, startedAt: true, closedAt: true, status: true } },
-          charges: { orderBy: { occurredAt: "desc" }, select: { id: true, kind: true, reason: true, amount: true, occurredAt: true, note: true } },
+          charges: { where: { voidedAt: null }, orderBy: { occurredAt: "desc" }, select: { id: true, kind: true, reason: true, amount: true, occurredAt: true, note: true, auto: true } },
         },
       },
     },
@@ -500,8 +503,11 @@ export async function getMemberDetail(id: string, ctx?: MemberDetailContext): Pr
     row: {
       id: c.id,
       kind: "charge" as const,
-      title: c.note?.trim() || REASON_LABEL[c.reason] || "Charge",
-      by: "Charged by admin",
+      // The reason is the row's title; the note is detail underneath. Except OTHER: its custom
+      // wording lives in the note column and IS the reason (see AddChargeDialog).
+      title: (c.reason === "OTHER" && c.note?.trim()) || REASON_LABEL[c.reason] || "Charge",
+      note: c.reason === "OTHER" ? undefined : c.note?.trim() || undefined,
+      by: c.auto ? "Charged by auto scheduler" : "Charged by admin",
       date: dayMonthYear(c.occurredAt),
       amount: "+" + formatPaise(c.amount),
       positive: true,

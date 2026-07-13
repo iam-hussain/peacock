@@ -12,6 +12,8 @@ import { reverseTransaction, editTransactionAmount } from "@/server/ledger/rever
 import { auth } from "@/server/auth";
 import { getCurrentUser } from "@/server/queries/session";
 import { shareableClubProfit } from "@/server/queries/members";
+import { getPenaltyConfig, serializePenaltyConfig, type PenaltyConfig } from "@/server/queries/penalties";
+import { syncAutoPenalties, syncAutoPenaltiesSafe } from "@/server/ledger/auto-penalties";
 import { getActivity } from "@/server/queries/notifications";
 import { quarterBounds } from "@/lib/quarter";
 import { istDate } from "@/lib/date";
@@ -32,6 +34,7 @@ export async function decideSubmission(id: string, decision: "approve" | "reject
     if (decision === "approve") await approveSubmission(id, me.id);
     else await rejectSubmission(id, me.id);
     // An approval posts to the ledger, touching every money view — invalidate them all, not just three.
+    if (decision === "approve") await syncAutoPenaltiesSafe(); // a posted deposit / interest payment can settle or trigger an auto penalty
     revalidateLedger();
     await bustStats();
     return { ok: true };
@@ -91,7 +94,13 @@ export async function formAction(kind: string, fd: FormData): Promise<ActionResu
       if (denied) return { ok: false, error: denied };
     }
     const res = await dispatch(kind, fd);
-    if (res.ok) await bustStats(); // every form mutates something a snapshot shows
+    if (res.ok) {
+      // "Add entry will calculate if new found" (§13.2): recording an entry materialises any auto
+      // penalty that has newly come due (deduped by its deterministic id). Best-effort — a sync
+      // hiccup never fails the entry the user just recorded.
+      await syncAutoPenaltiesSafe();
+      await bustStats(); // every form mutates something a snapshot shows
+    }
     return res;
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Something went wrong" };
@@ -214,7 +223,7 @@ async function addMember(fd: FormData): Promise<ActionResult> {
     });
     if (catchup > 0n) {
       await tx.charge.create({
-        data: { membershipId: ms.id, kind: "CATCHUP", reason: "FIRST_TIME_JOIN", amount: catchup, occurredAt: joinedAt, note: null },
+        data: { membershipId: ms.id, kind: "CATCHUP", reason: "FIRST_TIME_JOIN", amount: catchup, occurredAt: joinedAt, note: null, voidedAt: null },
       });
     }
   });
@@ -383,7 +392,8 @@ async function addCharge(fd: FormData): Promise<ActionResult> {
   const valid = kind === "PENALTY" ? PENALTY_REASONS : CATCHUP_REASONS;
   const reason = p.data.reason && valid.has(p.data.reason) ? p.data.reason : "OTHER";
   await prisma.charge.create({
-    data: { membershipId: p.data.membershipId, kind, reason, amount, occurredAt: istDate(p.data.date ? new Date(p.data.date) : new Date()), note: p.data.note || null },
+    // voidedAt explicit null: Mongo missing-key ≠ null, and live-due reads filter voidedAt: null (see db/index.ts)
+    data: { membershipId: p.data.membershipId, kind, reason, amount, occurredAt: istDate(p.data.date ? new Date(p.data.date) : new Date()), note: p.data.note || null, voidedAt: null },
   });
   revalidatePath(`/members/${p.data.memberId}`);
   return { ok: true };
@@ -412,12 +422,21 @@ async function editCharge(fd: FormData): Promise<ActionResult> {
 }
 
 // Delete a charge (obligation row) — charges never touch the ledger, so just remove the row.
+// An AUTO penalty is voided (tombstoned) rather than deleted, so the next sync can't resurrect it
+// by its deterministic id; a manual charge is removed outright as before.
 async function deleteCharge(fd: FormData): Promise<ActionResult> {
   const id = str(fd, "id");
   const memberId = str(fd, "memberId");
   if (!id || !memberId) return { ok: false, error: "Missing charge." };
-  await prisma.charge.delete({ where: { id } });
+  // Detect auto charges by their reason (always present, even on pre-migration Mongo docs that lack
+  // the `auto` field) rather than selecting the required `auto` flag — reading a missing required
+  // field would throw for legacy charges. Auto reasons are never assignable by hand.
+  const charge = await prisma.charge.findUnique({ where: { id }, select: { reason: true } });
+  const isAuto = charge?.reason === "AUTO_DEPOSIT_PENALTY" || charge?.reason === "AUTO_LOAN_INTEREST_PENALTY";
+  if (isAuto) await prisma.charge.update({ where: { id }, data: { voidedAt: new Date() } });
+  else await prisma.charge.delete({ where: { id } });
   revalidatePath(`/members/${memberId}`);
+  revalidatePath("/penalties");
   return { ok: true };
 }
 
@@ -440,7 +459,7 @@ async function deletePayment(fd: FormData): Promise<ActionResult> {
 
 // A ledger correction touches balances that feed every money view — revalidate them all.
 function revalidateLedger() {
-  for (const p of ["/transactions", "/dashboard", "/members", "/vendors", "/analytics", "/notifications"]) revalidatePath(p);
+  for (const p of ["/transactions", "/dashboard", "/members", "/vendors", "/analytics", "/notifications", "/penalties"]) revalidatePath(p);
 }
 
 // Delete a posted transaction (§16): post a reversal (keeps history), row drops out of the feed.
@@ -510,7 +529,7 @@ async function rejoin(fd: FormData): Promise<ActionResult> {
     });
     if (catchup > 0n) {
       await tx.charge.create({
-        data: { membershipId: ms.id, kind: "CATCHUP", reason: "REJOIN", amount: catchup, occurredAt: date, note: parsed.data.note || null },
+        data: { membershipId: ms.id, kind: "CATCHUP", reason: "REJOIN", amount: catchup, occurredAt: date, note: parsed.data.note || null, voidedAt: null },
       });
     }
     // Clear the archived flag so a member who had fully "left" reads as active again.
@@ -653,17 +672,61 @@ export async function setAdmin(memberId: string, makeAdmin: boolean): Promise<Ac
 type ClubStage = { name?: string; amountPaise: string; startDate: string; endDate?: string | null };
 type ClubRate = { rateBps: number; effectiveFrom: string };
 
+// The auto-penalty knobs (§13.2), all optional — a blank field keeps the current value. Both
+// penalties share one effective-from date; each has its own on/off, rate %, and minimum trigger,
+// and the loan-interest penalty adds a grace/tick window in days.
+export interface PenaltyInput {
+  penaltyFrom?: string; // yyyy-mm-dd (shared effective-from)
+  depositPenaltyEnabled?: boolean; depositPenaltyRate?: string; depositPenaltyMin?: string; // %/mo, ₹
+  interestPenaltyEnabled?: boolean; interestPenaltyRate?: string; interestPenaltyMin?: string; interestPenaltyGrace?: string; // %, ₹, days
+}
+
+// Overlay the submitted penalty knobs onto the current config (blank = keep). Returns the new config
+// or a validation error string.
+function buildPenaltyConfig(input: PenaltyInput, current: PenaltyConfig): PenaltyConfig | { error: string } {
+  const num = (s: string | undefined, fallback: number): number | null => {
+    const t = (s ?? "").trim();
+    if (!t) return fallback;
+    const n = Number(t);
+    return Number.isFinite(n) && n >= 0 ? n : null;
+  };
+  const from = (input.penaltyFrom ?? "").trim();
+  let effectiveFrom = current.effectiveFrom;
+  if (from) {
+    const d = new Date(from);
+    if (Number.isNaN(d.getTime())) return { error: "Enter a valid penalty start date." };
+    effectiveFrom = istDate(d);
+  }
+  const dRate = num(input.depositPenaltyRate, current.deposit.rateBps / 100);
+  const iRate = num(input.interestPenaltyRate, current.interest.rateBps / 100);
+  const grace = num(input.interestPenaltyGrace, current.interest.graceDays);
+  if (dRate === null || iRate === null) return { error: "Penalty rate must be a positive percentage." };
+  if (grace === null || grace < 1) return { error: "Grace period must be at least 1 day." };
+  const dMin = (input.depositPenaltyMin ?? "").trim() ? rupeesToPaise(input.depositPenaltyMin!) : current.deposit.minPaise;
+  const iMin = (input.interestPenaltyMin ?? "").trim() ? rupeesToPaise(input.interestPenaltyMin!) : current.interest.minPaise;
+  if (dMin < 0n || iMin < 0n) return { error: "Penalty minimum can't be negative." };
+  return {
+    effectiveFrom,
+    deposit: { enabled: input.depositPenaltyEnabled ?? current.deposit.enabled, rateBps: Math.round(dRate * 100), minPaise: dMin },
+    interest: { enabled: input.interestPenaltyEnabled ?? current.interest.enabled, rateBps: Math.round(iRate * 100), minPaise: iMin, graceDays: Math.round(grace) },
+  };
+}
+
 export async function saveClubSettings(input: {
   dividend: boolean;
   depositAmount?: string; depositFrom?: string; // ₹ + yyyy-mm-dd
   rate?: string; rateFrom?: string; // %/mo + yyyy-mm-dd
-}): Promise<ActionResult> {
+} & PenaltyInput): Promise<ActionResult> {
   const me = await getCurrentUser();
   if (!me?.isAdmin) return { ok: false, error: "Only an admin can edit the club." };
   const cfg = await prisma.clubConfig.findUnique({ where: { id: "singleton" }, select: { stages: true, rateSchedule: true } });
   if (!cfg) return { ok: false, error: "Club config not found." };
 
-  const data: { dividendEnabled: boolean; stages?: ClubStage[]; rateSchedule?: ClubRate[] } = { dividendEnabled: input.dividend };
+  const data: { dividendEnabled: boolean; stages?: ClubStage[]; rateSchedule?: ClubRate[]; penaltyConfig?: object } = { dividendEnabled: input.dividend };
+
+  const built = buildPenaltyConfig(input, await getPenaltyConfig());
+  if ("error" in built) return { ok: false, error: built.error };
+  data.penaltyConfig = serializePenaltyConfig(built);
 
   const depA = (input.depositAmount ?? "").trim();
   const depD = (input.depositFrom ?? "").trim();
@@ -696,9 +759,42 @@ export async function saveClubSettings(input: {
   }
 
   await prisma.clubConfig.update({ where: { id: "singleton" }, data });
-  for (const p of ["/settings", "/members", "/loans", "/dashboard", "/analytics"]) revalidatePath(p);
+  // Turning a penalty on applies from the effective date immediately — materialise what's already due.
+  await syncAutoPenaltiesSafe();
+  for (const p of ["/settings", "/members", "/loans", "/dashboard", "/analytics", "/penalties"]) revalidatePath(p);
   await bustStats();
   return { ok: true };
+}
+
+// Save ONLY the auto-penalty config (§13.1) — the focused action behind the toggles on the auto
+// penalties page, so an admin can turn a penalty on without going through the whole Edit-club form.
+// Overlays the submitted knobs onto the current config (blank = keep), then materialises what's due.
+export async function savePenaltyConfig(input: PenaltyInput): Promise<ActionResult> {
+  const me = await getCurrentUser();
+  if (!me?.isAdmin) return { ok: false, error: "Only an admin can change penalties." };
+  const built = buildPenaltyConfig(input, await getPenaltyConfig());
+  if ("error" in built) return { ok: false, error: built.error };
+  const data: { penaltyConfig: object } = { penaltyConfig: serializePenaltyConfig(built) };
+  await prisma.clubConfig.update({ where: { id: "singleton" }, data });
+  await syncAutoPenaltiesSafe(); // turning one on applies from the effective date at once
+  for (const p of ["/penalties", "/admin", "/settings", "/members", "/dashboard"]) revalidatePath(p);
+  await bustStats();
+  return { ok: true };
+}
+
+// Admin "Sync now" on the auto-penalties page: force a materialisation pass and report how many
+// new penalties were added. Duplicate-proof (deterministic ids), so it's safe to run any time.
+export async function syncAutoPenaltiesNow(): Promise<ActionResult & { added?: number }> {
+  const me = await getCurrentUser();
+  if (!me?.isAdmin) return { ok: false, error: "Only an admin can do that." };
+  try {
+    const added = await syncAutoPenalties();
+    for (const p of ["/penalties", "/members", "/dashboard"]) revalidatePath(p);
+    await bustStats();
+    return { ok: true, added };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Could not sync penalties." };
+  }
 }
 
 // Write off a vendor loss (§ vendor mgmt): reduces the receivable and books the shortfall against
