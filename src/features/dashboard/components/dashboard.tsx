@@ -51,8 +51,8 @@ export function Dashboard({ data, greeting }: { data: DashboardData; greeting: G
                 </div>
               </div>
               <div className="flex flex-col gap-4">
-                <ActivityCard activity={activity} />
                 <WhatsAppCard />
+                <ActivityCard activity={activity} />
               </div>
             </div>
           )}
@@ -67,6 +67,8 @@ export function Dashboard({ data, greeting }: { data: DashboardData; greeting: G
           <p className="mt-1.25 text-xs font-medium leading-140 text-mut">{greeting.sub}</p>
         </div>
         <div className="flex flex-col gap-3 px-4 py-3.5">
+          <WhatsAppCard />
+
           <div className="rounded-18 bg-teal p-5 text-white">
             <div className="text-11 font-semibold uppercase leading-none tracking-3 text-teal-ink">
               Total portfolio value
@@ -88,8 +90,6 @@ export function Dashboard({ data, greeting }: { data: DashboardData; greeting: G
           ))}
 
           <DashActivityTabs activity={activity.slice(0, DASH_ACTIVITY_MOBILE)} />
-
-          <WhatsAppCard />
         </div>
       </div>
       )}
