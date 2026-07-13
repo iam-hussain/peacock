@@ -66,7 +66,8 @@ function balanceText(d: MemberDetailDTO): string {
     `Deposits paid: ${d.depositsTotal}\n` +
     `Profit share: ${d.profit}\n` +
     `Current value: ${d.value}\n` +
-    `Pending: ${orNone(d.overallPending)}`
+    `Pending: ${orNone(d.overallPending)}` +
+    (d.held ? `\n\nClub cash held (treasury): ${d.held}` : "")
   );
 }
 
