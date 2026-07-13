@@ -792,9 +792,11 @@ a polite "ask an admin to add your number" reply.
   `txns on 2026-07-01`), `due` (everything owed). Replies are free-form messages inside
   WhatsApp's 24-hour service window, so answering costs the club nothing.
 - **Admins can ask about anyone** by adding a name — `balance ravi` — and can **record money by
-  chat**: `ravi paid 2000 to suresh`, `ravi repaid 5000 to suresh`, `ravi interest 500 to suresh`.
-  The **member, type, amount and treasurer are required**; a date (`on 2026-07-01`) and a note
-  (`note july deposit`) are optional. An incomplete command gets a reply naming exactly what's
+  chat** in six types: `paid` (deposit), `repaid` (loan repayment), `interest` (interest
+  collected), `loan` (loan given), `invest` (vendor investment), `return` (vendor return, with an
+  optional `principal <amt>` for the capital part). The **party, type, amount and treasurer are
+  required**; a date (`on 2026-07-01`) and a note (`note july deposit`) are optional, and
+  `to`/`from` are interchangeable. An incomplete command gets a reply naming exactly what's
   missing. The bot then shows a preview with **Confirm / Cancel** buttons; nothing posts until
   the admin taps Confirm.
 - The chat channel follows the **same submit → approve rules** (this section): an admin's

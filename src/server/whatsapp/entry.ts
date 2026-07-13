@@ -6,7 +6,7 @@ import { approveSubmission, rejectSubmission } from "@/server/ledger/approve";
 import { syncAutoPenaltiesSafe } from "@/server/ledger/auto-penalties";
 import { bustStats } from "@/server/stats";
 import { matchMember, type WaSender } from "./identity";
-import { parseEntryText, looksLikeEntryStart, entryMissing } from "./parse";
+import { parseEntryText, looksLikeEntryStart, entryMissing, VENDOR_ENTRY_INTENTS, OUTFLOW_INTENTS } from "./parse";
 import { sendText, sendButtons } from "./send";
 
 /**
@@ -19,43 +19,76 @@ import { sendText, sendButtons } from "./send";
 export const looksLikeEntry = (text: string) => looksLikeEntryStart(text);
 
 const USAGE =
-  "Format:\n*<member> paid <amount> to <treasurer>*\n\n" +
-  "• *paid* = deposit, *repaid* = loan repayment, *interest* = interest collected\n" +
-  "• optional: *on 2026-07-01*, *note <anything>*\n\n" +
+  "Format:\n*<member or vendor> <type> <amount> to <treasurer>*\n\n" +
+  "Types: *paid* deposit · *repaid* loan repayment · *interest* interest collected · " +
+  "*loan* loan given · *invest* vendor investment · *return* vendor return\n" +
+  "Optional: *principal <amt>* (vendor return), *on 2026-07-01*, *note <anything>*\n\n" +
   "Example: *ravi paid 2000 to suresh note july deposit*";
+
+/** Vendor-name match for invest/return entries — same contains semantics as matchMember. */
+async function matchVendor(q: string): Promise<{ vendor?: { name: string }; ambiguous?: string[] }> {
+  const vendors = await prisma.vendor.findMany({ where: { archivedAt: null }, select: { name: true } });
+  const hits = vendors.filter((v) => v.name.toLowerCase().includes(q.trim().toLowerCase()));
+  if (hits.length === 1) return { vendor: hits[0] };
+  if (hits.length > 1) {
+    const exact = hits.find((v) => v.name.toLowerCase() === q.trim().toLowerCase());
+    return exact ? { vendor: exact } : { ambiguous: hits.map((v) => v.name) };
+  }
+  return {};
+}
 
 /** Parse an entry command, create the PENDING Submission, and reply with the confirm step. */
 export async function startEntry(sender: WaSender, waId: string, text: string): Promise<void> {
   const p = parseEntryText(text);
   // Entry-shaped but incomplete → say exactly what's missing, then the format.
   if (!p) return sendText(waId, `Almost — I'm missing ${entryMissing(text)}.\n\n${USAGE}`);
-  const { who, intent, amountRaw, treasurer: treasurerRaw, date, note } = p;
+  const { who, intent, amountRaw, treasurer: treasurerRaw, principal, date, note } = p;
 
   const paise = rupeesToPaise(amountRaw);
   if (paise <= 0n) return sendText(waId, "I couldn't read that amount. Try e.g. *ravi paid 2000 to suresh*.");
 
-  const target = await matchMember(who);
-  if (target.ambiguous) return sendText(waId, `Which one? ${target.ambiguous.join(", ")} — use the full name.`);
-  if (!target.member) return sendText(waId, `No member matches "${who}".`);
+  // invest/return name a vendor; everything else names a member. postIntent resolves vendors by
+  // exact name, so pass the canonical DB name through `party` (no partyId for vendors).
+  let partyName: string;
+  let partyId: string | undefined;
+  if (VENDOR_ENTRY_INTENTS.has(intent)) {
+    const v = await matchVendor(who);
+    if (v.ambiguous) return sendText(waId, `Which vendor? ${v.ambiguous.join(", ")}`);
+    if (!v.vendor) return sendText(waId, `No vendor matches "${who}".`);
+    partyName = v.vendor.name;
+  } else {
+    const target = await matchMember(who);
+    if (target.ambiguous) return sendText(waId, `Which one? ${target.ambiguous.join(", ")} — use the full name.`);
+    if (!target.member) return sendText(waId, `No member matches "${who}".`);
+    partyName = target.member.name;
+    partyId = target.member.id;
+  }
 
   const treasurer = (await matchMember(treasurerRaw)).member;
   if (!treasurer) return sendText(waId, `No member matches treasurer "${treasurerRaw}".`);
+
+  const principalPaise = principal ? rupeesToPaise(principal) : null;
+  if (principalPaise !== null && (principalPaise <= 0n || principalPaise > paise))
+    return sendText(waId, "The principal must be more than zero and not more than the amount.");
+
   const payload: Record<string, string> = {
-    party: target.member.name,
-    partyId: target.member.id,
+    party: partyName,
+    ...(partyId ? { partyId } : {}),
     amount: (Number(paise) / 100).toString(),
     treasurer: treasurer.name,
     treasurerId: treasurer.id,
     note: note ? `${note} (via WhatsApp)` : "via WhatsApp",
+    ...(principalPaise ? { principal: (Number(principalPaise) / 100).toString() } : {}),
     ...(date ? { date } : {}),
   };
   const sub = await prisma.submission.create({ data: { intent, payload, status: "PENDING", submittedById: sender.id } });
 
   const preview =
     `*${intent}*\n` +
-    `Member: ${target.member.name}\n` +
+    `${VENDOR_ENTRY_INTENTS.has(intent) ? "Vendor" : "Member"}: ${partyName}\n` +
     `Amount: ${formatPaise(paise)}\n` +
-    `Cash to: ${treasurer.name}\n` +
+    (principalPaise ? `Principal part: ${formatPaise(principalPaise)}\n` : "") +
+    `${OUTFLOW_INTENTS.has(intent) ? "Cash from" : "Cash to"}: ${treasurer.name}\n` +
     `Date: ${date ?? "today"}` +
     (note ? `\nNote: ${note}` : "");
 
@@ -70,7 +103,7 @@ export async function startEntry(sender: WaSender, waId: string, text: string): 
   await prisma.notification.createMany({
     data: admins.map((a) => ({
       recipientId: a.id, kind: "APPROVAL" as const, type: "submission.pending", title: intent,
-      body: `${target.member!.name} · ${formatPaise(paise)} (via WhatsApp)`, link: "/notifications", submissionId: sub.id,
+      body: `${partyName} · ${formatPaise(paise)} (via WhatsApp)`, link: "/notifications", submissionId: sub.id,
     })),
   });
   revalidatePath("/notifications");

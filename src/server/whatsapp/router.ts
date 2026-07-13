@@ -141,13 +141,20 @@ function helpText(sender: WaSender): string {
     `*txns on 2026-07-01* — one day's\n` +
     `*due* — everything you owe\n\n` +
     `*Record an entry*\n` +
-    `*<member> <type> <amount> to <treasurer>*\n\n` +
+    `*<member or vendor> <type> <amount> to <treasurer>*\n\n` +
     `Types of transaction:\n` +
     `• *paid* — monthly deposit handed to a treasurer\n` +
     `• *repaid* — loan principal paid back\n` +
-    `• *interest* — loan interest collected\n\n` +
+    `• *interest* — loan interest collected\n` +
+    `• *loan* — loan given to a member\n` +
+    `• *invest* — club money invested with a vendor\n` +
+    `• *return* — money a vendor returned (add *principal <amt>* for the capital part)\n\n` +
     `Optional add-ons: *on 2026-07-01* (date, default today), *note <anything>*\n` +
-    `Example: *ravi paid 2000 to suresh note july deposit*`;
+    `Examples:\n` +
+    `*ravi paid 2000 to suresh note july deposit*\n` +
+    `*ravi loan 50000 from suresh*\n` +
+    `*hdfc chit invest 25000 from suresh*\n` +
+    `*hdfc chit return 30000 to suresh principal 25000*`;
   if (!sender.isAdmin) return intro + `\n\nYour entries go to an admin for approval before they're recorded.`;
   return (
     intro +
