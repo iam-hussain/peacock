@@ -46,10 +46,3 @@ export async function matchMember(q: string): Promise<{ member?: WaSender; ambig
   }
   return {};
 }
-
-/** Default cash-receiver for a WhatsApp entry: the sender if they hold cash, else the club's single treasurer. */
-export async function defaultTreasurer(sender: WaSender): Promise<WaSender | null> {
-  if (sender.isTreasurer) return sender;
-  const ts = (await allMembers()).filter((m) => m.isTreasurer);
-  return ts.length === 1 ? toSender(ts[0]) : null;
-}

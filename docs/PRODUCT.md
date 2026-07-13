@@ -787,13 +787,16 @@ their member profile (WhatsApp itself has already verified they own it). Unregis
 a polite "ask an admin to add your number" reply.
 
 - **Anyone registered can ask about themselves**: `balance` (deposits, profit share, value,
-  pending), `loan` (outstanding + interest due), `history` (loan cycles), `txns` (latest
-  transactions), `due` (everything owed). Replies are free-form messages inside WhatsApp's
-  24-hour service window, so answering costs the club nothing.
+  pending, treasury cash held), `loan` (outstanding + interest due), `history` (loan cycles),
+  `txns` (latest transactions — or a specific month `txns july`, or one day
+  `txns on 2026-07-01`), `due` (everything owed). Replies are free-form messages inside
+  WhatsApp's 24-hour service window, so answering costs the club nothing.
 - **Admins can ask about anyone** by adding a name — `balance ravi` — and can **record money by
-  chat**: `ravi paid 2000`, `ravi repaid 5000`, `ravi interest 500` (optionally `to <treasurer>`
-  and `on <date>`). The bot replies with a preview and **Confirm / Cancel** buttons; nothing
-  posts until the admin taps Confirm.
+  chat**: `ravi paid 2000 to suresh`, `ravi repaid 5000 to suresh`, `ravi interest 500 to suresh`.
+  The **member, type, amount and treasurer are required**; a date (`on 2026-07-01`) and a note
+  (`note july deposit`) are optional. An incomplete command gets a reply naming exactly what's
+  missing. The bot then shows a preview with **Confirm / Cancel** buttons; nothing posts until
+  the admin taps Confirm.
 - The chat channel follows the **same submit → approve rules** (this section): an admin's
   confirmed entry posts directly; a member's entry command becomes a **pending request** in the
   admins' approval inbox. Only admins can tap Confirm, and a double-tap can't post twice.

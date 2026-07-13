@@ -23,11 +23,11 @@ export async function handleIncoming(waId: string, msg: { text?: string; buttonI
   const arg = rest.join(" ");
 
   // Admins can point a query at another member by name; everyone else always sees themself.
-  const resolveTarget = async (): Promise<WaSender | string> => {
-    if (!arg || !sender.isAdmin) return sender;
-    const t = await matchMember(arg);
+  const resolveTarget = async (nameArg: string): Promise<WaSender | string> => {
+    if (!nameArg || !sender.isAdmin) return sender;
+    const t = await matchMember(nameArg);
     if (t.ambiguous) return `Which one? ${t.ambiguous.join(", ")}`;
-    return t.member ?? `No member matches "${arg}".`;
+    return t.member ?? `No member matches "${nameArg}".`;
   };
 
   switch (cmd) {
@@ -35,7 +35,7 @@ export async function handleIncoming(waId: string, msg: { text?: string; buttonI
     case "loan":
     case "history":
     case "due": {
-      const target = await resolveTarget();
+      const target = await resolveTarget(arg);
       if (typeof target === "string") return sendText(waId, target);
       const d = await getMemberDetail(target.id);
       if (!d) return sendText(waId, "No record found.");
@@ -44,14 +44,16 @@ export async function handleIncoming(waId: string, msg: { text?: string; buttonI
     }
     case "txns":
     case "transactions": {
-      const target = await resolveTarget();
+      const period = extractPeriod(arg);
+      const target = await resolveTarget(period.rest);
       if (typeof target === "string") return sendText(waId, target);
       // Admin's bare "txns" = the club's latest ledger rows; otherwise the target member's.
-      const party = sender.isAdmin && !arg ? undefined : target.name;
-      const page = await getTransactionsPage({ party, page: 1, size: 5 });
-      if (!page.rows.length) return sendText(waId, "No transactions yet.");
+      const party = sender.isAdmin && !period.rest ? undefined : target.name;
+      const page = await getTransactionsPage({ party, start: period.start, end: period.end, page: 1, size: period.start ? 20 : 5 });
+      if (!page.rows.length) return sendText(waId, `No transactions${party ? ` for ${party}` : ""}${period.label ? ` ${period.label}` : ""}.`);
       const lines = page.rows.map((t) => `${t.date} · ${t.what}\n${t.from.name} → ${t.to.name} · ${t.amount}`);
-      return sendText(waId, `*Latest transactions*${party ? ` — ${party}` : ""}\n\n${lines.join("\n\n")}`);
+      const more = page.total > page.rows.length ? `\n\nShowing ${page.rows.length} of ${page.total} — open the app for the rest.` : "";
+      return sendText(waId, `*Transactions*${party ? ` — ${party}` : ""}${period.label ? ` ${period.label}` : " (latest)"}\n\n${lines.join("\n\n")}${more}`);
     }
     default:
       return sendText(waId, helpText(sender));
@@ -59,6 +61,33 @@ export async function handleIncoming(waId: string, msg: { text?: string; buttonI
 }
 
 const orNone = (s: string | null) => s ?? "none 🎉";
+
+const MONTHS = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
+
+/** Pull an optional period out of a txns argument: "on 2026-07-01" (one day), "july [2026]" or
+ *  "2026-07" (whole month). Whatever remains is the member-name part. */
+function extractPeriod(arg: string): { start?: string; end?: string; label?: string; rest: string } {
+  const day = /(?:^|\s)on\s+(\d{4}-\d{2}-\d{2})(?:\s|$)/i.exec(arg);
+  if (day) return { start: day[1], end: day[1], label: `on ${day[1]}`, rest: arg.replace(day[0], " ").trim() };
+
+  const ym = /(?:^|\s)(\d{4})-(\d{2})(?:\s|$)/.exec(arg);
+  if (ym) return { ...monthBounds(Number(ym[1]), Number(ym[2]) - 1), rest: arg.replace(ym[0], " ").trim() };
+
+  for (const [i, m] of MONTHS.entries()) {
+    const re = new RegExp(`(?:^|\\s)(${m.slice(0, 3)}[a-z]*)(?:\\s+(\\d{4}))?(?:\\s|$)`, "i");
+    const hit = re.exec(arg);
+    if (hit && (m.startsWith(hit[1].toLowerCase()) || hit[1].toLowerCase() === m.slice(0, 3))) {
+      const year = hit[2] ? Number(hit[2]) : new Date().getFullYear();
+      return { ...monthBounds(year, i), rest: arg.replace(hit[0], " ").trim() };
+    }
+  }
+  return { rest: arg.trim() };
+}
+
+function monthBounds(year: number, monthIdx: number): { start: string; end: string; label: string } {
+  const mm = String(monthIdx + 1).padStart(2, "0");
+  return { start: `${year}-${mm}-01`, end: `${year}-${mm}-31`, label: `in ${MONTHS[monthIdx][0].toUpperCase()}${MONTHS[monthIdx].slice(1)} ${year}` };
+}
 
 function balanceText(d: MemberDetailDTO): string {
   return (
@@ -102,20 +131,22 @@ function dueText(d: MemberDetailDTO): string {
 
 function helpText(sender: WaSender): string {
   const member =
-    `Hi ${sender.name.split(" ")[0]}! I'm the Peacock club bot 🦚\n\n` +
+    `Hi ${sender.name.split(" ")[0]}! I'm the *Peacock Investment Club* bot 🦚\n\n` +
     `*balance* — deposits, profit, value\n` +
     `*loan* — your loan & interest\n` +
     `*history* — loan history\n` +
     `*txns* — latest transactions\n` +
+    `*txns july* — a month's transactions\n` +
+    `*txns on 2026-07-01* — one day's\n` +
     `*due* — what you owe`;
   if (!sender.isAdmin) return member;
   return (
     member +
-    `\n\n*Admin*\nAdd a name to any command: *balance ravi*\n\n` +
-    `Record entries:\n` +
-    `• *ravi paid 2000* — deposit\n` +
-    `• *ravi repaid 5000* — loan repayment\n` +
-    `• *ravi interest 500* — collect interest\n` +
-    `Optional: *to <treasurer>*, *on 2026-07-01*`
+    `\n\n*Admin*\nAdd a name to any command: *balance ravi*, *txns ravi july*\n\n` +
+    `Record an entry — *member, type, amount and treasurer are required; note is optional*:\n` +
+    `• *ravi paid 2000 to suresh* — deposit\n` +
+    `• *ravi repaid 5000 to suresh* — loan repayment\n` +
+    `• *ravi interest 500 to suresh* — interest collected\n` +
+    `Optional add-ons: *on 2026-07-01*, *note july deposit*`
   );
 }
