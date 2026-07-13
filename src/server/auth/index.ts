@@ -1,3 +1,4 @@
+import { expo } from "@better-auth/expo";
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { magicLink } from "better-auth/plugins";
@@ -26,6 +27,9 @@ const authEnv = z
  */
 export const auth = betterAuth({
   database: prismaAdapter(prisma, { provider: "mongodb" }),
+  // Native app support (peacock-mobile): cookie-in-header auth for Expo SecureStore
+  // clients. Pairs with the "peacock://" trusted origin below.
+  plugins: [expo()],
   emailAndPassword: {
     enabled: true,
     requireEmailVerification: false,
