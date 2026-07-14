@@ -83,14 +83,7 @@ export async function startEntry(sender: WaSender, waId: string, text: string): 
   };
   const sub = await prisma.submission.create({ data: { intent, payload, status: "PENDING", submittedById: sender.id } });
 
-  const preview =
-    `*${intent}*\n` +
-    `${VENDOR_ENTRY_INTENTS.has(intent) ? "Vendor" : "Member"}: ${partyName}\n` +
-    `Amount: ${formatPaise(paise)}\n` +
-    (principalPaise ? `Principal part: ${formatPaise(principalPaise)}\n` : "") +
-    `${OUTFLOW_INTENTS.has(intent) ? "Cash from" : "Cash to"}: ${treasurer.name}\n` +
-    `Date: ${date ?? "today"}` +
-    (note ? `\nNote: ${note}` : "");
+  const preview = submissionPreview(intent, payload);
 
   if (sender.isAdmin) {
     return sendButtons(waId, `Confirm entry?\n\n${preview}`, [
@@ -108,6 +101,53 @@ export async function startEntry(sender: WaSender, waId: string, text: string): 
   });
   revalidatePath("/notifications");
   return sendText(waId, `Sent for admin approval ✅\n\n${preview}`);
+}
+
+/** Human-readable preview of a submission's payload — shared by the submit confirmation and the
+ *  admin pending list. Pass `submittedBy` to append who queued it (admin review only). */
+function submissionPreview(intent: string, payload: Record<string, string>, submittedBy?: string): string {
+  const paise = rupeesToPaise(payload.amount ?? "0");
+  const principalPaise = payload.principal ? rupeesToPaise(payload.principal) : null;
+  // payload.note carries a "(via WhatsApp)" marker for the audit trail — strip it for display.
+  const rawNote = payload.note ?? "";
+  const note = rawNote === "via WhatsApp" ? "" : rawNote.replace(/\s*\(via WhatsApp\)$/i, "").trim();
+  return (
+    `*${intent}*\n` +
+    `${VENDOR_ENTRY_INTENTS.has(intent) ? "Vendor" : "Member"}: ${payload.party}\n` +
+    `Amount: ${formatPaise(paise)}\n` +
+    (principalPaise ? `Principal part: ${formatPaise(principalPaise)}\n` : "") +
+    `${OUTFLOW_INTENTS.has(intent) ? "Cash from" : "Cash to"}: ${payload.treasurer}\n` +
+    `Date: ${payload.date ?? "today"}` +
+    (note ? `\nNote: ${note}` : "") +
+    (submittedBy ? `\nFrom: ${submittedBy}` : "")
+  );
+}
+
+/** Admin: pull up PENDING submissions with per-entry Approve/Reject buttons (reuses decideEntry). */
+export async function listPending(sender: WaSender, waId: string): Promise<void> {
+  if (!sender.isAdmin) return sendText(waId, "Only an admin can review pending entries.");
+  const CAP = 10;
+  const [subs, total] = await Promise.all([
+    prisma.submission.findMany({
+      where: { status: "PENDING" },
+      orderBy: { createdAt: "asc" },
+      take: CAP,
+      select: { id: true, intent: true, payload: true, submittedById: true },
+    }),
+    prisma.submission.count({ where: { status: "PENDING" } }),
+  ]);
+  if (!subs.length) return sendText(waId, "No pending entries — all caught up ✅");
+  const submitterIds = [...new Set(subs.map((s) => s.submittedById))];
+  const submitters = await prisma.member.findMany({ where: { id: { in: submitterIds } }, select: { id: true, firstName: true, lastName: true } });
+  const nameById = new Map(submitters.map((m) => [m.id, [m.firstName, m.lastName].filter(Boolean).join(" ")]));
+  await sendText(waId, `*Pending approvals* — ${total}${total > subs.length ? ` (showing oldest ${subs.length})` : ""}`);
+  for (const s of subs) {
+    const preview = submissionPreview(s.intent, s.payload as Record<string, string>, nameById.get(s.submittedById));
+    await sendButtons(waId, preview, [
+      { id: `wa:ok:${s.id}`, title: "Approve" },
+      { id: `wa:no:${s.id}`, title: "Reject" },
+    ]);
+  }
 }
 
 /** Button tap: "wa:ok:<subId>" posts via approveSubmission, "wa:no:<subId>" rejects. Admin-only. */

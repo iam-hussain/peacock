@@ -3,7 +3,7 @@ import { getMemberDetail, getMemberRoster, type MemberDetailDTO, type RosterEntr
 import { getTransactionsPage } from "@/server/queries/transactions";
 import { matchMember, senderByWaId, type WaSender } from "./identity";
 import { sendText } from "./send";
-import { looksLikeEntry, startEntry, decideEntry } from "./entry";
+import { looksLikeEntry, startEntry, decideEntry, listPending } from "./entry";
 
 /**
  * Inbound message → reply. Members read their own data; admins may target anyone
@@ -86,6 +86,10 @@ export async function handleIncoming(waId: string, msg: { text?: string; buttonI
       const roster = await getMemberRoster();
       return sendText(waId, rosterText(roster));
     }
+    case "pending":
+    case "approvals":
+    case "inbox":
+      return listPending(sender, waId);
     case "catchup":
     case "catch-up":
     case "penalty":
@@ -257,6 +261,7 @@ function helpText(sender: WaSender): string {
   return (
     intro +
     `\n\n*Admin*\nAdd a name to any query: *balance ravi*, *txns ravi july*.\n` +
-    `Your entries post after you tap *Confirm* on the preview; members' entries wait in your approval inbox.`
+    `*pending* — review members' entries waiting for approval, with Approve/Reject buttons.\n` +
+    `Your entries post after you tap *Confirm* on the preview; members' entries wait for your *pending* review.`
   );
 }
