@@ -68,7 +68,9 @@ export async function handleIncoming(waId: string, msg: { text?: string; buttonI
       }
       const page = await getTransactionsPage(filter);
       if (!page.rows.length) return sendText(waId, `No transactions${emptyScope}${period.label ? ` ${period.label}` : ""}.`);
-      const lines = page.rows.map((t) => `${t.date} · ${t.what}\n${t.from.name} → ${t.to.name} · ${t.amount}`);
+      const lines = page.rows.map(
+        (t) => `${t.date} · ${t.what}\n${t.from.name} → ${t.to.name} · ${t.amount}` + (t.note ? `\n📝 ${t.note}` : ""),
+      );
       const more = page.total > page.rows.length ? `\n\nShowing ${page.rows.length} of ${page.total} — open the app for the rest.` : "";
       return sendText(waId, `*Transactions*${titleScope}${period.label ? ` ${period.label}` : " (latest)"}\n\n${lines.join("\n\n")}${more}`);
     }
@@ -176,7 +178,7 @@ function chargesText(d: MemberDetailDTO, kind: "penalty" | "catchup"): string {
   const remaining = kind === "penalty" ? d.penaltyRemaining : d.ledgerRemaining;
   if (!entries.length) return `*${d.name} — ${label}*\n\nNo ${label} entries.`;
   const shown = entries.slice(0, 10);
-  const rows = shown.map((e) => `${e.date} · ${e.title}\n${e.by} · ${e.amount}`);
+  const rows = shown.map((e) => `${e.date} · ${e.title}\n${e.by} · ${e.amount}` + (e.note ? `\n📝 ${e.note}` : ""));
   const more = entries.length > shown.length ? `\n\nShowing ${shown.length} of ${entries.length} — open the app for the rest.` : "";
   return (
     `*${d.name} — ${label}*\n\n` +
