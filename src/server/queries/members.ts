@@ -372,6 +372,7 @@ export interface MemberDetailDTO extends MemberDTO {
   depositsTotal: string;    // periodic + catch-up + penalty (Member deposits headline)
   depositPending: string | null;
   overallPending: string | null;
+  totalDue: string | null; // overallPending + loan interest due (everything the member owes)
   ledgerAssigned: string;
   ledgerPaid: string;
   ledgerRemaining: string;
@@ -674,6 +675,7 @@ export async function getMemberDetail(id: string, ctx?: MemberDetailContext): Pr
     depositsTotal: formatPaise(deposits + penaltyPaidDown),
     depositPending: depositPending > 0n ? formatPaise(depositPending) : null,
     overallPending: overallPending > 0n ? formatPaise(overallPending) : null,
+    totalDue: overallPending + interestDue > 0n ? formatPaise(overallPending + interestDue) : null,
     ledgerAssigned: formatPaise(assigned),
     ledgerPaid: formatPaise(paidDown),
     ledgerRemaining: formatPaise(pendingCharge),

@@ -90,10 +90,11 @@ function monthBounds(year: number, monthIdx: number): { start: string; end: stri
 }
 
 function balanceText(d: MemberDetailDTO): string {
-  // Break out catch-up / penalty still owed (each shown only when outstanding); "Pending" stays the
-  // grand total (deposit + catch-up + penalty).
+  // Break out each kind still owed (shown only when outstanding); "Total due" is the all-in figure
+  // (deposit pending + catch-up + penalty + loan interest).
   const catchup = d.ledgerRemainingRupees > 0 ? `\nCatch-up due: ${d.ledgerRemaining}` : "";
   const penalty = d.penaltyRemainingRupees > 0 ? `\nPenalty due: ${d.penaltyRemaining}` : "";
+  const interest = d.interestDue !== "₹0" ? `\nInterest due: ${d.interestDue}` : "";
   return (
     `*${d.name}* — ${d.status}\n\n` +
     `Deposits paid: ${d.depositsTotal}\n` +
@@ -101,7 +102,8 @@ function balanceText(d: MemberDetailDTO): string {
     `Current value: ${d.value}` +
     catchup +
     penalty +
-    `\nPending: ${orNone(d.overallPending)}` +
+    interest +
+    `\nTotal due: ${orNone(d.totalDue)}` +
     (d.held ? `\n\nClub cash held (treasury): ${d.held}` : "")
   );
 }
