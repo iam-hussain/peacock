@@ -45,15 +45,42 @@ export async function handleIncoming(waId: string, msg: { text?: string; buttonI
     case "txns":
     case "transactions": {
       const period = extractPeriod(arg);
-      const target = await resolveTarget(period.rest);
-      if (typeof target === "string") return sendText(waId, target);
-      // Admin's bare "txns" = the club's latest ledger rows; otherwise the target member's.
-      const party = sender.isAdmin && !period.rest ? undefined : target.name;
-      const page = await getTransactionsPage({ party, start: period.start, end: period.end, page: 1, size: period.start ? 20 : 5 });
-      if (!page.rows.length) return sendText(waId, `No transactions${party ? ` for ${party}` : ""}${period.label ? ` ${period.label}` : ""}.`);
+      const size = period.start ? 20 : 5;
+      // "txns treasurer <name>" / "txns by <name>" scopes to cash a treasurer handled; otherwise
+      // the leading text is a member/vendor name (a person's transactions).
+      const trez = /^(?:treasurer|held by|by)\b\s*(.*)$/i.exec(period.rest);
+      let filter: Parameters<typeof getTransactionsPage>[0];
+      let titleScope = "", emptyScope = "";
+      if (trez) {
+        const target = await resolveTarget(trez[1].trim());
+        if (typeof target === "string") return sendText(waId, target);
+        filter = { treasurer: target.name, start: period.start, end: period.end, page: 1, size };
+        titleScope = ` — handled by ${target.name}`;
+        emptyScope = ` handled by ${target.name}`;
+      } else {
+        const target = await resolveTarget(period.rest);
+        if (typeof target === "string") return sendText(waId, target);
+        // Admin's bare "txns" = the club's latest ledger rows; otherwise the target member's.
+        const party = sender.isAdmin && !period.rest ? undefined : target.name;
+        filter = { party, start: period.start, end: period.end, page: 1, size };
+        titleScope = party ? ` — ${party}` : "";
+        emptyScope = party ? ` for ${party}` : "";
+      }
+      const page = await getTransactionsPage(filter);
+      if (!page.rows.length) return sendText(waId, `No transactions${emptyScope}${period.label ? ` ${period.label}` : ""}.`);
       const lines = page.rows.map((t) => `${t.date} · ${t.what}\n${t.from.name} → ${t.to.name} · ${t.amount}`);
       const more = page.total > page.rows.length ? `\n\nShowing ${page.rows.length} of ${page.total} — open the app for the rest.` : "";
-      return sendText(waId, `*Transactions*${party ? ` — ${party}` : ""}${period.label ? ` ${period.label}` : " (latest)"}\n\n${lines.join("\n\n")}${more}`);
+      return sendText(waId, `*Transactions*${titleScope}${period.label ? ` ${period.label}` : " (latest)"}\n\n${lines.join("\n\n")}${more}`);
+    }
+    case "catchup":
+    case "catch-up":
+    case "penalty":
+    case "penalties": {
+      const target = await resolveTarget(arg);
+      if (typeof target === "string") return sendText(waId, target);
+      const d = await getMemberDetail(target.id);
+      if (!d) return sendText(waId, "No record found.");
+      return sendText(waId, chargesText(d, cmd.startsWith("pen") ? "penalty" : "catchup"));
     }
     default:
       return sendText(waId, helpText(sender));
@@ -139,6 +166,26 @@ function dueText(d: MemberDetailDTO): string {
   );
 }
 
+/** Itemised catch-up or penalty ledger: charged / paid / remaining, then each charge (+) and
+ *  payment (−) newest-first (capped, with an overflow note pointing to the app). */
+function chargesText(d: MemberDetailDTO, kind: "penalty" | "catchup"): string {
+  const label = kind === "penalty" ? "penalty" : "catch-up";
+  const entries = kind === "penalty" ? d.penaltyEntries : d.catchupEntries;
+  const assigned = kind === "penalty" ? d.penaltyAssigned : d.ledgerAssigned;
+  const paid = kind === "penalty" ? d.penaltyPaid : d.ledgerPaid;
+  const remaining = kind === "penalty" ? d.penaltyRemaining : d.ledgerRemaining;
+  if (!entries.length) return `*${d.name} — ${label}*\n\nNo ${label} entries.`;
+  const shown = entries.slice(0, 10);
+  const rows = shown.map((e) => `${e.date} · ${e.title}\n${e.by} · ${e.amount}`);
+  const more = entries.length > shown.length ? `\n\nShowing ${shown.length} of ${entries.length} — open the app for the rest.` : "";
+  return (
+    `*${d.name} — ${label}*\n\n` +
+    `Charged: ${assigned}\nPaid: ${paid}\nRemaining: ${remaining}\n\n` +
+    rows.join("\n\n") +
+    more
+  );
+}
+
 function helpText(sender: WaSender): string {
   const intro =
     `Hi ${sender.name.split(" ")[0]}! I'm the *Peacock Investment Club* bot 🦚\n\n` +
@@ -146,9 +193,12 @@ function helpText(sender: WaSender): string {
     `*balance* — deposits, profit share, current value\n` +
     `*loan* — active loan & interest due\n` +
     `*history* — past loan cycles\n` +
+    `*catchup* — catch-up charges & payments\n` +
+    `*penalties* — penalty charges & payments\n` +
     `*txns* — latest transactions\n` +
-    `*txns july* — one month's transactions\n` +
+    `*txns july* / *txns july 2026* — one month (year optional, default this year)\n` +
     `*txns on 2026-07-01* — one day's\n` +
+    `*txns treasurer <name>* — cash a treasurer handled\n` +
     `*due* — everything you owe\n\n` +
     `*Record an entry*\n` +
     `*<member or vendor> <type> <amount> to <treasurer>*\n\n` +

@@ -116,7 +116,8 @@ export const fullLedger = (): Promise<TxnDTO[]> => cachedStats("transactions", (
 export interface TxnFilter {
   q?: string;
   type?: string; // a WHAT label ("Member paid deposit")
-  party?: string; // exact party name
+  party?: string; // exact party name (member/vendor/treasurer — matches either side of the row)
+  treasurer?: string; // exact treasurer name — only rows this member handled as the cash-holding treasurer
   start?: string; // inclusive ISO date bounds
   end?: string;
   page: number;
@@ -140,6 +141,13 @@ export async function getTransactionsPage(f: TxnFilter): Promise<TxnPageDTO> {
   const rows = ledger.filter((t) => {
     if (f.type && t.what !== f.type) return false;
     if (f.party && t.from.name !== f.party && t.to.name !== f.party) return false;
+    // Treasurer scope: rows where this member is the cash-holding (treasurer-role) side — their
+    // handled cash, distinct from their own member activity (which the `party` filter catches).
+    if (
+      f.treasurer &&
+      !((t.from.role === "treasurer" && t.from.name === f.treasurer) || (t.to.role === "treasurer" && t.to.name === f.treasurer))
+    )
+      return false;
     if (f.start && t.isoDate < f.start) return false;
     if (f.end && t.isoDate > f.end) return false;
     if (
