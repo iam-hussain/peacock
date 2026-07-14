@@ -1,7 +1,7 @@
 import "server-only";
 import { prisma } from "@/server/db";
 import { formatPaise, profitShare } from "@/lib/money";
-import { monthYear, tenure, dayMonthYear } from "@/lib/date";
+import { monthYear, tenure, dayMonthYear, istDate, addMonths } from "@/lib/date";
 import { loanEventsMap, reconstructCycles, loanConfig, isOverdue, interestOwedTotal, loanCycleDTOs, type LoanCfg, type LoanCycleDTO } from "./loans";
 import { vendorProfitAndObligation } from "./vendors";
 import { getCashHolderOptions } from "./entries";
@@ -390,6 +390,9 @@ export interface MemberDetailDTO extends MemberDTO {
   hasLoans: boolean;
   loanRepaid: string;
   currentLoan: string;
+  loanStarted: string | null; // active loan: date it started (null when no active loan)
+  loanDue: string | null;     // active loan: end of its fixed term (due date)
+  loanOverdue: boolean;       // active loan is past its term
   interestGen: string;
   interestPaid: string;
   cycles: LoanCycleDTO[];
@@ -592,6 +595,11 @@ export async function getMemberDetail(id: string, ctx?: MemberDetailContext): Pr
   // shown most-recent first.
   const now = new Date();
   const loanCfg = context.loanCfg;
+  // Active loan window: start date and the end of its fixed term (start + loanTermMonths, §8).
+  const loanDueDate = activeLoan ? addMonths(istDate(activeLoan.startedAt), loanCfg.loanTermMonths) : null;
+  const loanStarted = activeLoan ? dayMonthYear(activeLoan.startedAt) : null;
+  const loanDue = loanDueDate ? dayMonthYear(loanDueDate) : null;
+  const loanOverdue = activeLoan ? isOverdue(activeLoan.startedAt, loanCfg, now) : false;
   const cycles: LoanCycleDTO[] = [];
   let interestGen = 0n;
   for (const l of [...loans].reverse()) {
@@ -684,6 +692,9 @@ export async function getMemberDetail(id: string, ctx?: MemberDetailContext): Pr
     hasLoans: loans.length > 0,
     loanRepaid: formatPaise(loanRepaid),
     currentLoan: formatPaise(currentLoan),
+    loanStarted,
+    loanDue,
+    loanOverdue,
     interestGen: formatPaise(interestGen),
     interestPaid: formatPaise(interestPaid),
     cycles,

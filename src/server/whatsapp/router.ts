@@ -102,13 +102,15 @@ function balanceText(d: MemberDetailDTO): string {
 
 function loanText(d: MemberDetailDTO): string {
   if (!d.hasLoans) return `*${d.name}*\n\nNo loans yet.`;
+  // Current-loan dates only when one is active (§8): start + fixed term-end (flagged if overdue).
+  const dates = d.loanStarted
+    ? `\nStarted: ${d.loanStarted}\n${d.loanOverdue ? "Due (overdue)" : "Due"}: ${d.loanDue}`
+    : "";
   return (
     `*${d.name} — loan*\n\n` +
     `Outstanding: ${d.currentLoan}\n` +
-    `Interest due: ${d.interestDue}\n\n` +
-    `Taken (all time): ${d.loanTaken}\n` +
-    `Repaid: ${d.loanRepaid}\n` +
-    `Interest paid: ${d.interestPaid}`
+    `Interest due: ${d.interestDue}` +
+    dates
   );
 }
 
