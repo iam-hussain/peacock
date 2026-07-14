@@ -3,7 +3,8 @@ import { getMemberDetail, getMemberRoster, type MemberDetailDTO, type RosterEntr
 import { getTransactionsPage } from "@/server/queries/transactions";
 import { matchMember, senderByWaId, type WaSender } from "./identity";
 import { sendText } from "./send";
-import { looksLikeEntry, startEntry, decideEntry, listPending } from "./entry";
+import { looksLikeEntry, startEntry, decideEntry, listPending, raiseChargeEntry } from "./entry";
+import { looksLikeCharge } from "./parse";
 
 /**
  * Inbound message → reply. Members read their own data; admins may target anyone
@@ -24,6 +25,9 @@ export async function handleIncoming(waId: string, msg: { text?: string; buttonI
     return sendText(waId, d ? inactiveText(d) : "Your account is inactive. Contact an admin to rejoin.");
   }
 
+  // "charge …" raises an obligation (no treasurer) — intercept before the entry grammar, which
+  // would otherwise read "charge <member> penalty <amt>" as an entry missing its treasurer.
+  if (looksLikeCharge(text)) return raiseChargeEntry(sender, waId, text);
   if (looksLikeEntry(text)) return startEntry(sender, waId, text);
 
   const [cmd, ...rest] = text.toLowerCase().split(/\s+/);
@@ -249,6 +253,8 @@ function helpText(sender: WaSender): string {
     `• *repaid* — loan principal paid back\n` +
     `• *interest* — loan interest collected\n` +
     `• *loan* — loan given to a member\n` +
+    `• *catchup* — catch-up payment handed to a treasurer\n` +
+    `• *penalty* — penalty payment handed to a treasurer\n` +
     `• *invest* — club money invested with a vendor\n` +
     `• *return* — money a vendor returned (add *principal <amt>* for the capital part)\n\n` +
     `Optional add-ons: *on 2026-07-01* (date, default today), *note <anything>*\n` +
@@ -261,6 +267,7 @@ function helpText(sender: WaSender): string {
   return (
     intro +
     `\n\n*Admin*\nAdd a name to any query: *balance ravi*, *txns ravi july*.\n` +
+    `*charge <member> <catchup|penalty> <amount>* — raise a charge (*note*/*on <date>* optional).\n` +
     `*pending* — review members' entries waiting for approval, with Approve/Reject buttons.\n` +
     `Your entries post after you tap *Confirm* on the preview; members' entries wait for your *pending* review.`
   );

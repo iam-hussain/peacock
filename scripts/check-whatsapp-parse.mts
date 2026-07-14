@@ -1,6 +1,6 @@
 // Self-check for the WhatsApp entry grammar: `npx tsx scripts/check-whatsapp-parse.mts`
 import assert from "node:assert";
-import { parseEntryText, looksLikeEntryStart, entryMissing } from "../src/server/whatsapp/parse";
+import { parseEntryText, parseChargeText, looksLikeEntryStart, looksLikeCharge, entryMissing } from "../src/server/whatsapp/parse";
 
 // Valid shapes — treasurer is required; date and note optional
 assert.deepEqual(parseEntryText("ravi paid 2000 to suresh"), {
@@ -29,8 +29,24 @@ assert.equal(parseEntryText("ravi paid"), null);
 assert.match(entryMissing("ravi paid"), /amount/);
 assert.ok(looksLikeEntryStart("ravi paid"), "incomplete entries still route to the entry hint");
 
-// Queries and junk must NOT look like entries at all
-for (const s of ["balance", "balance ravi", "loan", "help", "what did ravi pay", "txns july"]) {
+// Catch-up / penalty PAYMENTS ride the same entry grammar (member pays a treasurer)
+assert.equal(parseEntryText("ravi catchup 2000 to suresh")?.intent, "Catch-up payment");
+assert.equal(parseEntryText("ravi catch-up 2000 to suresh")?.intent, "Catch-up payment");
+assert.equal(parseEntryText("ravi penalty 500 to suresh")?.intent, "Delayed-payment penalty");
+
+// Raising a CHARGE (admin) — no treasurer; parsed by parseChargeText, routed by looksLikeCharge
+assert.deepEqual(parseChargeText("charge ravi penalty 500 note late June"), {
+  who: "ravi", kind: "PENALTY", amountRaw: "500", date: undefined, note: "late June",
+});
+assert.deepEqual(parseChargeText("charge Ravi Kumar catchup 1000 on 2026-07-01"), {
+  who: "Ravi Kumar", kind: "CATCHUP", amountRaw: "1000", date: "2026-07-01", note: undefined,
+});
+assert.ok(looksLikeCharge("charge ravi penalty 500"), "charge command routes to the charge handler");
+assert.equal(parseChargeText("ravi paid 2000 to suresh"), null, "an entry is not a charge");
+assert.equal(looksLikeCharge("charge ravi penalty 500"), true);
+
+// List commands and bare keywords must NOT look like entries (they route to the query switch)
+for (const s of ["balance", "balance ravi", "loan", "help", "what did ravi pay", "txns july", "catchup", "penalty", "catchup ravi", "penalty ravi", "members", "pending"]) {
   assert.equal(looksLikeEntryStart(s), false, `should not look like entry: "${s}"`);
 }
 

@@ -5,7 +5,7 @@
  * `to`/`from` are interchangeable — direction comes from the verb, not the preposition.
  */
 const ENTRY_RE =
-  /^(.{2,40}?)\s+(paid|repaid|interest|loan|invest|return)\s+(₹?[\d.,]+(?:l|cr|k)?)\s+(?:to|from)\s+(.{2,40}?)(?:\s+principal\s+(₹?[\d.,]+(?:l|cr|k)?))?(?:\s+on\s+(\d{4}-\d{2}-\d{2}))?(?:\s+note\s+(.+))?$/i;
+  /^(.{2,40}?)\s+(paid|repaid|interest|loan|invest|return|catchup|catch-up|penalty)\s+(₹?[\d.,]+(?:l|cr|k)?)\s+(?:to|from)\s+(.{2,40}?)(?:\s+principal\s+(₹?[\d.,]+(?:l|cr|k)?))?(?:\s+on\s+(\d{4}-\d{2}-\d{2}))?(?:\s+note\s+(.+))?$/i;
 
 export const VERB_TO_INTENT: Record<string, string> = {
   paid: "Member paid deposit",
@@ -14,6 +14,9 @@ export const VERB_TO_INTENT: Record<string, string> = {
   loan: "Give a loan",
   invest: "Vendor investment",
   return: "Vendor return",
+  catchup: "Catch-up payment",
+  "catch-up": "Catch-up payment",
+  penalty: "Delayed-payment penalty",
 };
 
 /** Intents whose party is a VENDOR (resolved against the Vendor table, not members). */
@@ -31,7 +34,7 @@ export interface ParsedEntry {
   note?: string;
 }
 
-const VERBS = "(paid|repaid|interest|loan|invest|return)";
+const VERBS = "(paid|repaid|interest|loan|invest|return|catchup|catch-up|penalty)";
 
 /** Loose check: "<name> <verb>…" — anything entry-shaped, even incomplete, so the
  *  bot can answer with exactly what's missing instead of falling through to generic help. */
@@ -50,4 +53,27 @@ export function parseEntryText(text: string): ParsedEntry | null {
   if (!m) return null;
   const [, who, verb, amountRaw, treasurer, principal, date, note] = m;
   return { who: who.trim(), intent: VERB_TO_INTENT[verb.toLowerCase()], amountRaw, treasurer: treasurer.trim(), principal, date, note: note?.trim() };
+}
+
+// Raising a charge (admin) has no treasurer — it's the obligation itself, not a cash movement:
+//   "charge <member> <catchup|penalty> <amount> [on yyyy-mm-dd] [note <text>]"
+const CHARGE_RE =
+  /^charge\s+(.{2,40}?)\s+(catchup|catch-up|penalty)\s+(₹?[\d.,]+(?:l|cr|k)?)(?:\s+on\s+(\d{4}-\d{2}-\d{2}))?(?:\s+note\s+(.+))?$/i;
+
+export interface ParsedCharge {
+  who: string;
+  kind: "CATCHUP" | "PENALTY";
+  amountRaw: string;
+  date?: string;
+  note?: string;
+}
+
+/** Text starting with "charge " routes to the charge handler (before the entry grammar). */
+export const looksLikeCharge = (text: string) => /^charge(\s|$)/i.test(text.trim());
+
+export function parseChargeText(text: string): ParsedCharge | null {
+  const m = CHARGE_RE.exec(text.trim());
+  if (!m) return null;
+  const [, who, kindRaw, amountRaw, date, note] = m;
+  return { who: who.trim(), kind: kindRaw.toLowerCase().startsWith("pen") ? "PENALTY" : "CATCHUP", amountRaw, date, note: note?.trim() };
 }
