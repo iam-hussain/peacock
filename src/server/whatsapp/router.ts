@@ -104,8 +104,22 @@ export async function handleIncoming(waId: string, msg: { text?: string; buttonI
       if (!d) return sendText(waId, "No record found.");
       return sendText(waId, chargesText(d, cmd.startsWith("pen") ? "penalty" : "catchup"));
     }
-    default:
+    case "menu":
+    case "help":
+    case "commands":
       return sendText(waId, helpText(sender));
+    case "hi":
+    case "hii":
+    case "hello":
+    case "hey":
+    case "hai":
+    case "yo":
+    case "namaste":
+    case "start":
+      return sendText(waId, greetingText(sender));
+    // Anything unrecognised → the short welcome (with a pointer to *menu*), not the full manual.
+    default:
+      return sendText(waId, greetingText(sender));
   }
 }
 
@@ -231,44 +245,49 @@ function rosterText(roster: RosterEntryDTO[]): string {
   return parts.join("\n\n");
 }
 
-function helpText(sender: WaSender): string {
-  const intro =
-    `Hi ${sender.name.split(" ")[0]}! I'm the *Peacock Investment Club* bot 🦚\n\n` +
-    `*Ask me*\n` +
-    `*balance* — deposits, profit share, current value\n` +
-    `*loan* — active loan & interest due\n` +
-    `*history* — past loan cycles\n` +
-    `*catchup* — catch-up charges & payments\n` +
-    `*penalties* — penalty charges & payments\n` +
-    `*members* — who's registered (active & inactive)\n` +
-    `*txns* — latest transactions\n` +
-    `*txns july* / *txns july 2026* — one month (year optional, default this year)\n` +
-    `*txns on 2026-07-01* — one day's\n` +
-    `*txns treasurer <name>* — cash a treasurer handled\n` +
-    `*due* — everything you owe\n\n` +
-    `*Record an entry*\n` +
-    `*<member or vendor> <type> <amount> to <treasurer>*\n\n` +
-    `Types of transaction:\n` +
-    `• *paid* — monthly deposit handed to a treasurer\n` +
-    `• *repaid* — loan principal paid back\n` +
-    `• *interest* — loan interest collected\n` +
-    `• *loan* — loan given to a member\n` +
-    `• *catchup* — catch-up payment handed to a treasurer\n` +
-    `• *penalty* — penalty payment handed to a treasurer\n` +
-    `• *invest* — club money invested with a vendor\n` +
-    `• *return* — money a vendor returned (add *principal <amt>* for the capital part)\n\n` +
-    `Optional add-ons: *on 2026-07-01* (date, default today), *note <anything>*\n` +
-    `Examples:\n` +
-    `*ravi paid 2000 to suresh note july deposit*\n` +
-    `*ravi loan 50000 from suresh*\n` +
-    `*hdfc chit invest 25000 from suresh*\n` +
-    `*hdfc chit return 30000 to suresh principal 25000*`;
-  if (!sender.isAdmin) return intro + `\n\nYour entries go to an admin for approval before they're recorded.`;
+/** Short, friendly welcome for a greeting (or anything unrecognised) — a taste of what's on offer,
+ *  with a pointer to the full menu. Keeps "hi" from dumping the whole manual. */
+function greetingText(sender: WaSender): string {
   return (
-    intro +
-    `\n\n*Admin*\nAdd a name to any query: *balance ravi*, *txns ravi july*.\n` +
-    `*charge <member> <catchup|penalty> <amount>* — raise a charge (*note*/*on <date>* optional).\n` +
-    `*pending* — review members' entries waiting for approval, with Approve/Reject buttons.\n` +
-    `Your entries post after you tap *Confirm* on the preview; members' entries wait for your *pending* review.`
+    `🦚 *Peacock Investment Club*\n` +
+    `_Many feathers, one fortune._\n\n` +
+    `Hi ${sender.name.split(" ")[0]}! 👋 I'm your club assistant — check your money or record an entry, right here in chat.\n\n` +
+    `*Try*\n` +
+    `💰 *balance* — your standing\n` +
+    `🏦 *loan* — active loan & interest\n` +
+    `📌 *due* — what you owe\n\n` +
+    `💬 Send *menu* to see everything I can do.`
+  );
+}
+
+function helpText(sender: WaSender): string {
+  const base =
+    `🦚 *Peacock* — full menu\n\n` +
+    `💰 *Your money*\n` +
+    `• *balance* — deposits, profit & dues\n` +
+    `• *loan* — active loan & interest\n` +
+    `• *history* — past loan cycles\n` +
+    `• *due* — everything you owe\n` +
+    `• *catchup* / *penalties* — charge history\n\n` +
+    `📜 *Transactions*\n` +
+    `• *txns* — latest\n` +
+    `• *txns july 2026* — a month (year optional)\n` +
+    `• *txns on 2026-07-01* — a single day\n` +
+    `• *txns treasurer <name>* — a treasurer's cash\n\n` +
+    `👥 *Club*\n` +
+    `• *members* — who's registered\n\n` +
+    `✍️ *Record an entry*\n` +
+    `_<member/vendor> <type> <amount> to <treasurer>_\n` +
+    `*paid* · *repaid* · *interest* · *loan* · *invest* · *return* · *catchup* · *penalty*\n` +
+    `Add-ons: *on 2026-07-01* · *note …* · *principal …* (vendor return)\n` +
+    `e.g. *ravi paid 2000 to suresh note july*`;
+  if (!sender.isAdmin) return base + `\n\n_Your entries go to an admin for approval before they're recorded._`;
+  return (
+    base +
+    `\n\n🛡️ *Admin*\n` +
+    `• Target anyone: *balance ravi*, *txns ravi july*\n` +
+    `• *charge <member> <catchup|penalty> <amount>* — raise a charge\n` +
+    `• *pending* — approve members' entries (Approve/Reject buttons)\n` +
+    `_Your entries post after *Confirm*; members' wait in *pending*._`
   );
 }
