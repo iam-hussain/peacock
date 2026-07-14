@@ -12,16 +12,23 @@ export interface WaSender {
   name: string;
   isAdmin: boolean;
   isTreasurer: boolean;
+  isActive: boolean; // holds an ACTIVE membership (else the account is inactive → rejoin-only)
 }
 
 const last10 = (s: string) => s.replace(/\D/g, "").slice(-10);
 export const fullName = (m: { firstName: string; lastName: string | null }) =>
   [m.firstName, m.lastName].filter(Boolean).join(" ");
 
-const memberSelect = { id: true, firstName: true, lastName: true, phone: true, role: true, isTreasurer: true } as const;
-type MemberRow = { id: string; firstName: string; lastName: string | null; phone: string; role: "ADMIN" | "MEMBER"; isTreasurer: boolean };
+const memberSelect = { id: true, firstName: true, lastName: true, phone: true, role: true, isTreasurer: true, memberships: { select: { status: true } } } as const;
+type MemberRow = { id: string; firstName: string; lastName: string | null; phone: string; role: "ADMIN" | "MEMBER"; isTreasurer: boolean; memberships: { status: "ACTIVE" | "CLOSED" }[] };
 
-const toSender = (m: MemberRow): WaSender => ({ id: m.id, name: fullName(m), isAdmin: m.role === "ADMIN", isTreasurer: m.isTreasurer });
+const toSender = (m: MemberRow): WaSender => ({
+  id: m.id,
+  name: fullName(m),
+  isAdmin: m.role === "ADMIN",
+  isTreasurer: m.isTreasurer,
+  isActive: m.memberships.some((s) => s.status === "ACTIVE"),
+});
 
 // ponytail: loads all members and matches in JS — a private club has ~20; index-backed lookup if that ever grows.
 const allMembers = () => prisma.member.findMany({ where: { archivedAt: null }, select: memberSelect });

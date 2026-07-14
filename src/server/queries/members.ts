@@ -72,6 +72,24 @@ function memberStatus(active: boolean, archivedAt: Date | null): Status {
   return active ? "active" : archivedAt ? "left" : "inactive";
 }
 
+export interface RosterEntryDTO {
+  name: string;
+  status: Status;
+}
+
+/** Slim name+status roster (oldest first) — just enough to list who's registered, e.g. for the
+ *  WhatsApp `members` command. No money math, so it stays cheap. */
+export async function getMemberRoster(): Promise<RosterEntryDTO[]> {
+  const members = await prisma.member.findMany({
+    orderBy: { customerSince: "asc" },
+    select: { firstName: true, lastName: true, archivedAt: true, memberships: { select: { status: true } } },
+  });
+  return members.map((m) => ({
+    name: [m.firstName, m.lastName].filter(Boolean).join(" "),
+    status: memberStatus(m.memberships.some((s) => s.status === "ACTIVE"), m.archivedAt),
+  }));
+}
+
 /** The member directory (list DTO), oldest members first. */
 export async function getMembers(): Promise<MemberDTO[]> {
   const members = await prisma.member.findMany({

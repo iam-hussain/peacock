@@ -1,5 +1,5 @@
 import "server-only";
-import { getMemberDetail, type MemberDetailDTO } from "@/server/queries/members";
+import { getMemberDetail, getMemberRoster, type MemberDetailDTO, type RosterEntryDTO } from "@/server/queries/members";
 import { getTransactionsPage } from "@/server/queries/transactions";
 import { matchMember, senderByWaId, type WaSender } from "./identity";
 import { sendText } from "./send";
@@ -17,6 +17,13 @@ export async function handleIncoming(waId: string, msg: { text?: string; buttonI
   const text = msg.text?.trim() ?? "";
   if (!text) return;
 
+  // An inactive member (left the club, hasn't rejoined) only sees what it takes to rejoin — no
+  // balances, loans, or entries. Admins are exempt so they never lock themselves out.
+  if (!sender.isActive && !sender.isAdmin) {
+    const d = await getMemberDetail(sender.id);
+    return sendText(waId, d ? inactiveText(d) : "Your account is inactive. Contact an admin to rejoin.");
+  }
+
   if (looksLikeEntry(text)) return startEntry(sender, waId, text);
 
   const [cmd, ...rest] = text.toLowerCase().split(/\s+/);
@@ -27,7 +34,7 @@ export async function handleIncoming(waId: string, msg: { text?: string; buttonI
     if (!nameArg || !sender.isAdmin) return sender;
     const t = await matchMember(nameArg);
     if (t.ambiguous) return `Which one? ${t.ambiguous.join(", ")}`;
-    return t.member ?? `No member matches "${nameArg}".`;
+    return t.member ?? `No member matches "${nameArg}". Send *members* to see who's registered.`;
   };
 
   switch (cmd) {
@@ -73,6 +80,11 @@ export async function handleIncoming(waId: string, msg: { text?: string; buttonI
       );
       const more = page.total > page.rows.length ? `\n\nShowing ${page.rows.length} of ${page.total} — open the app for the rest.` : "";
       return sendText(waId, `*Transactions*${titleScope}${period.label ? ` ${period.label}` : " (latest)"}\n\n${lines.join("\n\n")}${more}`);
+    }
+    case "members":
+    case "list": {
+      const roster = await getMemberRoster();
+      return sendText(waId, rosterText(roster));
     }
     case "catchup":
     case "catch-up":
@@ -188,6 +200,29 @@ function chargesText(d: MemberDetailDTO, kind: "penalty" | "catchup"): string {
   );
 }
 
+/** Inactive members (left, not yet rejoined) get only the rejoin quote — back deposits + catch-up. */
+function inactiveText(d: MemberDetailDTO): string {
+  if (!d.rejoin) return `*${d.name}* — inactive\n\nYour account is inactive. Contact an admin to rejoin.`;
+  return (
+    `*${d.name}* — inactive\n\n` +
+    `Your account is inactive. To rejoin, you'd deposit:\n` +
+    `Back deposits: ${d.rejoin.depDue}\n` +
+    `Catch-up: ${d.rejoin.profit}\n` +
+    `Total: ${d.rejoin.total}`
+  );
+}
+
+/** Roster of who's registered — active first, then inactive — names only (for `members`). */
+function rosterText(roster: RosterEntryDTO[]): string {
+  const names = (s: RosterEntryDTO["status"]) => roster.filter((r) => r.status === s).map((r) => `• ${r.name}`);
+  const active = names("active"), inactive = names("inactive");
+  if (!active.length && !inactive.length) return `*Members*\n\nNo members yet.`;
+  const parts = [`*Members*`];
+  if (active.length) parts.push(`*Active* (${active.length})\n${active.join("\n")}`);
+  if (inactive.length) parts.push(`*Inactive* (${inactive.length})\n${inactive.join("\n")}`);
+  return parts.join("\n\n");
+}
+
 function helpText(sender: WaSender): string {
   const intro =
     `Hi ${sender.name.split(" ")[0]}! I'm the *Peacock Investment Club* bot 🦚\n\n` +
@@ -197,6 +232,7 @@ function helpText(sender: WaSender): string {
     `*history* — past loan cycles\n` +
     `*catchup* — catch-up charges & payments\n` +
     `*penalties* — penalty charges & payments\n` +
+    `*members* — who's registered (active & inactive)\n` +
     `*txns* — latest transactions\n` +
     `*txns july* / *txns july 2026* — one month (year optional, default this year)\n` +
     `*txns on 2026-07-01* — one day's\n` +
