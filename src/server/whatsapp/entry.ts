@@ -5,7 +5,7 @@ import { rupeesToPaise, formatPaise } from "@/lib/money";
 import { approveSubmission, rejectSubmission } from "@/server/ledger/approve";
 import { syncAutoPenaltiesSafe } from "@/server/ledger/auto-penalties";
 import { bustStats } from "@/server/stats";
-import { matchMember, type WaSender } from "./identity";
+import { matchMember, nameMatches, type WaSender } from "./identity";
 import { parseEntryText, looksLikeEntryStart, entryMissing, VENDOR_ENTRY_INTENTS, OUTFLOW_INTENTS } from "./parse";
 import { sendText, sendButtons } from "./send";
 
@@ -25,10 +25,10 @@ const USAGE =
   "Optional: *principal <amt>* (vendor return), *on 2026-07-01*, *note <anything>*\n\n" +
   "Example: *ravi paid 2000 to suresh note july deposit*";
 
-/** Vendor-name match for invest/return entries — same contains semantics as matchMember. */
+/** Vendor-name match for invest/return entries — same full-name / word-prefix semantics as matchMember. */
 async function matchVendor(q: string): Promise<{ vendor?: { name: string }; ambiguous?: string[] }> {
   const vendors = await prisma.vendor.findMany({ where: { archivedAt: null }, select: { name: true } });
-  const hits = vendors.filter((v) => v.name.toLowerCase().includes(q.trim().toLowerCase()));
+  const hits = vendors.filter((v) => nameMatches(v.name, q));
   if (hits.length === 1) return { vendor: hits[0] };
   if (hits.length > 1) {
     const exact = hits.find((v) => v.name.toLowerCase() === q.trim().toLowerCase());

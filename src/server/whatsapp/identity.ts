@@ -33,11 +33,21 @@ export async function senderByWaId(waId: string): Promise<WaSender | null> {
   return m ? toSender(m) : null;
 }
 
-/** Fuzzy name → member for admin commands ("balance ravi"). Exact/prefix/substring, case-insensitive. */
+/** Does `name` match the typed `needle`? True when the full name, or any word in it, STARTS with
+ *  the needle — so "rav"/"kumar"/"ravi k" all hit "Ravi Kumar", but a stray fragment never matches
+ *  mid-word (e.g. "to" must not resolve to "Mohan Doc·to·r"). Case-insensitive. */
+export function nameMatches(name: string, needle: string): boolean {
+  const n = needle.trim().toLowerCase();
+  if (!n) return false;
+  const full = name.toLowerCase();
+  return full.startsWith(n) || full.split(/\s+/).some((w) => w.startsWith(n));
+}
+
+/** Fuzzy name → member for admin commands ("balance ravi"). Full-name / word-prefix, case-insensitive. */
 export async function matchMember(q: string): Promise<{ member?: WaSender; ambiguous?: string[] }> {
   const needle = q.trim().toLowerCase();
   if (!needle) return {};
-  const hits = (await allMembers()).filter((m) => fullName(m).toLowerCase().includes(needle));
+  const hits = (await allMembers()).filter((m) => nameMatches(fullName(m), needle));
   if (hits.length === 1) return { member: toSender(hits[0]) };
   if (hits.length > 1) {
     const exact = hits.find((m) => m.firstName.toLowerCase() === needle || fullName(m).toLowerCase() === needle);
