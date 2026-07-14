@@ -1,7 +1,7 @@
 import "server-only";
 import { prisma } from "@/server/db";
 import { formatPaise, profitShare } from "@/lib/money";
-import { monthYear, tenure, dayMonthYear } from "@/lib/date";
+import { monthYear, tenure, dayMonthYear, istDate, addMonths } from "@/lib/date";
 import { loanEventsMap, reconstructCycles, loanConfig, isOverdue, interestOwedTotal, loanCycleDTOs, type LoanCfg, type LoanCycleDTO } from "./loans";
 import { vendorProfitAndObligation } from "./vendors";
 import { getCashHolderOptions } from "./entries";
@@ -70,6 +70,24 @@ export function expectedClubDeposit(stages: Stage[], now = new Date()): bigint {
 
 function memberStatus(active: boolean, archivedAt: Date | null): Status {
   return active ? "active" : archivedAt ? "left" : "inactive";
+}
+
+export interface RosterEntryDTO {
+  name: string;
+  status: Status;
+}
+
+/** Slim name+status roster (oldest first) — just enough to list who's registered, e.g. for the
+ *  WhatsApp `members` command. No money math, so it stays cheap. */
+export async function getMemberRoster(): Promise<RosterEntryDTO[]> {
+  const members = await prisma.member.findMany({
+    orderBy: { customerSince: "asc" },
+    select: { firstName: true, lastName: true, archivedAt: true, memberships: { select: { status: true } } },
+  });
+  return members.map((m) => ({
+    name: [m.firstName, m.lastName].filter(Boolean).join(" "),
+    status: memberStatus(m.memberships.some((s) => s.status === "ACTIVE"), m.archivedAt),
+  }));
 }
 
 /** The member directory (list DTO), oldest members first. */
@@ -372,6 +390,7 @@ export interface MemberDetailDTO extends MemberDTO {
   depositsTotal: string;    // periodic + catch-up + penalty (Member deposits headline)
   depositPending: string | null;
   overallPending: string | null;
+  totalDue: string | null; // overallPending + loan interest due (everything the member owes)
   ledgerAssigned: string;
   ledgerPaid: string;
   ledgerRemaining: string;
@@ -390,6 +409,9 @@ export interface MemberDetailDTO extends MemberDTO {
   hasLoans: boolean;
   loanRepaid: string;
   currentLoan: string;
+  loanStarted: string | null; // active loan: date it started (null when no active loan)
+  loanDue: string | null;     // active loan: end of its fixed term (due date)
+  loanOverdue: boolean;       // active loan is past its term
   interestGen: string;
   interestPaid: string;
   cycles: LoanCycleDTO[];
@@ -592,6 +614,11 @@ export async function getMemberDetail(id: string, ctx?: MemberDetailContext): Pr
   // shown most-recent first.
   const now = new Date();
   const loanCfg = context.loanCfg;
+  // Active loan window: start date and the end of its fixed term (start + loanTermMonths, §8).
+  const loanDueDate = activeLoan ? addMonths(istDate(activeLoan.startedAt), loanCfg.loanTermMonths) : null;
+  const loanStarted = activeLoan ? dayMonthYear(activeLoan.startedAt) : null;
+  const loanDue = loanDueDate ? dayMonthYear(loanDueDate) : null;
+  const loanOverdue = activeLoan ? isOverdue(activeLoan.startedAt, loanCfg, now) : false;
   const cycles: LoanCycleDTO[] = [];
   let interestGen = 0n;
   for (const l of [...loans].reverse()) {
@@ -666,6 +693,7 @@ export async function getMemberDetail(id: string, ctx?: MemberDetailContext): Pr
     depositsTotal: formatPaise(deposits + penaltyPaidDown),
     depositPending: depositPending > 0n ? formatPaise(depositPending) : null,
     overallPending: overallPending > 0n ? formatPaise(overallPending) : null,
+    totalDue: overallPending + interestDue > 0n ? formatPaise(overallPending + interestDue) : null,
     ledgerAssigned: formatPaise(assigned),
     ledgerPaid: formatPaise(paidDown),
     ledgerRemaining: formatPaise(pendingCharge),
@@ -684,6 +712,9 @@ export async function getMemberDetail(id: string, ctx?: MemberDetailContext): Pr
     hasLoans: loans.length > 0,
     loanRepaid: formatPaise(loanRepaid),
     currentLoan: formatPaise(currentLoan),
+    loanStarted,
+    loanDue,
+    loanOverdue,
     interestGen: formatPaise(interestGen),
     interestPaid: formatPaise(interestPaid),
     cycles,

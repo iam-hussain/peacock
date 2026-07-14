@@ -7,6 +7,7 @@ import { rupeesToPaise } from "@/lib/money";
 import { headers } from "next/headers";
 import { approveSubmission, rejectSubmission } from "@/server/ledger/approve";
 import { postIntent } from "@/server/ledger/intents";
+import { raiseCharge } from "@/server/ledger/charges";
 import { settleMembership } from "@/server/ledger/settle";
 import { reverseTransaction, editTransactionAmount } from "@/server/ledger/reverse";
 import { auth } from "@/server/auth";
@@ -396,10 +397,7 @@ async function addCharge(fd: FormData): Promise<ActionResult> {
   const kind = p.data.type.toLowerCase().startsWith("pen") ? "PENALTY" : "CATCHUP";
   const valid = kind === "PENALTY" ? PENALTY_REASONS : CATCHUP_REASONS;
   const reason = p.data.reason && valid.has(p.data.reason) ? p.data.reason : "OTHER";
-  await prisma.charge.create({
-    // voidedAt explicit null: Mongo missing-key ≠ null, and live-due reads filter voidedAt: null (see db/index.ts)
-    data: { membershipId: p.data.membershipId, kind, reason, amount, occurredAt: istDate(p.data.date ? new Date(p.data.date) : new Date()), note: p.data.note || null, voidedAt: null },
-  });
+  await raiseCharge({ membershipId: p.data.membershipId, kind, amountPaise: amount, reason, note: p.data.note, date: p.data.date });
   revalidatePath(`/members/${p.data.memberId}`);
   return { ok: true };
 }

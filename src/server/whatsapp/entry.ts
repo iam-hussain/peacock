@@ -5,8 +5,9 @@ import { rupeesToPaise, formatPaise } from "@/lib/money";
 import { approveSubmission, rejectSubmission } from "@/server/ledger/approve";
 import { syncAutoPenaltiesSafe } from "@/server/ledger/auto-penalties";
 import { bustStats } from "@/server/stats";
-import { matchMember, type WaSender } from "./identity";
-import { parseEntryText, looksLikeEntryStart, entryMissing, VENDOR_ENTRY_INTENTS, OUTFLOW_INTENTS } from "./parse";
+import { raiseCharge } from "@/server/ledger/charges";
+import { matchMember, nameMatches, type WaSender } from "./identity";
+import { parseEntryText, parseChargeText, looksLikeEntryStart, entryMissing, VENDOR_ENTRY_INTENTS, OUTFLOW_INTENTS } from "./parse";
 import { sendText, sendButtons } from "./send";
 
 /**
@@ -21,14 +22,20 @@ export const looksLikeEntry = (text: string) => looksLikeEntryStart(text);
 const USAGE =
   "Format:\n*<member or vendor> <type> <amount> to <treasurer>*\n\n" +
   "Types: *paid* deposit · *repaid* loan repayment · *interest* interest collected · " +
-  "*loan* loan given · *invest* vendor investment · *return* vendor return\n" +
+  "*loan* loan given · *invest* vendor investment · *return* vendor return · " +
+  "*catchup* catch-up payment · *penalty* penalty payment\n" +
   "Optional: *principal <amt>* (vendor return), *on 2026-07-01*, *note <anything>*\n\n" +
   "Example: *ravi paid 2000 to suresh note july deposit*";
 
-/** Vendor-name match for invest/return entries — same contains semantics as matchMember. */
+const CHARGE_USAGE =
+  "Raise a charge (admin):\n*charge <member> <catchup|penalty> <amount>*\n" +
+  "Optional: *on 2026-07-01*, *note <anything>*\n\n" +
+  "Example: *charge ravi penalty 500 note late June deposit*";
+
+/** Vendor-name match for invest/return entries — same full-name / word-prefix semantics as matchMember. */
 async function matchVendor(q: string): Promise<{ vendor?: { name: string }; ambiguous?: string[] }> {
   const vendors = await prisma.vendor.findMany({ where: { archivedAt: null }, select: { name: true } });
-  const hits = vendors.filter((v) => v.name.toLowerCase().includes(q.trim().toLowerCase()));
+  const hits = vendors.filter((v) => nameMatches(v.name, q));
   if (hits.length === 1) return { vendor: hits[0] };
   if (hits.length > 1) {
     const exact = hits.find((v) => v.name.toLowerCase() === q.trim().toLowerCase());
@@ -83,14 +90,7 @@ export async function startEntry(sender: WaSender, waId: string, text: string): 
   };
   const sub = await prisma.submission.create({ data: { intent, payload, status: "PENDING", submittedById: sender.id } });
 
-  const preview =
-    `*${intent}*\n` +
-    `${VENDOR_ENTRY_INTENTS.has(intent) ? "Vendor" : "Member"}: ${partyName}\n` +
-    `Amount: ${formatPaise(paise)}\n` +
-    (principalPaise ? `Principal part: ${formatPaise(principalPaise)}\n` : "") +
-    `${OUTFLOW_INTENTS.has(intent) ? "Cash from" : "Cash to"}: ${treasurer.name}\n` +
-    `Date: ${date ?? "today"}` +
-    (note ? `\nNote: ${note}` : "");
+  const preview = submissionPreview(intent, payload);
 
   if (sender.isAdmin) {
     return sendButtons(waId, `Confirm entry?\n\n${preview}`, [
@@ -108,6 +108,82 @@ export async function startEntry(sender: WaSender, waId: string, text: string): 
   });
   revalidatePath("/notifications");
   return sendText(waId, `Sent for admin approval ✅\n\n${preview}`);
+}
+
+/** Human-readable preview of a submission's payload — shared by the submit confirmation and the
+ *  admin pending list. Pass `submittedBy` to append who queued it (admin review only). */
+function submissionPreview(intent: string, payload: Record<string, string>, submittedBy?: string): string {
+  const paise = rupeesToPaise(payload.amount ?? "0");
+  const principalPaise = payload.principal ? rupeesToPaise(payload.principal) : null;
+  // payload.note carries a "(via WhatsApp)" marker for the audit trail — strip it for display.
+  const rawNote = payload.note ?? "";
+  const note = rawNote === "via WhatsApp" ? "" : rawNote.replace(/\s*\(via WhatsApp\)$/i, "").trim();
+  return (
+    `*${intent}*\n` +
+    `${VENDOR_ENTRY_INTENTS.has(intent) ? "Vendor" : "Member"}: ${payload.party}\n` +
+    `Amount: ${formatPaise(paise)}\n` +
+    (principalPaise ? `Principal part: ${formatPaise(principalPaise)}\n` : "") +
+    `${OUTFLOW_INTENTS.has(intent) ? "Cash from" : "Cash to"}: ${payload.treasurer}\n` +
+    `Date: ${payload.date ?? "today"}` +
+    (note ? `\nNote: ${note}` : "") +
+    (submittedBy ? `\nFrom: ${submittedBy}` : "")
+  );
+}
+
+/** Admin: raise a catch-up or penalty CHARGE on a member (the obligation, no treasurer/approval —
+ *  admins post charges directly in the app too). "charge ravi penalty 500 note late". */
+export async function raiseChargeEntry(sender: WaSender, waId: string, text: string): Promise<void> {
+  if (!sender.isAdmin) return sendText(waId, "Only an admin can raise a catch-up or penalty charge.");
+  const p = parseChargeText(text);
+  if (!p) return sendText(waId, `I couldn't read that charge.\n\n${CHARGE_USAGE}`);
+  const paise = rupeesToPaise(p.amountRaw);
+  if (paise <= 0n) return sendText(waId, "I couldn't read that amount. Try e.g. *charge ravi penalty 500*.");
+
+  const target = await matchMember(p.who);
+  if (target.ambiguous) return sendText(waId, `Which one? ${target.ambiguous.join(", ")} — use the full name.`);
+  if (!target.member) return sendText(waId, `No member matches "${p.who}". Send *members* to see who's registered.`);
+  const ms = await prisma.membership.findFirst({ where: { memberId: target.member.id, status: "ACTIVE" }, orderBy: { seq: "desc" }, select: { id: true } });
+  if (!ms) return sendText(waId, `${target.member.name} has no active membership to charge.`);
+
+  await raiseCharge({ membershipId: ms.id, kind: p.kind, amountPaise: paise, note: p.note ? `${p.note} (via WhatsApp)` : "via WhatsApp", date: p.date });
+  for (const path of ["/members", `/members/${target.member.id}`, "/penalties", "/dashboard"]) revalidatePath(path);
+
+  const label = p.kind === "PENALTY" ? "Penalty" : "Catch-up";
+  return sendText(
+    waId,
+    `✅ ${label} charge raised\n\n` +
+      `Member: ${target.member.name}\n` +
+      `Amount: ${formatPaise(paise)}\n` +
+      `Date: ${p.date ?? "today"}` +
+      (p.note ? `\nNote: ${p.note}` : ""),
+  );
+}
+
+/** Admin: pull up PENDING submissions with per-entry Approve/Reject buttons (reuses decideEntry). */
+export async function listPending(sender: WaSender, waId: string): Promise<void> {
+  if (!sender.isAdmin) return sendText(waId, "Only an admin can review pending entries.");
+  const CAP = 10;
+  const [subs, total] = await Promise.all([
+    prisma.submission.findMany({
+      where: { status: "PENDING" },
+      orderBy: { createdAt: "asc" },
+      take: CAP,
+      select: { id: true, intent: true, payload: true, submittedById: true },
+    }),
+    prisma.submission.count({ where: { status: "PENDING" } }),
+  ]);
+  if (!subs.length) return sendText(waId, "No pending entries — all caught up ✅");
+  const submitterIds = [...new Set(subs.map((s) => s.submittedById))];
+  const submitters = await prisma.member.findMany({ where: { id: { in: submitterIds } }, select: { id: true, firstName: true, lastName: true } });
+  const nameById = new Map(submitters.map((m) => [m.id, [m.firstName, m.lastName].filter(Boolean).join(" ")]));
+  await sendText(waId, `*Pending approvals* — ${total}${total > subs.length ? ` (showing oldest ${subs.length})` : ""}`);
+  for (const s of subs) {
+    const preview = submissionPreview(s.intent, s.payload as Record<string, string>, nameById.get(s.submittedById));
+    await sendButtons(waId, preview, [
+      { id: `wa:ok:${s.id}`, title: "Approve" },
+      { id: `wa:no:${s.id}`, title: "Reject" },
+    ]);
+  }
 }
 
 /** Button tap: "wa:ok:<subId>" posts via approveSubmission, "wa:no:<subId>" rejects. Admin-only. */
