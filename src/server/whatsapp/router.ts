@@ -12,7 +12,7 @@ import { looksLikeCharge } from "./parse";
  */
 export async function handleIncoming(waId: string, msg: { text?: string; buttonId?: string }): Promise<void> {
   const sender = await senderByWaId(waId);
-  if (!sender) return sendText(waId, "This number isn't registered with Peacock. Ask an admin to add your WhatsApp number to your member profile.");
+  if (!sender) return sendText(waId, "⚠️ This number isn't registered with Peacock.\n\nAsk an admin to add your WhatsApp number to your member profile.");
 
   if (msg.buttonId) return decideEntry(sender, waId, msg.buttonId);
   const text = msg.text?.trim() ?? "";
@@ -22,7 +22,7 @@ export async function handleIncoming(waId: string, msg: { text?: string; buttonI
   // balances, loans, or entries. Admins are exempt so they never lock themselves out.
   if (!sender.isActive && !sender.isAdmin) {
     const d = await getMemberDetail(sender.id);
-    return sendText(waId, d ? inactiveText(d) : "Your account is inactive. Contact an admin to rejoin.");
+    return sendText(waId, d ? inactiveText(d) : "🚪 Your account is inactive. Contact an admin to rejoin.");
   }
 
   // "charge …" raises an obligation (no treasurer) — intercept before the entry grammar, which
@@ -37,8 +37,8 @@ export async function handleIncoming(waId: string, msg: { text?: string; buttonI
   const resolveTarget = async (nameArg: string): Promise<WaSender | string> => {
     if (!nameArg || !sender.isAdmin) return sender;
     const t = await matchMember(nameArg);
-    if (t.ambiguous) return `Which one? ${t.ambiguous.join(", ")}`;
-    return t.member ?? `No member matches "${nameArg}". Send *members* to see who's registered.`;
+    if (t.ambiguous) return `🤔 Which one? ${t.ambiguous.join(", ")}`;
+    return t.member ?? `⚠️ No member matches "${nameArg}".\n\nSend *members* to see who's registered.`;
   };
 
   switch (cmd) {
@@ -49,7 +49,7 @@ export async function handleIncoming(waId: string, msg: { text?: string; buttonI
       const target = await resolveTarget(arg);
       if (typeof target === "string") return sendText(waId, target);
       const d = await getMemberDetail(target.id);
-      if (!d) return sendText(waId, "No record found.");
+      if (!d) return sendText(waId, "⚠️ No record found.");
       const body = cmd === "balance" ? balanceText(d) : cmd === "loan" ? loanText(d) : cmd === "history" ? historyText(d) : dueText(d);
       return sendText(waId, body);
     }
@@ -78,12 +78,12 @@ export async function handleIncoming(waId: string, msg: { text?: string; buttonI
         emptyScope = party ? ` for ${party}` : "";
       }
       const page = await getTransactionsPage(filter);
-      if (!page.rows.length) return sendText(waId, `No transactions${emptyScope}${period.label ? ` ${period.label}` : ""}.`);
+      if (!page.rows.length) return sendText(waId, `🧾 No transactions${emptyScope}${period.label ? ` ${period.label}` : ""}.`);
       const lines = page.rows.map(
-        (t) => `${t.date} · ${t.what}\n${t.from.name} → ${t.to.name} · ${t.amount}` + (t.note ? `\n📝 ${t.note}` : ""),
+        (t) => `${t.date} · ${t.what}\n${t.from.name} → ${t.to.name} · *${t.amount}*` + (t.note ? `\n📝 ${t.note}` : ""),
       );
-      const more = page.total > page.rows.length ? `\n\nShowing ${page.rows.length} of ${page.total} — open the app for the rest.` : "";
-      return sendText(waId, `*Transactions*${titleScope}${period.label ? ` ${period.label}` : " (latest)"}\n\n${lines.join("\n\n")}${more}`);
+      const more = page.total > page.rows.length ? `\n\n_Showing ${page.rows.length} of ${page.total} — open the app for the rest._` : "";
+      return sendText(waId, `🧾 *Transactions*${titleScope}${period.label ? ` ${period.label}` : " (latest)"}\n\n${lines.join("\n\n")}${more}`);
     }
     case "members":
     case "list": {
@@ -101,7 +101,7 @@ export async function handleIncoming(waId: string, msg: { text?: string; buttonI
       const target = await resolveTarget(arg);
       if (typeof target === "string") return sendText(waId, target);
       const d = await getMemberDetail(target.id);
-      if (!d) return sendText(waId, "No record found.");
+      if (!d) return sendText(waId, "⚠️ No record found.");
       return sendText(waId, chargesText(d, cmd.startsWith("pen") ? "penalty" : "catchup"));
     }
     case "menu":
@@ -159,64 +159,71 @@ function balanceText(d: MemberDetailDTO): string {
   const penalty = d.penaltyRemainingRupees > 0 ? `\nPenalty due: ${d.penaltyRemaining}` : "";
   const interest = d.interestDue !== "₹0" ? `\nInterest due: ${d.interestDue}` : "";
   return (
-    `*${d.name}* — ${d.status}\n\n` +
+    `💰 *${d.name}*  ·  _${d.status}_\n\n` +
     `Deposits paid: ${d.depositsTotal}\n` +
     `Profit share: ${d.profit}\n` +
-    `Current value: ${d.value}` +
+    `Current value: *${d.value}*` +
     catchup +
     penalty +
     interest +
-    `\nTotal due: ${orNone(d.totalDue)}` +
-    (d.held ? `\n\nClub cash held (treasury): ${d.held}` : "")
+    `\n📌 Total due: *${orNone(d.totalDue)}*` +
+    (d.held ? `\n\n🏦 Club cash held: ${d.held}` : "")
   );
 }
 
 function loanText(d: MemberDetailDTO): string {
-  if (!d.hasLoans) return `*${d.name}*\n\nNo loans yet.`;
+  if (!d.hasLoans) return `🏦 *${d.name}*\n\nNo loans yet 🎉`;
   // Current-loan dates only when one is active (§8): start + fixed term-end (flagged if overdue).
   const dates = d.loanStarted
-    ? `\nStarted: ${d.loanStarted}\n${d.loanOverdue ? "Due (overdue)" : "Due"}: ${d.loanDue}`
+    ? `\n🗓️ Started: ${d.loanStarted}\n${d.loanOverdue ? "⚠️ Due (overdue)" : "🗓️ Due"}: ${d.loanDue}`
     : "";
   return (
-    `*${d.name} — loan*\n\n` +
-    `Outstanding: ${d.currentLoan}\n` +
+    `🏦 *${d.name} — loan*\n\n` +
+    `Outstanding: *${d.currentLoan}*\n` +
     `Interest due: ${d.interestDue}` +
     dates
   );
 }
 
+// Cycle status → coloured dot (mirrors the app timeline: teal / red / grey).
+const CYCLE_DOT: Record<string, string> = { active: "🟢", overdue: "🔴", closed: "⚪" };
+
 function historyText(d: MemberDetailDTO): string {
-  if (!d.cycles.length) return `*${d.name}*\n\nNo loan history.`;
-  const rows = d.cycles.slice(-6).map((c) => `#${c.n} ${c.statusLabel} · ${c.amt}\n${c.start} → ${c.end} (${c.days}) · interest ${c.interest}`);
-  return `*${d.name} — loan history*\n\n${rows.join("\n\n")}`;
+  if (!d.cycles.length) return `📜 *${d.name}*\n\nNo loan history.`;
+  const rows = d.cycles
+    .slice(-6)
+    .map((c) => `${CYCLE_DOT[c.status] ?? "•"} *#${c.n} ${c.statusLabel}* · ${c.amt}\n${c.start} → ${c.end} (${c.days}) · interest ${c.interest}`);
+  return `📜 *${d.name} — loan history*\n\n${rows.join("\n\n")}`;
 }
 
 function dueText(d: MemberDetailDTO): string {
   return (
-    `*${d.name} — dues*\n\n` +
+    `📌 *${d.name} — dues*\n\n` +
     `Deposit pending: ${orNone(d.depositPending)}\n` +
     `Catch-up remaining: ${d.ledgerRemaining}\n` +
     `Penalty remaining: ${d.penaltyRemaining}\n` +
     `Interest due: ${d.interestDue}\n\n` +
-    `Total pending: ${orNone(d.overallPending)}`
+    `Total pending: *${orNone(d.overallPending)}*`
   );
 }
 
 /** Itemised catch-up or penalty ledger: charged / paid / remaining, then each charge (+) and
  *  payment (−) newest-first (capped, with an overflow note pointing to the app). */
 function chargesText(d: MemberDetailDTO, kind: "penalty" | "catchup"): string {
-  const label = kind === "penalty" ? "penalty" : "catch-up";
-  const entries = kind === "penalty" ? d.penaltyEntries : d.catchupEntries;
-  const assigned = kind === "penalty" ? d.penaltyAssigned : d.ledgerAssigned;
-  const paid = kind === "penalty" ? d.penaltyPaid : d.ledgerPaid;
-  const remaining = kind === "penalty" ? d.penaltyRemaining : d.ledgerRemaining;
-  if (!entries.length) return `*${d.name} — ${label}*\n\nNo ${label} entries.`;
+  const isPenalty = kind === "penalty";
+  const label = isPenalty ? "penalty" : "catch-up";
+  const icon = isPenalty ? "⚠️" : "🔄";
+  const entries = isPenalty ? d.penaltyEntries : d.catchupEntries;
+  const assigned = isPenalty ? d.penaltyAssigned : d.ledgerAssigned;
+  const paid = isPenalty ? d.penaltyPaid : d.ledgerPaid;
+  const remaining = isPenalty ? d.penaltyRemaining : d.ledgerRemaining;
+  if (!entries.length) return `${icon} *${d.name} — ${label}*\n\nNo ${label} entries.`;
   const shown = entries.slice(0, 10);
   const rows = shown.map((e) => `${e.date} · ${e.title}\n${e.by} · ${e.amount}` + (e.note ? `\n📝 ${e.note}` : ""));
-  const more = entries.length > shown.length ? `\n\nShowing ${shown.length} of ${entries.length} — open the app for the rest.` : "";
+  const more = entries.length > shown.length ? `\n\n_Showing ${shown.length} of ${entries.length} — open the app for the rest._` : "";
   return (
-    `*${d.name} — ${label}*\n\n` +
-    `Charged: ${assigned}\nPaid: ${paid}\nRemaining: ${remaining}\n\n` +
+    `${icon} *${d.name} — ${label}*\n\n` +
+    `Charged: ${assigned}\nPaid: ${paid}\nRemaining: *${remaining}*\n\n` +
     rows.join("\n\n") +
     more
   );
@@ -224,13 +231,13 @@ function chargesText(d: MemberDetailDTO, kind: "penalty" | "catchup"): string {
 
 /** Inactive members (left, not yet rejoined) get only the rejoin quote — back deposits + catch-up. */
 function inactiveText(d: MemberDetailDTO): string {
-  if (!d.rejoin) return `*${d.name}* — inactive\n\nYour account is inactive. Contact an admin to rejoin.`;
+  if (!d.rejoin) return `🚪 *${d.name}*  ·  _inactive_\n\nYour account is inactive. Contact an admin to rejoin.`;
   return (
-    `*${d.name}* — inactive\n\n` +
+    `🚪 *${d.name}*  ·  _inactive_\n\n` +
     `Your account is inactive. To rejoin, you'd deposit:\n` +
     `Back deposits: ${d.rejoin.depDue}\n` +
     `Catch-up: ${d.rejoin.profit}\n` +
-    `Total: ${d.rejoin.total}`
+    `🔑 Total: *${d.rejoin.total}*`
   );
 }
 
@@ -238,10 +245,10 @@ function inactiveText(d: MemberDetailDTO): string {
 function rosterText(roster: RosterEntryDTO[]): string {
   const names = (s: RosterEntryDTO["status"]) => roster.filter((r) => r.status === s).map((r) => `• ${r.name}`);
   const active = names("active"), inactive = names("inactive");
-  if (!active.length && !inactive.length) return `*Members*\n\nNo members yet.`;
-  const parts = [`*Members*`];
-  if (active.length) parts.push(`*Active* (${active.length})\n${active.join("\n")}`);
-  if (inactive.length) parts.push(`*Inactive* (${inactive.length})\n${inactive.join("\n")}`);
+  if (!active.length && !inactive.length) return `👥 *Members*\n\nNo members yet.`;
+  const parts = [`👥 *Members*`];
+  if (active.length) parts.push(`🟢 *Active* (${active.length})\n${active.join("\n")}`);
+  if (inactive.length) parts.push(`⚪ *Inactive* (${inactive.length})\n${inactive.join("\n")}`);
   return parts.join("\n\n");
 }
 
