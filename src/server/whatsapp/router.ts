@@ -5,6 +5,7 @@ import { matchMember, senderByWaId, type WaSender } from "./identity";
 import { sendText } from "./send";
 import { looksLikeEntry, startEntry, decideEntry, listPending, raiseChargeEntry } from "./entry";
 import { looksLikeCharge } from "./parse";
+import { looksLikeReset, looksLikeQuickLogin, resetPasswordFor, sendQuickLoginLink } from "./access";
 import { logInbound } from "./log";
 
 export interface IncomingMessage {
@@ -37,6 +38,11 @@ export async function handleIncoming(waId: string, msg: IncomingMessage): Promis
     return sendText(waId, "📷 Got your image! To keep it as proof, send it again with an entry as the caption — e.g. *ravi paid 2000 to suresh*.");
   }
   if (!text) return;
+
+  // Login self-service (reset password / quick-login link) works for ANY registered number,
+  // regardless of membership status — a locked-out member must be able to get back in first.
+  if (looksLikeReset(text)) return resetPasswordFor(sender, waId);
+  if (looksLikeQuickLogin(text)) return sendQuickLoginLink(sender, waId);
 
   // An inactive member (left the club, hasn't rejoined) only sees what it takes to rejoin — no
   // balances, loans, or entries. Admins are exempt so they never lock themselves out.
@@ -303,6 +309,9 @@ function helpText(sender: WaSender): string {
     `• *txns treasurer <name>* — a treasurer's cash\n\n` +
     `👥 *Club*\n` +
     `• *members* — who's registered\n\n` +
+    `🔐 *Login & password*\n` +
+    `• *quick login* — a one-tap sign-in link (no password)\n` +
+    `• *reset password* — set it back to your phone number\n\n` +
     `✍️ *Record an entry*\n` +
     `_<member/vendor> <type> <amount> to <treasurer>_\n` +
     `*paid* · *repaid* · *interest* · *loan* · *invest* · *return* · *catchup* · *penalty*\n` +

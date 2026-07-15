@@ -109,9 +109,19 @@ name from a list** of members and **enter your password**.
 
 - The **default password is your phone number** (set when you're added). **On your first login
   you're required to change it.**
-- **Forgot your password?** Request a reset — the request **goes to the admin** (who sees it and
-  gets an **in-app notification**), and the **admin resets it** for you (back to your phone number by
-  default). There's no email-link reset.
+- **Forgot your password? Two self-service options over WhatsApp** (the login screen shows both, and
+  they use the **club's own WhatsApp bot number** — no email-link reset):
+  - **Quick login** — message the bot **"quick login"** and it replies with a **one-tap link**.
+    Open it and you're **signed in with no password at all** (the link works **once** and expires in
+    **10 minutes**).
+  - **Reset password** — message the bot **"reset password"** and it **resets your password back to
+    your phone number** (the default), then you sign in and set a new one.
+  - Both are safe because WhatsApp has already verified your SIM: the bot only acts on the number it
+    recognises as yours (matched to your member phone), and it only ever helps **that** number.
+  - The **website never messages you first** — **you open WhatsApp** and send the word; the bot only
+    replies. (This keeps it free — no paid WhatsApp templates.)
+- **Admin reset still exists** as a fallback: an admin can reset any member's password (back to their
+  phone number by default) from the app.
 - Phone numbers are **unique** per member.
 - Admins can always log in; members optionally (to view). Vendors never log in.
 
@@ -119,8 +129,11 @@ name from a list** of members and **enter your password**.
 flowchart LR
   L["Login screen: list of members"] --> PICK["Pick your name"]
   PICK --> PW["Enter password (default = phone number)"]
-  PW -->|forgot?| REQ["Request reset → admin resets it"]
+  PW -->|forgot?| WA["Message the club's WhatsApp bot"]
+  WA -->|"'quick login'"| LINK["One-tap link → signed in, no password"]
+  WA -->|"'reset password'"| RESET["Password reset to your phone number"]
   PW --> IN["You're in (admin can edit · member views)"]
+  LINK --> IN
 ```
 
 (The exact fields stored per member are in `FORMS_AND_FIELDS.md`.)
