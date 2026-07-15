@@ -1,4 +1,5 @@
 import "server-only";
+import { logOutbound } from "./log";
 
 /**
  * Outbound WhatsApp Cloud API calls (docs: developers.facebook.com/docs/whatsapp/cloud-api).
@@ -23,7 +24,10 @@ async function send(payload: Record<string, unknown>): Promise<void> {
   if (!res.ok) console.error("WhatsApp send failed:", res.status, await res.text());
 }
 
-export const sendText = (to: string, body: string) => send({ to, type: "text", text: { body } });
+export const sendText = (to: string, body: string) => {
+  void logOutbound(to, body);
+  return send({ to, type: "text", text: { body } });
+};
 
 export interface ReplyButton {
   id: string; // echoed back as button_reply.id (≤256 chars)
@@ -31,8 +35,9 @@ export interface ReplyButton {
 }
 
 /** Interactive quick-reply buttons (max 3) — used for the Confirm/Cancel entry step. */
-export const sendButtons = (to: string, body: string, buttons: ReplyButton[]) =>
-  send({
+export const sendButtons = (to: string, body: string, buttons: ReplyButton[]) => {
+  void logOutbound(to, body, "interactive");
+  return send({
     to,
     type: "interactive",
     interactive: {
@@ -41,3 +46,4 @@ export const sendButtons = (to: string, body: string, buttons: ReplyButton[]) =>
       action: { buttons: buttons.map((b) => ({ type: "reply" as const, reply: b })) },
     },
   });
+};

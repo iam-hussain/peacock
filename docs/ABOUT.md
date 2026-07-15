@@ -210,6 +210,16 @@ also ask about any member, and even record a payment by typing something like *"
 — the bot shows a preview and asks them to tap **Confirm** before anything is written down.
 Nothing goes into the books without that confirmation.
 
+You can write it the natural way: *"cibi loan 100000 for swathis on 01/12/2026"* works just as well
+as *"…to swathis on 2026-12-01"* — the words for/to/from, everyday amounts like *1L*, and dates in
+any common format are all understood. **Send a photo with the message** (as its caption) and the
+picture is kept with that transaction as proof; managers can also add or change a transaction's
+photo on the website.
+
+Managers get one more view: a **WhatsApp usage** page showing who's actually using the assistant,
+who hasn't tried it yet, and any unknown numbers that have messaged the club — and they can open any
+member's chat history for a chosen day.
+
 ### 12. Mistakes are fixed honestly
 
 People make typos. When something is entered wrong, it's **never quietly deleted**. Instead a

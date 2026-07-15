@@ -1389,6 +1389,25 @@ The WhatsApp Business Cloud API webhook reuses the pieces above — no parallel 
   calls `approveSubmission` (idempotent — double-taps can't double-post) with the admin's member id
   as `actorId`, followed by the same `syncAutoPenaltiesSafe` + `bustStats` + revalidate sweep as
   the web actions. A member's command queues the submission and notifies admins, like the web.
+- **Grammar tolerance** (`parse.ts`): the preposition is `to|from|for` (interchangeable — direction
+  is the verb's); amounts reuse `rupeesToPaise` (plain digits, `₹`-grouping, `l`/`cr`/`k` shorthand);
+  dates are a single non-space token normalised by `normalizeDate` (`yyyy-mm-dd`, `yyyy/mm/dd`,
+  day-first `dd-mm-yyyy`, `.`/`/`/`-` separators, plus textual months for query contexts). A
+  shape-valid but impossible date returns `null` from `parseEntryText`, so the bot flags it instead
+  of posting today.
+- **Image attachments**: an inbound `image` message's caption is the entry text; `media.ts`
+  downloads the media (two-hop Cloud API: `GET /{id}` → auth'd URL → bytes), keeps **JPEG/PNG only**
+  under a size cap, and stashes it as a `data:` URL on the submission payload. `approveSubmission`
+  copies it onto `Transaction.attachment` (metadata — never a ledger leg). The website mirrors this:
+  `updateTransactionImage` (admin) sets/replaces/clears the field; the client canvas-encodes to
+  PNG/JPEG first; the ledger list carries only a `hasImage` flag and streams the bytes on demand from
+  `GET /api/transactions/[id]/image` so base64 blobs never enter the memoised DTO.
+- **Conversation log** (`log.ts` → `WhatsappMessage`): every inbound message (registered or not) and
+  every outbound reply (via `send.ts`) is written best-effort (failures swallowed). `waId` is the
+  last-10 key; `memberId` is set on inbound when matched. The admin **WhatsApp usage** dashboard
+  (`queries/whatsapp-stats.ts`, `GET /api/admin/chats` behind `guardedAdmin`, `/admin/chats`)
+  aggregates it into using/not-using members, unregistered numbers, and a per-member day-filterable
+  transcript — read-only, outside the money StatsCache.
 - The webhook always returns 200 once past the signature check (a non-200 makes Meta redeliver);
   send failures are logged, never thrown. Status callbacks (delivered/read) are ignored.
 

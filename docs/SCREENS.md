@@ -168,6 +168,9 @@ linked to their original.
     on approval.
 - **Edit / Delete** any entry on its row → the app reverses the original (and re-posts the corrected
   one on edit); **history kept**. This *is* the correction mechanism — no separate adjustment entry.
+- **Image (admin):** each row has an **attach/replace/remove image** control — a proof photo (PNG or
+  JPEG) kept with the transaction. A paperclip marks rows that already have one; tapping shows it.
+  Images arriving via a WhatsApp entry caption land here automatically.
 - **Export CSV** — downloads the ledger as a spreadsheet honouring the active filters (filter by one
   member = their statement). Available to any signed-in member.
 
@@ -237,15 +240,24 @@ desktop top bar and the mobile **More** menu.
 
 **Shows / does:** quick stats (admins, audit events, auto-penalty status); a featured **Auto
 penalties** card → the Auto penalties page; **Pending approvals** (the submissions queue, §14a);
-**Audit log**; manage **Admins** (grant/revoke); **reset any member's password**; **Close quarter**
-(lock + snapshot, "can't be undone"); **Backup / Restore** (manual download/import; a monthly cron
-also emails the backup to the admin when configured).
+**WhatsApp usage** → the usage dashboard (§12b); **Audit log**; manage **Admins** (grant/revoke);
+**reset any member's password**; **Close quarter** (lock + snapshot, "can't be undone"); **Backup /
+Restore** (manual download/import; a monthly cron also emails the backup to the admin when configured).
 
 **Auto penalties page** (Admin → Auto penalties, §13.1): the enable **toggles + rate/minimum/grace +
 apply-from date edited inline** (turning one on applies immediately); a **by-member** and **by-month**
 breakdown; the full **register** of every system-added penalty (member, reference with the charge's
 full working, amount, date) with per-row **Dismiss**, **paginated**; both breakdown and register have
 an **All · Deposit · Interest type filter**; and a **Sync now** button.
+
+**Access:** **admin only.**
+
+**WhatsApp usage page** (Admin → WhatsApp usage, §12b): a **usage dashboard** for the chat assistant.
+Shows totals (messages in/out, members active, unregistered numbers); an **Active members** list and a
+**Not using yet** list (each row → that member's chat); an **Unregistered numbers** list (unknown
+numbers messaging in, with count + latest-message preview). Tapping a member opens their
+**conversation transcript** (inbound left, bot replies right, image messages flagged), narrowable to a
+**single day** via a date picker ("cibi on 15 July"). Read-only.
 
 **Access:** **admin only.**
 

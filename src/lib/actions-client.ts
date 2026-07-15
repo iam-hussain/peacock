@@ -20,6 +20,7 @@ export const formAction = invalidating(A.formAction);
 export const decideSubmission = invalidating(A.decideSubmission);
 export const markAllRead = invalidating(A.markAllRead);
 export const updateAvatar = invalidating(A.updateAvatar);
+export const updateTransactionImage = invalidating(A.updateTransactionImage);
 export const setAdmin = invalidating(A.setAdmin);
 export const saveClubSettings = invalidating(A.saveClubSettings);
 export const savePenaltyConfig = invalidating(A.savePenaltyConfig);

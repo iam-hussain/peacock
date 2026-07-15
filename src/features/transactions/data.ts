@@ -16,6 +16,7 @@ export interface Txn {
   method: string;
   amount: string;
   note: string | null;
+  hasImage: boolean;
   canEdit: boolean;
   canDelete: boolean;
   amountValue: string;

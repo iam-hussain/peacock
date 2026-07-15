@@ -3,6 +3,7 @@
 import { Pencil, StickyNote, Trash2 } from "lucide-react";
 import { FormModalButton } from "@/components/shared/form-modal-button";
 import { useIsAdmin } from "@/lib/admin";
+import { TransactionImageButton } from "./transaction-image-button";
 import { type Txn, type Role, type Dir } from "../data";
 
 const DOT: Record<Dir, string> = { in: "bg-in", out: "bg-out", neutral: "bg-fnt" };
@@ -10,7 +11,7 @@ const AMT: Record<Dir, string> = { in: "text-in", out: "text-out", neutral: "tex
 export const ROLE_DOT: Record<Role, string> = { treasurer: "bg-teal", member: "bg-ink", vendor: "bg-wfg" };
 const PILL: Record<Role, string> = { treasurer: "bg-tlsf text-teal", member: "bg-bg2 text-ink", vendor: "bg-wbg text-wfg" };
 
-export const GRID = "grid-cols-[1.4fr_2.6fr_0.9fr_0.9fr_1fr_72px]";
+export const GRID = "grid-cols-[1.4fr_2.6fr_0.9fr_0.9fr_1fr_108px]";
 
 /** Column header row for the ledger table — shared by the desktop and mobile table views. */
 export function HeaderRow() {
@@ -107,9 +108,10 @@ export function Row({ t }: { t: Txn }) {
 /** Edit / Delete affordances for a ledger row (§16 — both are reversal-backed corrections). Admin-only. */
 function RowActions({ t }: { t: Txn }) {
   const isAdmin = useIsAdmin();
-  if (!isAdmin || (!t.canEdit && !t.canDelete)) return <span />;
+  if (!isAdmin) return <span />;
   return (
     <div className="flex items-center justify-end gap-1">
+      <TransactionImageButton id={t.id} hasImage={t.hasImage} what={t.what} />
       {t.canEdit && (
         <FormModalButton
           kind="editTransaction"
