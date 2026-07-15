@@ -1402,6 +1402,18 @@ The WhatsApp Business Cloud API webhook reuses the pieces above — no parallel 
   `updateTransactionImage` (admin) sets/replaces/clears the field; the client canvas-encodes to
   PNG/JPEG first; the ledger list carries only a `hasImage` flag and streams the bytes on demand from
   `GET /api/transactions/[id]/image` so base64 blobs never enter the memoised DTO.
+- **Login self-service** (`access.ts`): a message of *reset password* or *quick login* from a
+  recognised number is intercepted before the read/entry grammar (works regardless of membership
+  status — a locked-out member must be able to get back in). *reset password* reuses the admin
+  reset internals (`ctx.password.hash` → `internalAdapter.updatePassword`, `mustChangePassword=true`)
+  on the sender's **own** account, resetting to their phone number. *quick login* calls
+  `auth.api.signInMagicLink` (Better Auth `magicLink` plugin, `disableSignUp`, 10-min single-use);
+  the plugin's `sendMagicLink` hook (`auth/index.ts`) delivers the one-time URL back over WhatsApp
+  (to `Member.phone`, inside Meta's free 24-hour reply window) instead of by email. The site never
+  initiates the chat — the login screen's **Quick login / Reset password** buttons are `wa.me` deep
+  links (`NEXT_PUBLIC_WHATSAPP_NUMBER`) that the member opens and sends, so no paid template is
+  needed. Security rests on Meta's SIM verification: the bot only ever acts on the number it matched
+  to that member.
 - **Conversation log** (`log.ts` → `WhatsappMessage`): every inbound message (registered or not) and
   every outbound reply (via `send.ts`) is written best-effort (failures swallowed). `waId` is the
   last-10 key; `memberId` is set on inbound when matched. The admin **WhatsApp usage** dashboard
@@ -1672,7 +1684,8 @@ v1 fixtures are the source of truth for "correct."
 ### P1 — Core data + entry
 - [ ] ClubConfig settings (stages, rate-change append, loan limit, overdue penalty, dividend toggle).
 - [ ] Notifications (DB-backed, inline triggers, in-app bell); password flows (default=phone,
-      force-change-on-first-login, admin reset, forgot-request).
+      force-change-on-first-login, admin reset, forgot-request, WhatsApp self-service reset +
+      passwordless quick-login magic link — §20.1).
 - [ ] Member CRUD (role, treasurer flag); Vendor CRUD (GENERAL/CHIT + ChitFund).
 - [ ] Loan open/tranche/repay/interest/close; chit payment/payout.
 - [ ] Withdraw/settle + reactivate + catch-up flows.

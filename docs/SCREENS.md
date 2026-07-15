@@ -16,12 +16,20 @@
 **Purpose:** let an existing member sign in (no sign-up).
 
 **Shows:** the club name + slogan; a **searchable list of members** (name + avatar); a password
-field once a member is picked; a "forgot password?" action.
+field once a member is picked; a **"Forgot your password?"** block with two WhatsApp shortcuts
+(**Quick login with WhatsApp**, **Reset password with WhatsApp**) — shown only when the club's bot
+number (`NEXT_PUBLIC_WHATSAPP_NUMBER`) is configured.
 
 **Does:**
 - Pick a member → enter password → sign in. (Default password = phone number.)
 - **First login forces a password change** before continuing.
-- "Forgot password?" → submit a **reset request** to admins (admin is notified in-app).
+- **Quick login with WhatsApp** → opens WhatsApp (wa.me) prefilled with *quick login*; the bot
+  replies with a **one-time magic link** (10-min, single-use) that signs the member in with no
+  password.
+- **Reset password with WhatsApp** → opens WhatsApp prefilled with *reset password*; the bot
+  **resets the member's password to their phone number** and flags a forced change on next login.
+- Both shortcuts are member-initiated (the site never sends the first message). Admin reset remains
+  a fallback.
 - Clear error on wrong password; throttle on repeated failures (basic).
 
 **Access:** everyone (pre-auth).

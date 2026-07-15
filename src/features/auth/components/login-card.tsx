@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Search, ChevronRight, Info, Eye, EyeOff } from "lucide-react";
+import { Search, ChevronRight, Info, Eye, EyeOff, Zap, KeyRound } from "lucide-react";
 import { initials } from "@/lib/avatar";
 import { cn } from "@/lib/utils";
 import { PeacockLockup } from "@/components/shared/peacock-logo";
@@ -11,6 +11,50 @@ import { signIn } from "@/lib/auth-client";
 import type { LoginProfile } from "../queries";
 
 const LAST_PROFILE_KEY = "peacock:lastProfileId";
+
+// The club's WhatsApp bot number (international format, digits only after cleanup). When set, the
+// login screen offers passwordless quick-login and self-service reset — the member opens WhatsApp
+// (wa.me), sends the prefilled word, and the bot replies with a one-tap link or resets their
+// password. The site never sends the first message, so no paid WhatsApp template is needed.
+const WA_NUMBER = process.env.NEXT_PUBLIC_WHATSAPP_NUMBER?.replace(/\D/g, "") || "";
+const waLink = (prefill: string) => `https://wa.me/${WA_NUMBER}?text=${encodeURIComponent(prefill)}`;
+
+/** Two WhatsApp shortcuts for members who forgot their password — hidden entirely when the club
+ *  hasn't configured a bot number. */
+function WhatsAppLoginOptions() {
+  if (!WA_NUMBER) return null;
+  return (
+    <div className="mt-4.5 border-t border-hair pt-4">
+      <p className="mb-2.5 text-center text-11 font-semibold uppercase leading-none tracking-4 text-fnt">
+        Forgot your password?
+      </p>
+      <div className="flex flex-col gap-2">
+        <a
+          href={waLink("Quick login")}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center justify-center gap-2 rounded-11 border border-bd2 bg-sf px-4 py-2.75 text-13 font-semibold text-ink transition-colors hover:border-teal hover:bg-bg2"
+        >
+          <Zap className="size-4 flex-none text-teal" strokeWidth={2.2} />
+          Quick login with WhatsApp
+        </a>
+        <a
+          href={waLink("Reset password")}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center justify-center gap-2 rounded-11 border border-bd2 bg-sf px-4 py-2.75 text-13 font-semibold text-ink transition-colors hover:border-mut hover:bg-bg2"
+        >
+          <KeyRound className="size-4 flex-none text-fnt" strokeWidth={2.2} />
+          Reset password with WhatsApp
+        </a>
+      </div>
+      <p className="mx-auto mt-2 max-w-[300px] text-center text-10 font-medium leading-135 text-mut">
+        Opens WhatsApp from your registered number. We reply with a one-tap sign-in link or reset it
+        to your phone number — just send the message.
+      </p>
+    </div>
+  );
+}
 
 export function LoginCard({ profiles }: { profiles: LoginProfile[] }) {
   const [selected, setSelected] = useState<LoginProfile | null>(null);
@@ -100,6 +144,8 @@ function PickStep({ profiles, onPick }: { profiles: LoginProfile[]; onPick: (p: 
           <div className="py-8 text-center text-13 font-medium text-fnt">No profiles match.</div>
         )}
       </div>
+
+      <WhatsAppLoginOptions />
 
       <Link
         href="/"
@@ -243,6 +289,8 @@ function PasswordStep({ profile, onBack }: { profile: LoginProfile; onBack: () =
       >
         ← Choose another profile
       </button>
+
+      <WhatsAppLoginOptions />
     </>
   );
 }

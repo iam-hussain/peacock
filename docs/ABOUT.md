@@ -216,6 +216,17 @@ any common format are all understood. **Send a photo with the message** (as its 
 picture is kept with that transaction as proof; managers can also add or change a transaction's
 photo on the website.
 
+**Forgot your password? WhatsApp sorts it out too.** The login screen has two shortcuts that open a
+chat with the club's WhatsApp number:
+
+- Send *quick login* and the bot replies with a **one-tap link** — open it and you're straight into
+  the app, **no password needed** (the link works once and only for a few minutes).
+- Send *reset password* and the bot **sets your password back to your phone number**, so you can sign
+  in and pick a new one.
+
+It's safe because WhatsApp already knows it's really your phone — the club only ever helps the number
+it recognises as yours. And you always start the chat yourself; the club never messages you first.
+
 Managers get one more view: a **WhatsApp usage** page showing who's actually using the assistant,
 who hasn't tried it yet, and any unknown numbers that have messaged the club — and they can open any
 member's chat history for a chosen day.
