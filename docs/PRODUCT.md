@@ -795,13 +795,31 @@ a polite "ask an admin to add your number" reply.
   chat** in six types: `paid` (deposit), `repaid` (loan repayment), `interest` (interest
   collected), `loan` (loan given), `invest` (vendor investment), `return` (vendor return, with an
   optional `principal <amt>` for the capital part). The **party, type, amount and treasurer are
-  required**; a date (`on 2026-07-01`) and a note (`note july deposit`) are optional, and
-  `to`/`from` are interchangeable. An incomplete command gets a reply naming exactly what's
-  missing. The bot then shows a preview with **Confirm / Cancel** buttons; nothing posts until
-  the admin taps Confirm.
+  required**; a date (`on 2026-12-01`) and a note (`note july deposit`) are optional. The command
+  is written the way people actually talk:
+  - **`to` / `from` / `for` are interchangeable** — "cibi loan 100000 **for** swathis" reads the
+    same as "…**to** swathis" (direction always comes from the type, not the preposition).
+  - **Amounts** accept plain digits or shorthand — `100000`, `₹1,00,000`, `1L`, `5.5l`, `2cr`, `50k`.
+  - **Dates** accept any common separator and either order — `2026-12-01`, `2026/12/01`,
+    `01-12-2026`, `1.12.2026` — and are normalised internally. An impossible date (e.g. month 13)
+    is flagged rather than silently posted as today.
+  An incomplete command gets a reply naming exactly what's missing. The bot then shows a preview
+  with **Confirm / Cancel** buttons; nothing posts until the admin taps Confirm.
+- **Attach a photo as proof**: send the entry **as the caption of an image** (e.g. a photo of the
+  cheque or receipt) and the picture is kept with that transaction. It shows on the ledger row, and
+  an admin can also **add, replace, or remove** a transaction's image from the website. Images are
+  stored as **PNG or JPEG** only. An image sent with no caption can't attach to anything, so the bot
+  nudges the sender to caption it with an entry.
 - The chat channel follows the **same submit → approve rules** (this section): an admin's
   confirmed entry posts directly; a member's entry command becomes a **pending request** in the
   admins' approval inbox. Only admins can tap Confirm, and a double-tap can't post twice.
+
+**WhatsApp usage dashboard (admin).** Every message to and from the bot is logged, and an
+admin-only **WhatsApp usage** page (from the Admin hub) turns that into a picture of adoption:
+which members are **actively using** the assistant vs **haven't messaged yet**, any **unregistered
+numbers** messaging the club (with a count and a preview of their latest message — a cue to register
+a new member or ignore a wrong number), and totals across the club. Tapping a member opens their
+**conversation transcript**, which can be narrowed to a **single day** (e.g. "cibi on 15 July").
 
 ### Exporting records (CSV)
 

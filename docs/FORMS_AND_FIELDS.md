@@ -89,6 +89,8 @@ Every cash transaction collects three things in common, plus type-specific field
 - **Date** (when it happened) — R
 - **Treasury** (which treasurer's cash is involved) — R for any cash movement
 - **Note / reference** — O (cheque/UPI ref or remark)
+- **Image** — O (a proof photo, **PNG or JPEG**, attached/replaced/removed by an admin on the ledger
+  row; or sent as a WhatsApp entry's image caption). Stored with the transaction, not a ledger leg.
 
 Below, only the **type-specific** fields are listed (the three common ones apply to all unless
 noted). Direction: **IN** = club gains cash, **OUT** = club pays cash, **neutral** = cash moves.
@@ -224,6 +226,9 @@ What an admin can do, in two buckets: **manage people** and **configure the club
   its member, reference, amount and date; a **Sync now** button; and **Dismiss** per row.
 - **Backup / Restore** — download the full-club JSON anytime; a monthly cron also **emails the same
   backup to the admin** when `RESEND_API_KEY` + `BACKUP_EMAIL_TO` are configured.
+- Open the **WhatsApp usage** dashboard — read-only adoption stats from the chat log: members
+  **using vs not using** the bot, **unregistered numbers** (count + latest-message preview), club
+  totals, and any member's **conversation transcript** filterable to a single day.
 
 > Members (non-admin) **view** everything; if the club allows, they can **submit** entries (which need
 > admin approval). They can change their **own avatar and password** in Profile. There is **no

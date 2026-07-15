@@ -35,9 +35,13 @@ export async function POST(req: Request) {
     const value = JSON.parse(raw)?.entry?.[0]?.changes?.[0]?.value;
     const msg = value?.messages?.[0]; // absent for delivery/read status callbacks
     if (msg?.from) {
+      // An image can carry an entry command as its caption ("cibi loan 1L for swathis" + a photo of
+      // the cheque) — treat the caption as the text and hand the media id down to attach as proof.
       await handleIncoming(msg.from, {
-        text: msg.type === "text" ? msg.text?.body : undefined,
+        text: msg.type === "text" ? msg.text?.body : msg.type === "image" ? msg.image?.caption : undefined,
         buttonId: msg.type === "interactive" ? msg.interactive?.button_reply?.id : undefined,
+        imageId: msg.type === "image" ? msg.image?.id : undefined,
+        type: msg.type,
       });
     }
   } catch (e) {

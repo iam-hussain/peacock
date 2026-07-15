@@ -13,6 +13,7 @@ export interface Party { name: string; role: Role }
 export interface TxnDTO {
   id: string; what: string; dir: Dir; from: Party; to: Party; date: string; entered: string; method: string; amount: string;
   note: string | null; // the entry's description, shown on the row when present
+  hasImage: boolean; // a proof image is attached (fetched on demand from /api/transactions/[id]/image)
   // correction affordances (§16): amount/date prefill + which actions this row allows
   canEdit: boolean; canDelete: boolean; amountValue: string; isoDate: string;
 }
@@ -93,6 +94,12 @@ export async function getTransactions(limit?: number, offset?: number): Promise<
     : [];
   const memberByMembership = new Map(memberships.map((m) => [m.id, nameOf(m.member)]));
 
+  // Which rows carry a proof image — one lean id-only pass, so the base64 blobs never enter this
+  // (memoised) list. The image itself streams from /api/transactions/[id]/image on demand.
+  const withImage = new Set(
+    (await prisma.transaction.findMany({ where: { attachment: { not: null } }, select: { id: true } })).map((t) => t.id),
+  );
+
   return txns.map((t) => {
     const memberName = t.membershipId ? memberByMembership.get(t.membershipId) : undefined;
     const { from, to, dir, amount } = partiesFor(t.type, t.entries, memberName);
@@ -101,6 +108,7 @@ export async function getTransactions(limit?: number, offset?: number): Promise<
       id: t.id, what: WHAT[t.type], dir, from, to,
       date: dayMonthYear(t.occurredAt), entered: dayMonthYear(t.createdAt), method: methodFor(t.id),
       amount: sign + formatPaise(amount), note: t.description ?? null,
+      hasImage: withImage.has(t.id),
       canEdit: true, // every posted (non-reversal) row can be amount/date-corrected (§16)
       canDelete: !UNSAFE_TO_DELETE.has(t.type),
       amountValue: (Number(amount) / 100).toString(),

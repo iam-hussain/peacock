@@ -9,6 +9,7 @@ import { raiseCharge } from "@/server/ledger/charges";
 import { matchMember, nameMatches, type WaSender } from "./identity";
 import { parseEntryText, parseChargeText, looksLikeEntryStart, entryMissing, VENDOR_ENTRY_INTENTS, OUTFLOW_INTENTS } from "./parse";
 import { sendText, sendButtons } from "./send";
+import { downloadMedia } from "./media";
 
 /**
  * WhatsApp money entries ride the EXISTING submit → approve machinery (PRODUCT.md §15):
@@ -56,8 +57,10 @@ async function matchVendor(q: string): Promise<{ vendor?: { name: string }; ambi
   return {};
 }
 
-/** Parse an entry command, create the PENDING Submission, and reply with the confirm step. */
-export async function startEntry(sender: WaSender, waId: string, text: string): Promise<void> {
+/** Parse an entry command, create the PENDING Submission, and reply with the confirm step.
+ *  `imageId` (when the command arrived as an image caption) is downloaded and carried on the
+ *  submission payload so it lands on the Transaction as proof when the entry is approved. */
+export async function startEntry(sender: WaSender, waId: string, text: string, imageId?: string): Promise<void> {
   const p = parseEntryText(text);
   // Entry-shaped but incomplete → say exactly what's missing, then the format.
   if (!p) return sendText(waId, `✍️ Almost — I'm missing ${entryMissing(text)}.\n\n${USAGE}`);
@@ -90,6 +93,11 @@ export async function startEntry(sender: WaSender, waId: string, text: string): 
   if (principalPaise !== null && (principalPaise <= 0n || principalPaise > paise))
     return sendText(waId, "⚠️ The principal must be more than zero and not more than the amount.");
 
+  // A captioned image becomes the entry's proof — download it now and stash the data URL on the
+  // payload; approveSubmission copies it onto the Transaction. A failed/oversized download is a
+  // no-op (the entry still records, just without the image).
+  const image = imageId ? await downloadMedia(imageId) : null;
+
   const payload: Record<string, string> = {
     party: partyName,
     ...(partyId ? { partyId } : {}),
@@ -99,10 +107,11 @@ export async function startEntry(sender: WaSender, waId: string, text: string): 
     note: note ? `${note} (via WhatsApp)` : "via WhatsApp",
     ...(principalPaise ? { principal: (Number(principalPaise) / 100).toString() } : {}),
     ...(date ? { date } : {}),
+    ...(image ? { attachment: image.dataUrl } : {}),
   };
   const sub = await prisma.submission.create({ data: { intent, payload, status: "PENDING", submittedById: sender.id } });
 
-  const preview = submissionPreview(intent, payload);
+  const preview = submissionPreview(intent, payload) + (image ? "\n📎 Image attached" : "");
 
   if (sender.isAdmin) {
     return sendButtons(waId, `❓ *Confirm this entry?*\n\n${preview}`, [

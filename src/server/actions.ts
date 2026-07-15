@@ -651,6 +651,28 @@ export async function updateAvatar(dataUrl: string): Promise<ActionResult> {
   return { ok: true };
 }
 
+// Admin attaches / replaces / removes a proof image on a posted transaction. The client converts the
+// picked file to a PNG or JPEG data URL (see transaction-image-button.tsx); "" removes it. This is
+// pure metadata — it never touches ledger balances, so it updates the row in place (no reverse).
+export async function updateTransactionImage(id: string, dataUrl: string): Promise<ActionResult> {
+  const me = await getCurrentUser();
+  if (!me?.isAdmin) return { ok: false, error: "Only an admin can attach an image." };
+  if (!id) return { ok: false, error: "Missing transaction." };
+  const cleared = dataUrl === "";
+  if (!cleared) {
+    if (!/^data:image\/(png|jpeg);base64,/.test(dataUrl)) return { ok: false, error: "Attach a PNG or JPEG image." };
+    if (dataUrl.length > 7_000_000) return { ok: false, error: "Image is too large — pick a smaller one." }; // ~5MB decoded
+  }
+  try {
+    await prisma.transaction.update({ where: { id }, data: { attachment: cleared ? null : dataUrl } });
+  } catch {
+    return { ok: false, error: "Could not update the image." };
+  }
+  revalidateLedger();
+  await bustStats();
+  return { ok: true };
+}
+
 // Admin grants/revokes the ADMIN role on a member (used by the Admins management sheet).
 export async function setAdmin(memberId: string, makeAdmin: boolean): Promise<ActionResult> {
   const me = await getCurrentUser();

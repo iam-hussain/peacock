@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ShieldAlert, FileClock, Users, KeyRound, CalendarClock, Database, Download, ChevronRight, ArrowUpRight, Inbox, type LucideIcon } from "lucide-react";
+import { ShieldAlert, FileClock, Users, KeyRound, CalendarClock, Database, Download, ChevronRight, ArrowUpRight, Inbox, MessageSquare, type LucideIcon } from "lucide-react";
 import { FormModalButton } from "@/components/shared/form-modal-button";
 import { AdminsButton } from "@/features/settings/components/admins-modal";
 import { CloseQuarterButton } from "@/features/settings/components/close-quarter-modal";
@@ -75,6 +75,8 @@ export function AdminHub({ data }: { data: Data }) {
       {/* Tool grid */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <ToolLink href="/approvals" icon={Inbox} title="Pending approvals" sub="Review member-submitted entries" />
+
+        <ToolLink href="/admin/chats" icon={MessageSquare} title="WhatsApp usage" sub="Who's using the bot, unknown numbers & chats" />
 
         <ToolLink href="/audit" icon={FileClock} title="Audit log" sub={`${auditCount} recorded event${auditCount === 1 ? "" : "s"}`} />
 

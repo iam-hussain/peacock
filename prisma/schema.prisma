@@ -178,6 +178,7 @@ model Transaction {
   membershipId String? // member-scoped txns belong to a STINT (deposits, pay-downs, loans, settle, rejoin)
   loanId       String? // link for loan-related txns (tranches, repay, interest)
   vendorId     String? // link for vendor/chit txns
+  attachment   String? // optional proof image as a self-describing data URL (data:image/png|jpeg;base64,…); PNG/JPEG only. Read on demand (never in the ledger list) so the big blob stays out of bulk reads.
   entries      Entry[]
   createdById  String?
   createdAt    DateTime @default(now())
@@ -327,6 +328,31 @@ model AuditLog {
   createdAt  DateTime @default(now())
 
   @@index([entityType, entityId])
+}
+
+// WhatsApp conversation log — every inbound member/unregistered message and every outbound bot
+// reply, kept lean for the admin usage dashboard (who's using the bot, unregistered numbers, recent
+// chats). `waId` is the sender/recipient's last-10 phone digits (matches Member.phone the same way
+// identity.ts does); `memberId` is set when the number maps to a member, null for unknown numbers.
+// `text` is the message body / image caption / outbound text, capped on write so rows stay small.
+model WhatsappMessage {
+  id        String      @id @default(cuid()) @map("_id")
+  waId      String // last-10 phone digits of the other party
+  memberId  String? // matched member (null = unregistered number)
+  direction WaDirection // IN (from the person) or OUT (bot reply)
+  kind      String // "text" | "image" | "interactive" | "button" | "other"
+  text      String? // body / caption / reply text (capped ~2000 chars on write)
+  hasMedia  Boolean     @default(false) // the inbound message carried an image
+  createdAt DateTime    @default(now())
+
+  @@index([memberId, createdAt])
+  @@index([waId, createdAt])
+  @@index([direction, createdAt])
+}
+
+enum WaDirection {
+  IN
+  OUT
 }
 
 // DB-backed read cache: key → the exact DTO a page/API returns, computed by the existing query

@@ -1,6 +1,6 @@
 // Self-check for the WhatsApp entry grammar: `npx tsx scripts/check-whatsapp-parse.mts`
 import assert from "node:assert";
-import { parseEntryText, parseChargeText, looksLikeEntryStart, looksLikeCharge, entryMissing } from "../src/server/whatsapp/parse";
+import { parseEntryText, parseChargeText, looksLikeEntryStart, looksLikeCharge, entryMissing, normalizeDate } from "../src/server/whatsapp/parse";
 
 // Valid shapes — treasurer is required; date and note optional
 assert.deepEqual(parseEntryText("ravi paid 2000 to suresh"), {
@@ -44,6 +44,34 @@ assert.deepEqual(parseChargeText("charge Ravi Kumar catchup 1000 on 2026-07-01")
 assert.ok(looksLikeCharge("charge ravi penalty 500"), "charge command routes to the charge handler");
 assert.equal(parseChargeText("ravi paid 2000 to suresh"), null, "an entry is not a charge");
 assert.equal(looksLikeCharge("charge ravi penalty 500"), true);
+
+// "for" and "from" are interchangeable with "to" — direction comes from the verb, not the preposition.
+assert.deepEqual(parseEntryText("cibi loan 100000 to swathis on 2026-12-01"), {
+  who: "cibi", intent: "Give a loan", amountRaw: "100000", treasurer: "swathis", principal: undefined, date: "2026-12-01", note: undefined,
+});
+assert.deepEqual(parseEntryText("cibi loan 100000 for swathis on 2026-12-01"), {
+  who: "cibi", intent: "Give a loan", amountRaw: "100000", treasurer: "swathis", principal: undefined, date: "2026-12-01", note: undefined,
+});
+// Amount shorthand: 100000 and 1L are the same loan.
+assert.equal(parseEntryText("cibi loan 100000 for swathis")?.amountRaw, "100000");
+assert.equal(parseEntryText("cibi loan 1L for swathis")?.amountRaw, "1L");
+
+// Dates: every common separator + order normalises to yyyy-mm-dd.
+assert.equal(parseEntryText("cibi loan 1L for swathis on 2026/12/01")?.date, "2026-12-01");
+assert.equal(parseEntryText("cibi loan 1L for swathis on 01-12-2026")?.date, "2026-12-01");
+assert.equal(parseEntryText("cibi loan 1L for swathis on 1.12.2026")?.date, "2026-12-01");
+assert.equal(parseEntryText("cibi loan 1L for swathis on 2026.12.01")?.date, "2026-12-01");
+// A shaped-but-impossible date (month 13) is rejected so the bot flags it rather than posting today.
+assert.equal(parseEntryText("cibi loan 1L for swathis on 2026-13-01"), null);
+assert.match(entryMissing("cibi loan 1L for swathis on 2026-13-01"), /date/);
+
+// normalizeDate covers query contexts too (textual months, day-first).
+assert.equal(normalizeDate("2026-12-01"), "2026-12-01");
+assert.equal(normalizeDate("2026/12/01"), "2026-12-01");
+assert.equal(normalizeDate("01/12/2026"), "2026-12-01");
+assert.equal(normalizeDate("15th July 2026"), "2026-07-15");
+assert.equal(normalizeDate("Jul 15 2026"), "2026-07-15");
+assert.equal(normalizeDate("not a date"), null);
 
 // List commands and bare keywords must NOT look like entries (they route to the query switch)
 for (const s of ["balance", "balance ravi", "loan", "help", "what did ravi pay", "txns july", "catchup", "penalty", "catchup ravi", "penalty ravi", "members", "pending"]) {

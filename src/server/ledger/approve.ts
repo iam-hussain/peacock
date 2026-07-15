@@ -15,11 +15,15 @@ export async function approveSubmission(id: string, actorId: string): Promise<{ 
     throw new Error("This submission was already decided.");
   }
 
-  const payload = { intent: sub.intent, ...(sub.payload as Record<string, string>) } as EntryPayload;
+  const rawPayload = sub.payload as Record<string, string>;
+  const payload = { intent: sub.intent, ...rawPayload } as EntryPayload;
   // Post the ledger entries and flip the submission to APPROVED atomically: a crash between them
   // must not leave a posted transaction with the submission still PENDING (which a retry would re-post).
   return prisma.$transaction(async (tx) => {
     const txn = await postIntent(payload, actorId, tx);
+    // A WhatsApp entry may carry a proof image (data URL) on its payload — land it on the posted
+    // transaction now that we have its id. Metadata only; never touches the ledger balances.
+    if (rawPayload.attachment) await tx.transaction.update({ where: { id: txn.id }, data: { attachment: rawPayload.attachment } });
     await tx.submission.update({
       where: { id },
       data: { status: "APPROVED", decidedById: actorId, decidedAt: new Date(), postedTxnId: txn.id },

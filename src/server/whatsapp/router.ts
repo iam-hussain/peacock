@@ -5,17 +5,37 @@ import { matchMember, senderByWaId, type WaSender } from "./identity";
 import { sendText } from "./send";
 import { looksLikeEntry, startEntry, decideEntry, listPending, raiseChargeEntry } from "./entry";
 import { looksLikeCharge } from "./parse";
+import { logInbound } from "./log";
+
+export interface IncomingMessage {
+  text?: string;
+  buttonId?: string;
+  imageId?: string; // Cloud API media id when the message is an image
+  type?: string; // raw WhatsApp message type ("text" | "image" | "interactive" | …)
+}
 
 /**
  * Inbound message → reply. Members read their own data; admins may target anyone
  * ("balance ravi") and record entries ("ravi paid 2000" — see entry.ts).
  */
-export async function handleIncoming(waId: string, msg: { text?: string; buttonId?: string }): Promise<void> {
+export async function handleIncoming(waId: string, msg: IncomingMessage): Promise<void> {
   const sender = await senderByWaId(waId);
+  const text = msg.text?.trim() ?? "";
+
+  // Log EVERY inbound message — registered or not — before any early return, so the admin dashboard
+  // can surface unknown numbers and per-member usage. Outbound replies self-log in send.ts.
+  const kind = msg.buttonId ? "button" : msg.imageId ? "image" : msg.type ?? "text";
+  const logText = msg.buttonId ? msg.buttonId : text || null;
+  void logInbound(waId, kind, logText, sender?.id ?? null, Boolean(msg.imageId));
+
   if (!sender) return sendText(waId, "⚠️ This number isn't registered with Peacock.\n\nAsk an admin to add your WhatsApp number to your member profile.");
 
   if (msg.buttonId) return decideEntry(sender, waId, msg.buttonId);
-  const text = msg.text?.trim() ?? "";
+
+  // An image with no caption can't attach to anything — nudge toward captioning it with an entry.
+  if (msg.imageId && !text) {
+    return sendText(waId, "📷 Got your image! To keep it as proof, send it again with an entry as the caption — e.g. *ravi paid 2000 to suresh*.");
+  }
   if (!text) return;
 
   // An inactive member (left the club, hasn't rejoined) only sees what it takes to rejoin — no
@@ -28,7 +48,7 @@ export async function handleIncoming(waId: string, msg: { text?: string; buttonI
   // "charge …" raises an obligation (no treasurer) — intercept before the entry grammar, which
   // would otherwise read "charge <member> penalty <amt>" as an entry missing its treasurer.
   if (looksLikeCharge(text)) return raiseChargeEntry(sender, waId, text);
-  if (looksLikeEntry(text)) return startEntry(sender, waId, text);
+  if (looksLikeEntry(text)) return startEntry(sender, waId, text, msg.imageId);
 
   const [cmd, ...rest] = text.toLowerCase().split(/\s+/);
   const arg = rest.join(" ");
