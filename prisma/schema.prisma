@@ -295,6 +295,17 @@ model Notification {
 // heavy-pending thresholds) — is DERIVED ON READ (no jobs) from current state + ClubConfig.alertThresholds,
 // and merged into the list when the bell opens. See §18 (getNotifications).
 
+// One row per device the mobile app registered from (POST /api/push-token). A member with two
+// phones has two rows; Expo tells us when a device is uninstalled and we delete the row (push.ts).
+model PushToken {
+  id        String   @id @default(cuid()) @map("_id")
+  memberId  String
+  token     String   @unique // ExponentPushToken[…]
+  updatedAt DateTime @updatedAt
+
+  @@index([memberId])
+}
+
 model Charge {
   id           String     @id @default(cuid()) @map("_id")
   membershipId String // belongs to a STINT

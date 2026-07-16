@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/server/db";
+import { createNotifications } from "@/server/push";
 import { cronAuthorized } from "@/server/cron";
 import { formatPaise } from "@/lib/money";
 import { expectedClubDeposit, type Stage } from "@/server/queries/members";
@@ -52,6 +53,6 @@ export async function GET(req: Request) {
       },
     ];
   });
-  if (due.length) await prisma.notification.createMany({ data: due });
+  if (due.length) await createNotifications(due);
   return NextResponse.json({ ok: true, reminded: due.length });
 }

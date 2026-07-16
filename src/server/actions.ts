@@ -3,6 +3,7 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/server/db";
+import { createNotifications } from "@/server/push";
 import { rupeesToPaise } from "@/lib/money";
 import { headers } from "next/headers";
 import { approveSubmission, rejectSubmission } from "@/server/ledger/approve";
@@ -899,9 +900,9 @@ async function postOrSubmit(intent: string, payload: Record<string, string>, rev
   const submission = await prisma.submission.create({ data: { intent, payload: clean, status: "PENDING", submittedById: me.id } });
   const admins = await prisma.member.findMany({ where: { role: "ADMIN" }, select: { id: true } });
   const body = clean.party ? `${clean.party} · ${clean.amount ?? ""}`.trim() : null;
-  await prisma.notification.createMany({
-    data: admins.map((a) => ({ recipientId: a.id, kind: "APPROVAL" as const, type: "submission.pending", title: intent, body, link: "/notifications", submissionId: submission.id })),
-  });
+  await createNotifications(
+    admins.map((a) => ({ recipientId: a.id, kind: "APPROVAL" as const, type: "submission.pending", title: intent, body, link: "/notifications", submissionId: submission.id })),
+  );
   revalidatePath("/notifications");
   return { ok: true };
 }

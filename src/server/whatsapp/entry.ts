@@ -1,6 +1,7 @@
 import "server-only";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/server/db";
+import { createNotifications } from "@/server/push";
 import { rupeesToPaise, formatPaise } from "@/lib/money";
 import { approveSubmission, rejectSubmission } from "@/server/ledger/approve";
 import { syncAutoPenaltiesSafe } from "@/server/ledger/auto-penalties";
@@ -121,12 +122,12 @@ export async function startEntry(sender: WaSender, waId: string, text: string, i
   }
   // Member: same as web — queue it and put an approval in every admin's inbox.
   const admins = await prisma.member.findMany({ where: { role: "ADMIN" }, select: { id: true } });
-  await prisma.notification.createMany({
-    data: admins.map((a) => ({
+  await createNotifications(
+    admins.map((a) => ({
       recipientId: a.id, kind: "APPROVAL" as const, type: "submission.pending", title: intent,
       body: `${partyName} · ${formatPaise(paise)} (via WhatsApp)`, link: "/notifications", submissionId: sub.id,
     })),
-  });
+  );
   revalidatePath("/notifications");
   return sendText(waId, `✅ *Sent for admin approval*\n\n${preview}`);
 }
