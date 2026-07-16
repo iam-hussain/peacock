@@ -58,6 +58,14 @@ function WhatsAppLoginOptions() {
 
 export function LoginCard({ profiles }: { profiles: LoginProfile[] }) {
   const [selected, setSelected] = useState<LoginProfile | null>(null);
+  const [linkError, setLinkError] = useState(false);
+
+  useEffect(() => {
+    // A used/expired quick-login link bounces here as /login?error=… (magic-link verify →
+    // /dashboard?error=… → proxy). Read post-mount (SSR-safe, same pattern as lastProfileId).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setLinkError(new URLSearchParams(window.location.search).has("error"));
+  }, []);
 
   return (
     <div className="flex h-dvh w-full flex-col bg-bg px-6 pb-8.5 pt-9 md:h-auto md:min-h-0 md:pb-6.5 md:w-[430px] md:max-w-full md:animate-in md:fade-in md:zoom-in-95 md:rounded-18 md:border md:border-bd md:bg-sf md:px-[28px] md:py-6.5 md:shadow-pop">
@@ -66,6 +74,14 @@ export function LoginCard({ profiles }: { profiles: LoginProfile[] }) {
           <PeacockLockup markPx={80} wordSize={32} />
         </div>
       </div>
+
+      {linkError && (
+        <div className="mb-3.5 rounded-lg bg-wbg px-3 py-2.5 text-xs font-medium leading-140 text-wfg">
+          That sign-in link has expired or was already used — links work once, for 10 minutes. Send{" "}
+          <span className="font-semibold">quick login</span> to the club&apos;s WhatsApp again for a
+          fresh one, or sign in with your password below.
+        </div>
+      )}
 
       <div className="flex min-h-0 flex-1 flex-col">
         {selected ? (
