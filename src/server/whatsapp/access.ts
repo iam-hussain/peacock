@@ -1,6 +1,6 @@
 import "server-only";
 import { prisma } from "@/server/db";
-import { auth } from "@/server/auth";
+import { auth, setPassword } from "@/server/auth";
 import { sendText } from "./send";
 import type { WaSender } from "./identity";
 
@@ -36,9 +36,7 @@ export async function resetPasswordFor(sender: WaSender, waId: string): Promise<
     return sendText(waId, "⚠️ Couldn't reset — there's no valid phone number on your profile to use as the default.\n\nAsk an admin to reset it for you.");
   }
   try {
-    const ctx = await auth.$context;
-    const hash = await ctx.password.hash(newPassword);
-    await ctx.internalAdapter.updatePassword(member.userId, hash);
+    await setPassword(member.userId, newPassword);
     await prisma.member.update({ where: { id: sender.id }, data: { mustChangePassword: true } });
   } catch (e) {
     console.error("WhatsApp password reset failed:", e);

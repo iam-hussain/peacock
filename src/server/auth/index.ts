@@ -27,9 +27,6 @@ const authEnv = z
  */
 export const auth = betterAuth({
   database: prismaAdapter(prisma, { provider: "mongodb" }),
-  // Native app support (peacock-mobile): cookie-in-header auth for Expo SecureStore
-  // clients. Pairs with the "peacock://" trusted origin below.
-  plugins: [expo()],
   emailAndPassword: {
     enabled: true,
     requireEmailVerification: false,
@@ -39,10 +36,20 @@ export const auth = betterAuth({
     // entirely and only re-verify against Mongo every 5 minutes (or on sign-out).
     cookieCache: { enabled: true, maxAge: 5 * 60 },
   },
-  // Passwordless "quick login" (§ Logging in): the WhatsApp bot triggers a magic link for the
-  // member (server-side, from the inbound webhook), and we deliver the one-time URL back over
-  // WhatsApp — never by email. disableSignUp keeps it members-only (no link ever creates a user).
+  // Members are identity-verified in person (email verification is unused), so every user is
+  // created emailVerified. This is load-bearing: magic-link verify treats an unverified user as
+  // "unproven" and DELETES their credential (password) account + sessions — which is how the
+  // club's passwords got wiped the first time quick login was used.
+  databaseHooks: {
+    user: { create: { before: async (user) => ({ data: { ...user, emailVerified: true } }) } },
+  },
   plugins: [
+    // Native app support (peacock-mobile): cookie-in-header auth for Expo SecureStore
+    // clients. Pairs with the "peacock://" trusted origin below.
+    expo(),
+    // Passwordless "quick login" (§ Logging in): the WhatsApp bot triggers a magic link for the
+    // member (server-side, from the inbound webhook), and we deliver the one-time URL back over
+    // WhatsApp — never by email. disableSignUp keeps it members-only (no link ever creates a user).
     magicLink({
       expiresIn: 60 * 10, // 10 minutes, single-use
       disableSignUp: true,
@@ -77,3 +84,25 @@ export const auth = betterAuth({
 });
 
 export type Session = typeof auth.$Infer.Session;
+
+/**
+ * Set a user's password directly (admin reset + WhatsApp self-service reset).
+ * Not a plain updatePassword: that is an updateMany which silently matches zero rows
+ * when the credential account is missing (magic-link verify deletes it for unverified
+ * users) — so this recreates the credential row when it's gone.
+ */
+export async function setPassword(userId: string, newPassword: string): Promise<void> {
+  const ctx = await auth.$context;
+  const hash = await ctx.password.hash(newPassword);
+  const accounts = await ctx.internalAdapter.findAccounts(userId);
+  if (accounts.some((a) => a.providerId === "credential")) {
+    await ctx.internalAdapter.updatePassword(userId, hash);
+  } else {
+    await ctx.internalAdapter.createAccount({
+      userId,
+      providerId: "credential",
+      accountId: userId,
+      password: hash,
+    });
+  }
+}

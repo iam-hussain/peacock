@@ -10,7 +10,7 @@ import { postIntent } from "@/server/ledger/intents";
 import { raiseCharge } from "@/server/ledger/charges";
 import { settleMembership } from "@/server/ledger/settle";
 import { reverseTransaction, editTransactionAmount } from "@/server/ledger/reverse";
-import { auth } from "@/server/auth";
+import { auth, setPassword } from "@/server/auth";
 import { getCurrentUser } from "@/server/queries/session";
 import { shareableClubProfit } from "@/server/queries/members";
 import { getPenaltyConfig, serializePenaltyConfig, type PenaltyConfig } from "@/server/queries/penalties";
@@ -600,9 +600,7 @@ async function resetPassword(fd: FormData): Promise<ActionResult> {
   const newPassword = str(fd, "custom") || member.phone || "";
   if (newPassword.length < 6) return { ok: false, error: "No default password available — enter a custom one (min 6 chars)." };
   try {
-    const ctx = await auth.$context;
-    const hash = await ctx.password.hash(newPassword);
-    await ctx.internalAdapter.updatePassword(member.userId, hash);
+    await setPassword(member.userId, newPassword);
     await prisma.member.update({ where: { id: member.id }, data: { mustChangePassword: true } });
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Could not reset the password." };
