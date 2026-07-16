@@ -2,16 +2,16 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, MessageSquare, MessageSquareOff, PhoneOff, Users } from "lucide-react";
-import { ChatUsageList } from "./chat-usage-list";
-import { ChatUnregisteredList } from "./chat-unregistered-list";
-import { ChatMemberModal } from "./chat-member-modal";
-import type { WhatsappStats } from "@/server/queries/whatsapp-stats";
+import { ArrowLeft, MessageSquare, MessageSquareOff, MessagesSquare, PhoneOff, Users } from "lucide-react";
+import { ChatList } from "./chat-list";
+import { ChatThread } from "./chat-thread";
+import type { MemberUsage, WhatsappStats } from "@/server/queries/whatsapp-stats";
 
-/** Admin WhatsApp usage dashboard — who's using the bot, who's silent, and which unknown numbers
- *  are messaging the club. Click a member to read their conversation (any day). */
+/** Admin WhatsApp inbox — usage stats up top, then a two-pane chat browser: every conversation on
+ *  the left (members, silent, unknown numbers), the selected member's transcript on the right
+ *  (desktop) or as a full-screen takeover (mobile). */
 export function ChatStats({ data }: { data: WhatsappStats }) {
-  const [selected, setSelected] = useState<{ id: string; name: string } | null>(null);
+  const [selected, setSelected] = useState<MemberUsage | null>(null);
   const t = data.totals;
 
   return (
@@ -20,9 +20,9 @@ export function ChatStats({ data }: { data: WhatsappStats }) {
         <Link href="/admin" className="mb-3 inline-flex items-center gap-1.5 text-12 font-semibold text-mut hover:text-ink">
           <ArrowLeft className="size-3.5" strokeWidth={2.2} /> Admin
         </Link>
-        <h1 className="text-2xl font-bold leading-none tracking-[-0.02em] text-ink">WhatsApp usage</h1>
+        <h1 className="text-2xl font-bold leading-none tracking-[-0.02em] text-ink">WhatsApp chats</h1>
         <p className="mt-1.75 text-13 font-medium leading-140 text-mut">
-          Who is chatting with the club assistant, who hasn&apos;t yet, and any unregistered numbers messaging in.
+          Every conversation with the club assistant — who&apos;s using it, who&apos;s silent, and any unknown numbers.
         </p>
       </div>
 
@@ -39,27 +39,39 @@ export function ChatStats({ data }: { data: WhatsappStats }) {
         </p>
       )}
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <ChatUsageList
-          title="Active members"
-          empty="No members have messaged the bot yet."
-          rows={data.using}
-          onSelect={setSelected}
-        />
-        <ChatUsageList
-          title="Not using yet"
-          empty="Everyone has messaged at least once."
-          rows={data.notUsing}
-          onSelect={setSelected}
-          muted
-        />
+      <div className="overflow-hidden rounded-2xl border border-bd bg-sf shadow-card lg:grid lg:h-150 lg:grid-cols-[340px_1fr]">
+        <ChatList data={data} selectedId={selected?.id} onSelect={setSelected} />
+        <div className="hidden min-h-0 border-l border-hr2 lg:flex lg:flex-col">
+          {selected ? <ChatThread key={selected.id} contact={selected} /> : <ThreadEmpty />}
+        </div>
       </div>
 
-      <div className="mt-4">
-        <ChatUnregisteredList rows={data.unregistered} />
-      </div>
+      {/* Mobile: the thread takes over the screen (WhatsApp-style), CSS-only split — the desktop
+          pane above is hidden below lg, this overlay is hidden at lg. */}
+      {selected && (
+        <div className="fixed inset-0 z-50 flex flex-col bg-sf lg:hidden">
+          <button
+            type="button"
+            onClick={() => setSelected(null)}
+            className="flex flex-none items-center gap-1.5 border-b border-hr2 px-4 py-3 text-left text-12 font-semibold leading-none text-mut transition-colors hover:text-ink"
+          >
+            <ArrowLeft className="size-3.5" strokeWidth={2.2} /> All chats
+          </button>
+          <ChatThread key={selected.id} contact={selected} />
+        </div>
+      )}
+    </div>
+  );
+}
 
-      {selected && <ChatMemberModal member={selected} onClose={() => setSelected(null)} />}
+function ThreadEmpty() {
+  return (
+    <div className="flex flex-1 flex-col items-center justify-center gap-2.5 bg-bg2 px-6 text-center">
+      <MessagesSquare className="size-7 text-mut" strokeWidth={1.6} />
+      <p className="text-13 font-semibold leading-none text-ink">Pick a conversation</p>
+      <p className="max-w-60 text-12 font-medium leading-140 text-mut">
+        Select a member on the left to read their chat with the club assistant.
+      </p>
     </div>
   );
 }
